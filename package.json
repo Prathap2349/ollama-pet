@@ -1,0 +1,15 @@
+{
+  "name": "ollama-pet",
+  "version": "1.0.0",
+  "description": "Desktop AI Pet powered by Ollama",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "concurrently --kill-others-on-fail \"ollama serve\" \"npm start\"",
+    "dev:safe": "ollama serve 2>/dev/null & npm start"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "electron": "^42.3.3"
+  }
+}

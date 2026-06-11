@@ -1,4 +1,12 @@
-# 🐾 Ollama Pet
+<p align="center">
+  <img src="banner.png" alt="Ollama Pet Banner" width="100%">
+</p>
+
+<h1 align="center">🐾 Ollama Pet</h1>
+
+<p align="center">
+  Your Local AI Desktop Companion
+</p>
 
 A local AI desktop companion that lives on your screen — powered entirely by [Ollama](https://ollama.ai) running on your own machine. No cloud, no API keys, no subscriptions. Just chat with your pet, make it dance to your music, set reminders, check the weather, track your habits, and more.
 

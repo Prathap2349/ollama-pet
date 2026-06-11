@@ -6,10 +6,12 @@
   "scripts": {
     "start": "electron .",
     "dev": "concurrently --kill-others-on-fail \"ollama serve\" \"npm start\"",
-    "dev:safe": "ollama serve 2>/dev/null & npm start"
+    "dev:safe": "ollama serve 2>/dev/null & npm start",
+    "build": "electron-packager . OllamaPet --platform=darwin --arch=arm64 --out=dist --overwrite --app-bundle-id=com.prathap.ollamapet --app-version=1.0.0 --icon=icon.icns --ignore=dist --ignore=.git"
   },
   "devDependencies": {
     "concurrently": "^9.2.1",
-    "electron": "^42.3.3"
+    "electron": "^42.4.0",
+    "electron-packager": "^17.1.2"
   }
 }

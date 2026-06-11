@@ -1,183 +1,238 @@
 # 🐾 Ollama Pet
 
-A local AI desktop companion that lives on your screen — powered entirely by [Ollama](https://ollama.com) running on your own machine. No cloud, no API keys, no subscriptions. Just chat with your pet, make it dance to your music, set reminders, and watch it roam your desktop.
+A local AI desktop companion that lives on your screen — powered entirely by [Ollama](https://ollama.ai) running on your own machine. No cloud, no API keys, no subscriptions. Just chat with your pet, make it dance to your music, set reminders, check the weather, track your habits, and more.
 
-![Electron](https://img.shields.io/badge/Electron-42-blue?logo=electron) ![Ollama](https://img.shields.io/badge/Ollama-local-green) ![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey)
+---
+
+## 📸 What It Looks Like
+
+A small animated pet (cat, dog, fox, or robot) sits in the bottom-right corner of your screen. Click it to open the chat panel. It stays on top of all your windows, across all your desktops, even over fullscreen apps.
 
 ---
 
 ## ✨ Features
 
-| Feature | Description |
+| Feature | What it does |
 |---|---|
-| 💬 **AI Chat** | Talk to your pet using any Ollama model (llama3, mistral, gemma, etc.) |
-| 🎭 **4 Characters** | Choose from Cat 🐱, Dragon 🐉, Robot 🤖, or Robot Cat 🐱‍💻 — each with unique animations |
-| 💃 **Dance Mode** | Pet dances with animated beat bars. Upload any MP3 for real-time beat detection |
-| 🎵 **Music Vibes** | Pop / Rock / Chill / Rave modes that change the dance energy and speed |
-| ⏰ **Reminders** | Set timed reminders ("in 10 mins", "at 3:30") — pet dances and notifies you when due |
-| 📊 **Stats Panel** | Tracks chats today, uptime, and CPU usage |
-| 🚶 **Desktop Walker** | Pet walks across the bottom of your entire screen |
-| 🎉 **Reactions** | Confetti + particles when excited, sleeping, shocked, and more |
-| 📄 **Export Chat** | Save your conversation to a `.txt` file |
-| 🎙️ **Voice Input** | Speak to your pet via the mic button (browser Speech API) |
-| ⌨️ **Global Shortcut** | `Cmd+Shift+P` (Mac) / `Ctrl+Shift+P` (Windows/Linux) to show/hide the pet |
-| 📌 **Always on Top** | Floats over all windows and works on every desktop/space |
-| 💾 **Persistent Data** | Chats, reminders, and stats are saved between sessions |
+| 💬 **AI Chat** | Talk to your pet using Ollama (local LLM — fully offline) |
+| 🎵 **Music & Dance** | Upload an MP3 — the pet dances to the actual beat |
+| 🌤 **Live Weather** | Enter your city, get real-time weather via Open-Meteo (free, no key) |
+| ⏰ **Reminders** | Set a reminder — pet notifies you with a bubble and system notification |
+| 🍅 **Pomodoro Timer** | 25-min work / 5-min break timer built in |
+| 📊 **System Stats** | Live CPU, RAM, battery, uptime, active apps |
+| 🎮 **Mini Games** | Rock Paper Scissors and trivia games |
+| 🏆 **Streak & XP** | Daily chat streak, mood tracking, hunger system |
+| 🖥 **Companion Mode** | Pet goes transparent/click-through when you're working |
+| 🌙 **Day/Night Skin** | Automatically changes appearance based on time of day |
+| 🎨 **4 Characters** | Cat 🐱, Dog 🐶, Fox 🦊, Robot 🤖 — switch anytime |
+| 🚶 **Walk Mode** | Pet walks across your screen |
+| 🌈 **Wallpaper Mode** | Pet reacts to your desktop wallpaper colours |
 
 ---
 
-## 🖥️ Requirements
+## 🖥 System Requirements
 
-- **macOS** 12+, **Windows** 10+, or **Linux** (Ubuntu 20.04+)
-- **Node.js** v18 or later → [nodejs.org](https://nodejs.org)
-- **Git** → [git-scm.com](https://git-scm.com)
-- **Ollama** (see install guide below)
+| Requirement | Details |
+|---|---|
+| **macOS** | 12 Monterey or later (Apple Silicon M1/M2/M3 or Intel) |
+| **Node.js** | v20 or later — [download here](https://nodejs.org) |
+| **Ollama** | Required for AI chat — [download here](https://ollama.ai) |
+| **RAM** | 8GB minimum, 16GB recommended (for running a local LLM) |
+| **Storage** | ~500MB for the app + whichever Ollama model you use |
+
+> ⚠️ **Windows/Linux:** The app runs but some features (battery, brightness, system stats) are macOS-only.
 
 ---
 
-## 🦙 Step 1 — Install Ollama (from scratch)
+## 🚀 Installation — Two Ways
 
-### macOS
+### Option A — Run from Source (for developers)
+
+**Step 1: Install Node.js**
+Download from [nodejs.org](https://nodejs.org) and install. Check it works:
 ```bash
-# Option A — Download the app (easiest)
-# Go to https://ollama.com/download and click "Download for Mac"
-# Open the .dmg and drag Ollama to Applications, then launch it.
-
-# Option B — Homebrew
-brew install ollama
+node --version   # should say v20.x.x or higher
 ```
 
-### Windows
-Go to [https://ollama.com/download](https://ollama.com/download) and click **Download for Windows**.  
-Run the `.exe` installer and follow the prompts.
-
-### Linux
-```bash
-curl -fsSL https://ollama.com/install.sh | sh
-```
-
----
-
-## 🤖 Step 2 — Download an AI Model
-
-After installing Ollama, pull a model. We recommend starting with **llama3.2** (small and fast):
-
+**Step 2: Install Ollama**
+Download from [ollama.ai](https://ollama.ai) and install. Then pull a model:
 ```bash
 ollama pull llama3.2
+# or for a smaller/faster model:
+ollama pull phi3
 ```
 
-Other good options:
-
-```bash
-ollama pull mistral        # Great all-rounder, ~4 GB
-ollama pull gemma3         # Google's model, fast
-ollama pull phi4-mini      # Very small, runs on low RAM
-ollama pull llama3.1:8b    # More capable, ~5 GB
-```
-
-> 💡 You only need to pull a model once. List your downloaded models with `ollama list`.
-
----
-
-## 📦 Step 3 — Install & Run Ollama Pet
-
-### Clone the repo
+**Step 3: Clone and run**
 ```bash
 git clone https://github.com/Prathap2349/ollama-pet.git
 cd ollama-pet
-```
-
-### Install dependencies
-```bash
 npm install
-npm install concurrently --save-dev
+npm start
 ```
 
-### Start the app
+The pet appears in the bottom-right corner of your screen. ✅
+
+---
+
+### Option B — Build a real .app (recommended — no terminal needed after this)
+
+**Step 1:** Follow steps 1 and 2 above to install Node.js and Ollama.
+
+**Step 2:** Clone and build:
 ```bash
-npm run dev:safe
+git clone https://github.com/Prathap2349/ollama-pet.git
+cd ollama-pet
+npm install
+chmod +x build-app.sh && ./build-app.sh
 ```
 
-This command starts Ollama in the background and launches the Electron pet window.
+**Step 3:** Copy to Applications:
+- Open Finder → go to `ollama-pet/dist/OllamaPet-darwin-arm64/`
+- Drag `OllamaPet.app` into your `/Applications` folder
 
-> ⚠️ Make sure Ollama is installed and at least one model is downloaded before running.
+**Step 4:** First launch:
+- **Right-click** `OllamaPet.app` → click **Open**
+- Click **Open** on the security popup (only needed once)
+
+**From now on:** The pet starts automatically every time you log into your Mac. No terminal needed ever again.
 
 ---
 
 ## 🎮 How to Use
 
-### Choosing your pet
-Click the character buttons at the bottom of the window:
-`🐱 Cat` · `🐉 Dragon` · `🤖 Robot` · `🐱‍💻 Robot Cat`
+### Basic Controls
 
-### Chatting
-1. Click the **💬 Chat** tab
-2. Type your message and press **Enter** or click Send
-3. Your pet thinks, then replies using your local Ollama model
-4. Click **📄 Export** to save the conversation
-
-### Dancing to music
-1. Click the **💃 Dance** tab
-2. Pick a vibe: **Pop / Rock / Chill / Rave**
-3. Click **🎧 Upload song** and select any MP3 file
-4. The beat bars and pet animation sync to the real bass energy of the track
-
-### Setting a reminder
-1. Click the **⏰ Remind** tab
-2. Type something like:
-   - `"Take a break in 10 mins"`
-   - `"Stand up in 1 hour"`
-   - `"Meeting at 3:30"`
-3. Press **Enter** or click **＋**
-4. When time is up, the pet dances and a system notification fires
-5. Click **✕** on any reminder to delete it
-
-### Other controls
 | Action | How |
 |---|---|
-| Show / hide pet | `Cmd+Shift+P` (Mac) · `Ctrl+Shift+P` (Win/Linux) |
-| Move the window | Drag the pet |
-| Snap to corner | Double-click the pet |
-| Send pet for a walk | Stats tab → 🚶 Walk button |
-| Voice input | Mic 🎙️ button in the chat bar |
+| **Open chat** | Click the pet |
+| **Close chat** | Click ✕ or click the pet again |
+| **Move the pet** | Drag it anywhere on screen |
+| **Snap to corner** | Drag near a corner — it snaps automatically |
+| **Hide/show pet** | Press `Cmd+Shift+P` |
+| **Quit** | Click ✕ in the top-right of the chat panel |
+
+### Chat Panel Tabs
+
+Once you click the pet, the chat panel opens with tabs at the top:
+
+- **💬 Chat** — Talk to the AI pet
+- **🎵 Music** — Upload an MP3 to make it dance, choose a vibe (pop/rock/chill)
+- **🌤 System** — Weather, clock, system stats, battery
+- **⏰ Timer** — Pomodoro timer + reminders
+- **🎮 Games** — Rock Paper Scissors, trivia
+
+### Setting Up AI Chat
+
+1. Make sure Ollama is running: open Terminal and type `ollama serve`
+2. The pet shows a green dot 🟢 when connected, red 🔴 when offline
+3. If red, click the ↻ retry button in the chat panel
+
+### Weather Setup
+
+1. Open the chat panel → click the **System** tab
+2. Type your city name in the weather box (e.g. `Chennai` or `London`)
+3. Press Enter or click the fetch button
+4. It remembers your city next time
+
+### Music & Dancing
+
+1. Open the chat panel → click the **Music** tab
+2. Click **🎧 Upload song** → select any MP3/WAV/M4A file
+3. The pet starts dancing to the actual beat of your music
+4. Choose a vibe: Pop 🎵 / Rock 🤘 / Chill 😌
+
+### Reminders
+
+1. Open the chat panel → click the **Timer** tab
+2. Type what you want to be reminded of
+3. Set the minutes
+4. Click **+** — the pet will bubble-notify you when time is up
+
+### Companion Mode
+
+Turn on companion mode in the System tab — the pet becomes click-through after 1 minute of inactivity so it doesn't get in the way while you work. Any click on the panel wakes it back up.
 
 ---
 
-## 🗂️ Project Structure
+## 🛑 How to Stop / Remove
+
+**Stop auto-start:**
+System Settings → General → Login Items → find OllamaPet → click **−** to remove
+
+**Quit the app:**
+Click the pet → click ✕ (close button) in the chat panel
+
+**Completely delete:**
+1. Drag `OllamaPet.app` from `/Applications` to Trash
+2. Delete the `ollama-pet` folder from Downloads
+3. Delete saved data (optional): `rm ~/ollama-pet-data.json`
+
+Done. Nothing else left behind.
+
+---
+
+## 🔧 Troubleshooting
+
+**Pet doesn't appear after launching**
+- Check you're running macOS 12+
+- Try right-click → Open instead of double-click (security warning)
+- Check System Settings → Privacy & Security and allow the app
+
+**AI chat not working (red dot)**
+- Make sure Ollama is installed and running: `ollama serve` in Terminal
+- Make sure you've pulled a model: `ollama pull llama3.2`
+- Click the ↻ retry button in the chat panel
+
+**"Unidentified developer" warning**
+- Right-click the app → Open → click Open on the popup
+- Only needed once
+
+**App won't open after build**
+- Make sure you're on Apple Silicon (M1/M2/M3) — if Intel Mac, the build script auto-detects it
+- Try: `xattr -cr /Applications/OllamaPet.app` in Terminal then open again
+
+**Node.js version warning during build**
+- The warnings about Node v20 vs v22 are harmless — the app builds and runs fine on v20
+
+---
+
+## 🏗 Project Structure
 
 ```
 ollama-pet/
-├── index.html   # All UI, animations, and frontend logic
-├── main.js      # Electron main process (windows, IPC, shortcuts)
-├── walker.html  # Fullscreen walker overlay window
-└── package.json
+├── index.html       # entire frontend — UI, animations, all features
+├── main.js          # Electron main process — window management, IPC, system APIs
+├── walker.html      # walk-across-screen animation window
+├── package.json     # dependencies and build scripts
+├── build-app.sh     # one-click .app builder script
+└── LICENSE          # MIT
 ```
 
 ---
 
-## 🛠️ Troubleshooting
+## 🤖 Models That Work Well
 
-**Pet window doesn't appear**  
-→ Check that Electron launched without errors in your terminal.
+| Model | Size | Speed | Best for |
+|---|---|---|---|
+| `llama3.2` | 2GB | Fast | General chat |
+| `phi3` | 2.3GB | Very fast | Quick responses |
+| `mistral` | 4GB | Medium | Better reasoning |
+| `llama3.1:8b` | 4.7GB | Medium | More capable |
 
-**"Could not connect to Ollama"**  
-→ Run `ollama serve` manually in a separate terminal, then try again.
+Pull any model with: `ollama pull <model-name>`
 
-**Music uploads but doesn't play**  
-→ If you see a ▶ Play button appear, click it once to unblock browser autoplay. This only happens the first time.
-
-**No models available in chat**  
-→ Run `ollama list` to confirm a model is downloaded. Pull one with `ollama pull llama3.2`.
-
-**App is slow / responses take a long time**  
-→ Try a smaller model like `phi4-mini` or `gemma3:1b`.
+The pet uses whichever model is default in Ollama. To set a specific model, change the model name in `index.html` (search for `"model":` in the fetch call to Ollama).
 
 ---
 
-## 📄 License
+## 📝 License
 
 MIT — free to use, modify, and share.
 
 ---
 
-> Made with ☕ and way too many late nights. Your pet lives entirely on your machine — private, offline, and always home.
+## 👤 Author
+
+**Prathap** — [@Prathap2349](https://github.com/Prathap2349)
+
+Built with ❤️ using Electron + Ollama.

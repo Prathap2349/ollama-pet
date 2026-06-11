@@ -2,13 +2,41 @@ const { app, BrowserWindow, ipcMain, screen, Notification, globalShortcut, dialo
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const { execSync } = require('child_process');
+const { execSync, spawn } = require('child_process');
 
 let win;
 let walkerWin;
 let petVisible = true;
+let ollamaProcess = null;
 
 const SAVE_PATH = path.join(os.homedir(), 'ollama-pet-data.json');
+
+// ── AUTO-START OLLAMA ─────────────────────────
+// Starts ollama serve in the background when the pet launches.
+// If ollama is already running, this silently does nothing.
+function startOllama() {
+  try {
+    // Check if ollama is already running
+    execSync('curl -s http://localhost:11434/api/tags', { timeout: 1000 });
+    console.log('Ollama already running ✓');
+  } catch(_) {
+    // Not running — start it
+    try {
+      ollamaProcess = spawn('ollama', ['serve'], {
+        detached: true,
+        stdio: 'ignore',
+        shell: false,
+      });
+      ollamaProcess.unref(); // don't block app from quitting
+      console.log('Ollama started automatically ✓');
+    } catch(err) {
+      console.warn('Could not start Ollama automatically:', err.message);
+      // Not fatal — pet still works, chat just shows offline
+    }
+  }
+}
+
+startOllama();
 
 // ── SINGLE INSTANCE LOCK ─────────────────────
 const gotLock = app.requestSingleInstanceLock();

@@ -12,26 +12,23 @@ let ollamaProcess = null;
 const SAVE_PATH = path.join(os.homedir(), 'ollama-pet-data.json');
 
 // ── AUTO-START OLLAMA ─────────────────────────
-// Starts ollama serve in the background when the pet launches.
-// If ollama is already running, this silently does nothing.
 function startOllama() {
+  // Full path needed — .app bundles have a restricted PATH
+  const ollamaPath = '/usr/local/bin/ollama';
   try {
-    // Check if ollama is already running
     execSync('curl -s http://localhost:11434/api/tags', { timeout: 1000 });
     console.log('Ollama already running ✓');
   } catch(_) {
-    // Not running — start it
     try {
-      ollamaProcess = spawn('ollama', ['serve'], {
+      ollamaProcess = spawn(ollamaPath, ['serve'], {
         detached: true,
         stdio: 'ignore',
-        shell: false,
+        env: { ...process.env, PATH: '/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin' },
       });
-      ollamaProcess.unref(); // don't block app from quitting
+      ollamaProcess.unref();
       console.log('Ollama started automatically ✓');
     } catch(err) {
-      console.warn('Could not start Ollama automatically:', err.message);
-      // Not fatal — pet still works, chat just shows offline
+      console.warn('Could not start Ollama:', err.message);
     }
   }
 }

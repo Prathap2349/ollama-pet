@@ -67,6 +67,17 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         charItem.submenu = charSubmenu
         menu.addItem(charItem)
 
+        // Settings Window
+        let settingsItem = NSMenuItem(title: "Settings...", action: #selector(openSettingsWindow), keyEquivalent: ",")
+        menu.addItem(settingsItem)
+
+        // Safe Mode Toggle
+        let safeModeItem = NSMenuItem(title: "🛡️ Safe Mode (15 FPS)", action: #selector(toggleSafeModeMenu(_:)), keyEquivalent: "")
+        safeModeItem.state = PerformanceManager.shared.isSafeMode ? .on : .off
+        menu.addItem(safeModeItem)
+
+        menu.addItem(NSMenuItem.separator())
+
         // Launch at login toggle
         let loginItem = NSMenuItem(title: "Launch at Login", action: #selector(toggleLaunchAtLogin(_:)), keyEquivalent: "")
         if #available(macOS 13.0, *) {
@@ -78,6 +89,15 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(NSMenuItem(title: "Quit Ollama Pet", action: #selector(quitApp), keyEquivalent: "q"))
 
         statusItem?.menu = menu
+    }
+
+    @objc private func openSettingsWindow() {
+        SettingsWindowController.shared.showWindow()
+    }
+
+    @objc private func toggleSafeModeMenu(_ sender: NSMenuItem) {
+        PerformanceManager.shared.toggleSafeMode()
+        sender.state = PerformanceManager.shared.isSafeMode ? .on : .off
     }
 
     @objc private func statusItemClicked() {

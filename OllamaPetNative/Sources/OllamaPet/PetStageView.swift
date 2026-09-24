@@ -7,6 +7,7 @@ struct PetStageView: View {
     @ObservedObject var sysMon = SystemMonitor.shared
     @ObservedObject var motion = CharacterMotionStateMachine.shared
     @ObservedObject var weatherService = WeatherService.shared
+    @ObservedObject var perf = PerformanceManager.shared
 
     var body: some View {
         ZStack(alignment: petAlignment) {
@@ -57,34 +58,7 @@ struct PetStageView: View {
 
             ZStack(alignment: .center) {
                 // High-Framerate Procedural Physics Canvas with Adaptive Refresh Rate
-                let targetInterval = sysMon.isPowerSavingMode ? 1.0 / 30.0 : 1.0 / 60.0
-
-                TimelineView(.animation(minimumInterval: targetInterval)) { timeline in
-                    Canvas { context, size in
-                        let t = timeline.date.timeIntervalSinceReferenceDate
-                        motion.update(at: t, weatherAtmosphere: weatherService.activeAtmosphere)
-
-                        let lighting = ProceduralColorEngine.evaluate(
-                            species: petState.currentSpecies,
-                            model: motion.structuralModel,
-                            cpuPercent: sysMon.cpuPercent,
-                            atmosphere: weatherService.activeAtmosphere
-                        )
-
-                        PetCanvasRenderer.draw(
-                            context: &context,
-                            size: size,
-                            species: petState.currentSpecies,
-                            model: motion.structuralModel,
-                            animState: petState.animState,
-                            motion: motion,
-                            lighting: lighting,
-                            atmosphere: weatherService.activeAtmosphere,
-                            time: t
-                        )
-                    }
-                    .frame(width: 120, height: 120)
-                }
+                canvasView
 
                 // Mood Indicator & Cycle Button
                 VStack {
@@ -196,6 +170,32 @@ struct PetStageView: View {
             }
         }
         .frame(width: petState.isChatOpen ? 340 : 140, height: 140)
+    }
+
+    private var canvasView: some View {
+        TimelineView(.animation(minimumInterval: perf.minimumRenderInterval)) { (timeline: TimelineViewDefaultContext) in
+            Canvas { context, size in
+                let t = timeline.date.timeIntervalSinceReferenceDate
+                let snapshot = motion.evaluateSnapshot(
+                    at: t,
+                    animState: petState.animState,
+                    atmosphere: perf.weatherEffectsEnabled ? weatherService.activeAtmosphere : .clearDay,
+                    isSafeMode: perf.isSafeMode
+                )
+                let model = CharacterStructuralModel.model(for: petState.currentSpecies)
+
+                PetCanvasRenderer.draw(
+                    context: &context,
+                    size: size,
+                    species: petState.currentSpecies,
+                    model: model,
+                    animState: petState.animState,
+                    snapshot: snapshot,
+                    perf: perf
+                )
+            }
+            .frame(width: 120, height: 120)
+        }
     }
 
     private func weatherAtmosphereIcon(_ atmo: WeatherAtmosphere) -> String {

@@ -83,65 +83,64 @@ struct WalkerAnimationView: View {
     @State private var isFlipped: Bool = false
     @ObservedObject var motion = CharacterMotionStateMachine.shared
     @ObservedObject var sysMon = SystemMonitor.shared
+    @ObservedObject var perf = PerformanceManager.shared
 
     var body: some View {
         ZStack(alignment: .bottomLeading) {
             Color.clear
-
-            let targetInterval = sysMon.isPowerSavingMode ? 1.0 / 30.0 : 1.0 / 60.0
-
-            TimelineView(.animation(minimumInterval: targetInterval)) { timeline in
-                Canvas { context, size in
-                    let t = timeline.date.timeIntervalSinceReferenceDate
-                    motion.transitionTo(.walking(gait: gait))
-                    motion.update(at: t)
-
-                    let lighting = ProceduralColorEngine.evaluate(
-                        species: species,
-                        model: motion.structuralModel,
-                        cpuPercent: sysMon.cpuPercent,
-                        atmosphere: WeatherService.shared.activeAtmosphere
-                    )
-
-                    // Secondary Inertial Lag angle
-                    let inertialAngle: Angle
-                    switch gait {
-                    case .bouncyMarch:
-                        inertialAngle = .degrees(isFlipped ? -4 : 4)
-                    case .stealthProwl:
-                        inertialAngle = .degrees(isFlipped ? 8 : -8)
-                    case .hoverGlide:
-                        inertialAngle = .degrees(isFlipped ? 12 : -12)
-                    }
-
-                    var walkerContext = context
-                    let center = CGPoint(x: size.width / 2, y: size.height / 2)
-                    walkerContext.translateBy(x: center.x, y: center.y)
-                    if isFlipped {
-                        walkerContext.scaleBy(x: -1, y: 1)
-                    }
-                    walkerContext.rotate(by: inertialAngle)
-                    walkerContext.translateBy(x: -center.x, y: -center.y)
-
-                    PetCanvasRenderer.draw(
-                        context: &walkerContext,
-                        size: size,
-                        species: species,
-                        model: motion.structuralModel,
-                        animState: .idle,
-                        motion: motion,
-                        lighting: lighting,
-                        atmosphere: WeatherService.shared.activeAtmosphere,
-                        time: t
-                    )
-                }
-                .frame(width: 80, height: 80)
-                .offset(x: xOffset, y: -10)
-            }
+            walkerCanvasView
         }
         .frame(width: screenWidth, height: 110)
         .onAppear {
+            motion.transitionTo(.walking(gait: gait))
             runWalkSequence()
+        }
+    }
+
+    private var walkerCanvasView: some View {
+        TimelineView(.animation(minimumInterval: perf.minimumRenderInterval)) { (timeline: TimelineViewDefaultContext) in
+            Canvas { context, size in
+                let t = timeline.date.timeIntervalSinceReferenceDate
+                let snapshot = motion.evaluateSnapshot(
+                    at: t,
+                    animState: .idle,
+                    atmosphere: perf.weatherEffectsEnabled ? WeatherService.shared.activeAtmosphere : .clearDay,
+                    isSafeMode: perf.isSafeMode
+                )
+                let model = CharacterStructuralModel.model(for: species)
+
+                // Secondary Inertial Lag angle
+                let inertialAngle: Angle
+                switch gait {
+                case .bouncyMarch:
+                    inertialAngle = .degrees(isFlipped ? -4 : 4)
+                case .stealthProwl:
+                    inertialAngle = .degrees(isFlipped ? 8 : -8)
+                case .hoverGlide:
+                    inertialAngle = .degrees(isFlipped ? 12 : -12)
+                }
+
+                var walkerContext = context
+                let center = CGPoint(x: size.width / 2, y: size.height / 2)
+                walkerContext.translateBy(x: center.x, y: center.y)
+                if isFlipped {
+                    walkerContext.scaleBy(x: -1, y: 1)
+                }
+                walkerContext.rotate(by: inertialAngle)
+                walkerContext.translateBy(x: -center.x, y: -center.y)
+
+                PetCanvasRenderer.draw(
+                    context: &walkerContext,
+                    size: size,
+                    species: species,
+                    model: model,
+                    animState: .idle,
+                    snapshot: snapshot,
+                    perf: perf
+                )
+            }
+            .frame(width: 80, height: 80)
+            .offset(x: xOffset, y: -10)
         }
     }
 

@@ -832,6 +832,29 @@ struct ChatView: View {
     private var settingsTabContent: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
+                // Dedicated Settings Window Button
+                Button(action: {
+                    SettingsWindowController.shared.showWindow()
+                }) {
+                    HStack {
+                        Image(systemName: "macwindow.badge.plus")
+                            .font(.system(size: 14))
+                        Text("Open Full Settings Window")
+                            .font(.system(size: 12, weight: .bold))
+                        Spacer()
+                        Image(systemName: "arrow.up.forward.app")
+                            .font(.system(size: 11))
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .foregroundColor(.white)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(petState.currentSpecies.accentColor.opacity(0.8))
+                    )
+                }
+                .buttonStyle(.plain)
+
                 // Section 1: Ollama Local AI Status & Model Selection
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {

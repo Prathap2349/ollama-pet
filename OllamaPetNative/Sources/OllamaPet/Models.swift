@@ -62,6 +62,30 @@ public enum PetSpecies: String, CaseIterable, Codable, Identifiable {
         }
     }
 
+    public var lore: String {
+        switch self {
+        case .cat: return "A mischievous, cozy feline companion who loves quick naps, purrs, and sunny spots."
+        case .dragon: return "A fierce yet loyal mini dragon with glowing ember breath and flapping wings."
+        case .robot: return "An articulated automaton companion with reactive visor and clean cybernetic joints."
+        case .robotcat: return "A futuristic cyborg cat engineered with holographic HUD and sleek cybernetic paws."
+        case .ghost: return "A gentle, legless spectral wisp that floats effortlessly and drifts across the screen."
+        case .fox: return "A cunning, quick-witted forest fox with huge pointed ears and an enormous bushy tail."
+        case .bunny: return "A delightfully plump bunny that hops rhythmically with long upright ears and a cotton tail."
+        }
+    }
+
+    public var speciesName: String {
+        switch self {
+        case .cat: return "Feline"
+        case .dragon: return "Dragon"
+        case .robot: return "Android"
+        case .robotcat: return "Cyber Cat"
+        case .ghost: return "Phantom"
+        case .fox: return "Kitsune"
+        case .bunny: return "Rabbit"
+        }
+    }
+
     public func moodEmoji(for mood: PetMood) -> String {
         switch (self, mood) {
         case (.cat, .happy): return "😸"
@@ -249,6 +273,16 @@ public struct PetSavedData: Codable {
     // Expressive Kinematics & Structural Model
     public var structuralModel: String? = nil
     public var walkGaitPreset: String? = nil
+
+    // Performance & Appearance Stability
+    public var performanceQuality: String? = "Balanced"
+    public var isSafeMode: Bool? = false
+    public var dynamicLightingEnabled: Bool? = false
+    public var weatherEffectsEnabled: Bool? = false
+    public var cpuReactiveGlowEnabled: Bool? = false
+    public var dayNightTintEnabled: Bool? = false
+    public var particlesEnabled: Bool? = false
+    public var grayscaleTestMode: Bool? = false
 
     public init(
         version: Int? = 1,

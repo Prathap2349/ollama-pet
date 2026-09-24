@@ -2,7 +2,7 @@ import Foundation
 import SwiftUI
 import AppKit
 
-// MARK: - Motion States & Presets
+// MARK: - Motion States & Gait Presets
 
 public enum WalkGaitPreset: String, CaseIterable, Codable, Identifiable {
     case bouncyMarch = "Bouncy March"
@@ -10,6 +10,7 @@ public enum WalkGaitPreset: String, CaseIterable, Codable, Identifiable {
     case hoverGlide = "Hover Glide"
 
     public var id: String { rawValue }
+    public var displayName: String { rawValue }
 
     public var icon: String {
         switch self {
@@ -21,25 +22,9 @@ public enum WalkGaitPreset: String, CaseIterable, Codable, Identifiable {
 
     public var description: String {
         switch self {
-        case .bouncyMarch: return "Energetic vertical bounce with snappy footsteps"
-        case .stealthProwl: return "Low center of gravity with subtle predatory prowl"
-        case .hoverGlide: return "Zero-ground contact with inertial dampening float"
-        }
-    }
-}
-
-public enum DancePhase: Int, CaseIterable {
-    case hipSway = 0
-    case jumpTwist = 1
-    case confettiPop = 2
-    case audioStep = 3
-
-    public var title: String {
-        switch self {
-        case .hipSway: return "Hip Sway"
-        case .jumpTwist: return "Jumping Twists"
-        case .confettiPop: return "Celebratory Confetti"
-        case .audioStep: return "Beat-Synced Step"
+        case .bouncyMarch: return "Bouncy quadruped/biped march with snappy vertical spring"
+        case .stealthProwl: return "Low center-of-gravity stride with lateral body sway"
+        case .hoverGlide: return "Suspended floating drift with secondary inertial lag"
         }
     }
 }
@@ -49,20 +34,7 @@ public enum CharacterMotionState: Equatable {
     case thinking
     case streamingResponse
     case walking(gait: WalkGaitPreset)
-    case dancing(phase: DancePhase)
-
-    public static func == (lhs: CharacterMotionState, rhs: CharacterMotionState) -> Bool {
-        switch (lhs, rhs) {
-        case (.idle, .idle), (.thinking, .thinking), (.streamingResponse, .streamingResponse):
-            return true
-        case (.walking(let g1), .walking(let g2)):
-            return g1 == g2
-        case (.dancing(let p1), .dancing(let p2)):
-            return p1 == p2
-        default:
-            return false
-        }
-    }
+    case dancing(phase: Int)
 }
 
 public enum CharacterStructuralModel: String, CaseIterable, Codable, Identifiable {
@@ -84,99 +56,98 @@ public enum CharacterStructuralModel: String, CaseIterable, Codable, Identifiabl
 
     public var subtitle: String {
         switch self {
-        case .classicSpecies: return "Authentic 7-species companion art"
-        case .kineticSlime: return "Elastic bezier squish physics"
-        case .cyberSentry: return "Segmented levitating plates & pulse visors"
-        case .pixelChibiBeast: return "Articulated limbs & expressive ears"
+        case .classicSpecies: return "Species-distinct silhouettes with unique anatomy"
+        case .kineticSlime: return "Elastic bezier squish physics & translucent core"
+        case .cyberSentry: return "Segmented hovering armor plates & pulse visor"
+        case .pixelChibiBeast: return "Articulated chibi beast with physics ears & tail"
         }
+    }
+
+    public static func model(for species: PetSpecies) -> CharacterStructuralModel {
+        return .classicSpecies
     }
 }
 
-// MARK: - Procedural Particle Systems
+// MARK: - Particles (Pure Data)
 
 public struct ThoughtSpark: Identifiable {
-    public let id = UUID()
+    public let id: Int
     public var x: CGFloat
     public var y: CGFloat
-    public var vx: CGFloat
-    public var vy: CGFloat
     public var size: CGFloat
     public var alpha: Double
     public var hue: Double
-    public var life: Double // 0.0 -> 1.0
 }
 
 public struct ConfettiParticle: Identifiable {
-    public let id = UUID()
+    public let id: Int
     public var x: CGFloat
     public var y: CGFloat
-    public var vx: CGFloat
-    public var vy: CGFloat
     public var rotation: Double
-    public var vRot: Double
     public var color: Color
     public var size: CGSize
-    public var life: Double
+    public var alpha: Double
 }
 
 public struct WeatherAtmosphereParticle: Identifiable {
-    public let id = UUID()
+    public let id: Int
     public var x: CGFloat
     public var y: CGFloat
-    public var vx: CGFloat
-    public var vy: CGFloat
     public var size: CGFloat
     public var alpha: Double
     public var length: CGFloat
 }
 
-// MARK: - Motion State Machine
+// MARK: - Pure Immutable Animation Snapshot
+
+public struct AnimationSnapshot {
+    public let time: Double
+    public let breathOffset: CGFloat
+    public let blinkProgress: CGFloat
+    public let eyeOffset: CGPoint
+    public let headTiltAngle: Angle
+    public let levitationOffset: CGFloat
+    public let tailWagAngle: Angle
+    public let squashStretch: CGSize
+    public let walkCyclePhase: Double
+    public let hopProgress: Double // 0 = ground, 1 = peak jump
+    public let wingFlapAngle: Angle
+    public let ghostWaveOffset: CGFloat
+    public let thoughtSparks: [ThoughtSpark]
+    public let confettiList: [ConfettiParticle]
+    public let weatherParticles: [WeatherAtmosphereParticle]
+
+    public static let zero = AnimationSnapshot(
+        time: 0,
+        breathOffset: 0,
+        blinkProgress: 0,
+        eyeOffset: .zero,
+        headTiltAngle: .zero,
+        levitationOffset: 0,
+        tailWagAngle: .zero,
+        squashStretch: CGSize(width: 1, height: 1),
+        walkCyclePhase: 0,
+        hopProgress: 0,
+        wingFlapAngle: .zero,
+        ghostWaveOffset: 0,
+        thoughtSparks: [],
+        confettiList: [],
+        weatherParticles: []
+    )
+}
+
+// MARK: - Motion State Controller (Pure Evaluator, Never Mutates State in Render Pass)
 
 @MainActor
 public class CharacterMotionStateMachine: ObservableObject {
     public static let shared = CharacterMotionStateMachine()
 
+    // Only coarse user-driven states are published to avoid high-frequency render-loop invalidations
     @Published public var state: CharacterMotionState = .idle
     @Published public var structuralModel: CharacterStructuralModel = .classicSpecies
     @Published public var gaitPreset: WalkGaitPreset = .bouncyMarch
 
-    // Kinematic parameters
-    @Published public var breathOffset: CGFloat = 0.0
-    @Published public var blinkProgress: CGFloat = 0.0 // 0 = open, 1 = fully closed
-    @Published public var eyeOffset: CGPoint = .zero
-    @Published public var headTiltAngle: Angle = .zero
-    @Published public var levitationOffset: CGFloat = 0.0
-    @Published public var tailWagAngle: Angle = .zero
-    @Published public var squashStretch: CGSize = CGSize(width: 1.0, height: 1.0)
-    @Published public var musicPulseAmplitude: CGFloat = 0.0
-
-    // Particle arrays
-    @Published public var thoughtSparks: [ThoughtSpark] = []
-    @Published public var confettiList: [ConfettiParticle] = []
-    @Published public var weatherParticles: [WeatherAtmosphereParticle] = []
-
-    // Internal timing & oscillators
-    private var time: Double = 0.0
-    private var lastUpdateTime: Double = 0.0
-    private var nextBlinkTime: Double = 2.0
-    private var blinkDuration: Double = 0.16
-    private var isBlinking: Bool = false
-    private var blinkStartTime: Double = 0.0
-
-    private var nextGazeShiftTime: Double = 3.0
-    private var targetEyeOffset: CGPoint = .zero
-
-    private var dancePhaseTimer: Double = 0.0
-    private var currentDancePhase: DancePhase = .hipSway
-
-    // Spring physics accumulator
-    private var springY: CGFloat = 0.0
-    private var springVelocityY: CGFloat = 0.0
-    private let springStiffness: CGFloat = 160.0
-    private let springDamping: CGFloat = 12.0
-
     public init() {
-        // Load saved structural model & gait
         if let savedModelStr = DataManager.shared.savedData.structuralModel,
            let model = CharacterStructuralModel(rawValue: savedModelStr) {
             self.structuralModel = model
@@ -201,302 +172,180 @@ public class CharacterMotionStateMachine: ObservableObject {
 
     public func transitionTo(_ newState: CharacterMotionState) {
         self.state = newState
-        switch newState {
-        case .thinking:
-            spawnThoughtSparks()
-        case .dancing:
-            currentDancePhase = .hipSway
-            dancePhaseTimer = 0.0
-            spawnConfettiBurst()
-        default:
-            break
-        }
     }
 
-    // MARK: - Frame Update (Called per animation tick from TimelineView)
+    // MARK: - Pure Functional Snapshot Evaluation (Zero State Mutation)
 
-    public func update(at currentTime: Double, weatherAtmosphere: WeatherAtmosphere? = nil) {
-        let dt = lastUpdateTime > 0 ? min(0.1, max(0.001, currentTime - lastUpdateTime)) : 0.016
-        lastUpdateTime = currentTime
-        time = currentTime
+    public func evaluateSnapshot(
+        at time: Double,
+        animState: PetAnimState,
+        atmosphere: WeatherAtmosphere? = nil,
+        isSafeMode: Bool = false
+    ) -> AnimationSnapshot {
+        // 1. Organic Breathing
+        let breathFrequency = animState == .sleep ? 1.4 : (animState == .thinking ? 1.8 : 2.6)
+        let breathAmplitude: CGFloat = animState == .sleep ? 2.0 : 3.2
+        let breathOffset = CGFloat(sin(time * breathFrequency) * breathAmplitude)
 
-        // 1. Organic Breathing (Smooth Sinusoidal Oscillation)
-        let breathSpeed = state == .thinking ? 1.8 : 2.4
-        breathOffset = CGFloat(sin(time * breathSpeed) * 3.5)
+        // 2. Deterministic Organic Micro-Blink (Cycle every 3.8s, closed for ~0.15s)
+        let blinkCycle = time.truncatingRemainder(dividingBy: 3.8)
+        let blinkProgress: CGFloat
+        if blinkCycle < 0.16 && animState != .sleep {
+            let half = 0.08
+            if blinkCycle < half {
+                blinkProgress = CGFloat(blinkCycle / half)
+            } else {
+                blinkProgress = CGFloat(1.0 - ((blinkCycle - half) / half))
+            }
+        } else {
+            blinkProgress = animState == .sleep ? 1.0 : 0.0
+        }
 
-        // 2. Micro-Blink Simulation (Random intervals 2.5s - 5.5s with fast eye closure)
-        updateMicroBlinks(dt: dt)
+        // 3. Eye Gaze (Calm saccades or conversational tracking)
+        let eyeOffset: CGPoint
+        if state == .streamingResponse {
+            let saccade = sin(time * 14.0)
+            eyeOffset = CGPoint(x: CGFloat(saccade * 3.5), y: CGFloat(cos(time * 8.0) * 1.5))
+        } else {
+            let gazeCycle = sin(time * 0.8)
+            eyeOffset = CGPoint(x: CGFloat(gazeCycle * 2.0), y: CGFloat(sin(time * 0.4) * 1.0))
+        }
 
-        // 3. Eye Gaze Tracking & Conversational Head Tracking
-        updateGazeAndHead(dt: dt)
+        // 4. Head Tilt & Levitation
+        let headTiltAngle: Angle
+        let levitationOffset: CGFloat
+        let squashStretch: CGSize
 
-        // 4. Tail & Body Kinematics
-        updateTailAndLevitation(dt: dt)
-
-        // 5. State-Specific Motion Kinematics
         switch state {
         case .idle:
+            headTiltAngle = Angle(degrees: sin(time * 1.2) * 2.5)
+            levitationOffset = 0.0
             squashStretch = CGSize(
-                width: 1.0 - (breathOffset * 0.012),
-                height: 1.0 + (breathOffset * 0.015)
+                width: 1.0 - (breathOffset * 0.008),
+                height: 1.0 + (breathOffset * 0.010)
             )
 
         case .thinking:
-            // Sinusoidal levitation bobbing
-            levitationOffset = CGFloat(sin(time * 3.0) * 8.0)
-            headTiltAngle = Angle(degrees: sin(time * 1.5) * 6.0)
-            updateThoughtSparks(dt: dt)
+            headTiltAngle = Angle(degrees: sin(time * 2.0) * 5.0)
+            levitationOffset = CGFloat(sin(time * 3.0) * 6.0)
+            squashStretch = CGSize(width: 0.98, height: 1.03)
 
         case .streamingResponse:
-            // Rapid conversational eye tracking and head bounce
-            headTiltAngle = Angle(degrees: sin(time * 12.0) * 4.0)
-            levitationOffset = CGFloat(abs(sin(time * 8.0)) * 5.0)
+            headTiltAngle = Angle(degrees: sin(time * 10.0) * 4.0)
+            levitationOffset = CGFloat(abs(sin(time * 8.0)) * 4.5)
             squashStretch = CGSize(
-                width: 1.0 + CGFloat(sin(time * 14.0) * 0.04),
-                height: 1.0 - CGFloat(sin(time * 14.0) * 0.04)
+                width: 1.0 + CGFloat(sin(time * 12.0) * 0.03),
+                height: 1.0 - CGFloat(sin(time * 12.0) * 0.03)
             )
 
         case .walking(let gait):
-            updateWalkingKinematics(gait: gait, dt: dt)
+            switch gait {
+            case .bouncyMarch:
+                let step = sin(time * 8.0)
+                headTiltAngle = Angle(degrees: step * 5.0)
+                levitationOffset = CGFloat(abs(step) * 10.0)
+                squashStretch = CGSize(width: 1.0 - (step * 0.08), height: 1.0 + (step * 0.10))
+            case .stealthProwl:
+                let prowl = sin(time * 4.0)
+                headTiltAngle = Angle(degrees: prowl * 6.0)
+                levitationOffset = CGFloat(prowl * 2.5)
+                squashStretch = CGSize(width: 1.06, height: 0.95)
+            case .hoverGlide:
+                headTiltAngle = Angle(degrees: sin(time * 2.5) * 3.5)
+                levitationOffset = CGFloat(sin(time * 2.8) * 8.0)
+                squashStretch = CGSize(width: 1.02, height: 1.02)
+            }
 
-        case .dancing(let phase):
-            updateDancingKinematics(phase: phase, dt: dt)
+        case .dancing:
+            let beat = sin(time * 7.5)
+            headTiltAngle = Angle(degrees: beat * 18.0)
+            levitationOffset = CGFloat(abs(beat) * 12.0)
+            squashStretch = CGSize(width: 1.0 + CGFloat(beat * 0.10), height: 1.0 - CGFloat(beat * 0.08))
         }
 
-        // 6. Weather Atmospheric Particles
-        if let wx = weatherAtmosphere {
-            updateWeatherParticles(atmosphere: wx, dt: dt)
-        }
-    }
+        // 5. Species-Specific Kinematics
+        let tailWagAngle = Angle(degrees: sin(time * 3.6) * 12.0)
+        let walkCyclePhase = (time * 8.0).truncatingRemainder(dividingBy: 2.0 * .pi)
+        let hopProgress = max(0.0, sin(time * 6.0))
+        let wingFlapAngle = Angle(degrees: sin(time * 8.0) * 24.0)
+        let ghostWaveOffset = CGFloat(sin(time * 3.2) * 5.0)
 
-    // MARK: - Kinematic Subsystems
-
-    private func updateMicroBlinks(dt: Double) {
-        if !isBlinking {
-            if time >= nextBlinkTime {
-                isBlinking = true
-                blinkStartTime = time
-                nextBlinkTime = time + Double.random(in: 2.2...5.2)
-            } else {
-                blinkProgress = 0.0
-            }
-        } else {
-            let elapsed = time - blinkStartTime
-            if elapsed < blinkDuration {
-                let half = blinkDuration / 2.0
-                if elapsed < half {
-                    blinkProgress = CGFloat(elapsed / half)
-                } else {
-                    blinkProgress = CGFloat(1.0 - ((elapsed - half) / half))
-                }
-            } else {
-                isBlinking = false
-                blinkProgress = 0.0
-            }
-        }
-    }
-
-    private func updateGazeAndHead(dt: Double) {
-        if state == .streamingResponse {
-            // High frequency conversational micro-saccades
-            if time >= nextGazeShiftTime {
-                targetEyeOffset = CGPoint(
-                    x: CGFloat.random(in: -3.5...3.5),
-                    y: CGFloat.random(in: -2.0...2.0)
-                )
-                nextGazeShiftTime = time + Double.random(in: 0.12...0.35)
-            }
-        } else {
-            // Calm natural gaze shifts
-            if time >= nextGazeShiftTime {
-                targetEyeOffset = CGPoint(
-                    x: CGFloat.random(in: -2.5...2.5),
-                    y: CGFloat.random(in: -1.5...1.5)
-                )
-                nextGazeShiftTime = time + Double.random(in: 1.8...4.5)
+        // 6. Thought Sparks (Only if not in Safe Mode and in thinking state)
+        var sparks: [ThoughtSpark] = []
+        if !isSafeMode && (state == .thinking || animState == .thinking) {
+            for i in 0..<5 {
+                let sparkT = (time * 1.5 + Double(i) * 0.7).truncatingRemainder(dividingBy: 2.0)
+                let life = sparkT / 2.0
+                let x = 60.0 + CGFloat(sin(Double(i) * 1.8 + time * 2.0) * 22.0)
+                let y = 50.0 - CGFloat(life * 32.0)
+                sparks.append(ThoughtSpark(
+                    id: i,
+                    x: x,
+                    y: y,
+                    size: CGFloat(4.0 - life * 2.0),
+                    alpha: max(0.0, 1.0 - life),
+                    hue: 0.6 + Double(i) * 0.08
+                ))
             }
         }
 
-        // Smoothly interpolate eye position towards target
-        let lerpFactor: CGFloat = CGFloat(dt * 10.0)
-        eyeOffset.x += (targetEyeOffset.x - eyeOffset.x) * lerpFactor
-        eyeOffset.y += (targetEyeOffset.y - eyeOffset.y) * lerpFactor
-    }
-
-    private func updateTailAndLevitation(dt: Double) {
-        let wagSpeed = state == .dancing(phase: currentDancePhase) ? 12.0 : (state == .streamingResponse ? 8.0 : 3.2)
-        tailWagAngle = Angle(degrees: sin(time * wagSpeed) * 14.0)
-    }
-
-    private func updateWalkingKinematics(gait: WalkGaitPreset, dt: Double) {
-        switch gait {
-        case .bouncyMarch:
-            // High vertical pop with snappy footfall
-            let cycle = sin(time * 8.0)
-            levitationOffset = CGFloat(abs(cycle) * 12.0)
-            headTiltAngle = Angle(degrees: cycle * 5.0)
-            squashStretch = CGSize(
-                width: 1.0 - (cycle * 0.08),
-                height: 1.0 + (cycle * 0.10)
-            )
-
-        case .stealthProwl:
-            // Low horizontal glide with smooth lateral prowl
-            levitationOffset = CGFloat(sin(time * 4.0) * 3.0)
-            headTiltAngle = Angle(degrees: sin(time * 4.0) * 8.0)
-            squashStretch = CGSize(width: 1.08, height: 0.94)
-
-        case .hoverGlide:
-            // Inertial suspended floating wave with lag
-            levitationOffset = CGFloat(sin(time * 2.5) * 9.0)
-            headTiltAngle = Angle(degrees: sin(time * 2.0) * 4.0)
-            squashStretch = CGSize(width: 1.02, height: 1.02)
-        }
-    }
-
-    private func updateDancingKinematics(phase: DancePhase, dt: Double) {
-        dancePhaseTimer += dt
-        if dancePhaseTimer > 2.5 {
-            dancePhaseTimer = 0.0
-            let nextIndex = (currentDancePhase.rawValue + 1) % DancePhase.allCases.count
-            currentDancePhase = DancePhase(rawValue: nextIndex) ?? .hipSway
-            if currentDancePhase == .confettiPop {
-                spawnConfettiBurst()
+        // 7. Confetti (Only during dancing and if particles enabled)
+        var confetti: [ConfettiParticle] = []
+        if !isSafeMode && animState == .dance {
+            let colors: [Color] = [.pink, .yellow, .cyan, .purple, .green, .orange]
+            for i in 0..<12 {
+                let confT = (time * 1.8 + Double(i) * 0.35).truncatingRemainder(dividingBy: 2.0)
+                let progress = confT / 2.0
+                let x = 70.0 + CGFloat(cos(Double(i) * 1.2) * 35.0 * progress)
+                let y = 60.0 - CGFloat(sin(Double(i) * 0.8) * 45.0 * progress) + CGFloat(progress * progress * 60.0)
+                confetti.append(ConfettiParticle(
+                    id: i,
+                    x: x,
+                    y: y,
+                    rotation: Double(i) * 45.0 + time * 180.0,
+                    color: colors[i % colors.count],
+                    size: CGSize(width: 5, height: 8),
+                    alpha: max(0.0, 1.0 - progress)
+                ))
             }
         }
 
-        switch currentDancePhase {
-        case .hipSway:
-            headTiltAngle = Angle(degrees: sin(time * 7.0) * 16.0)
-            levitationOffset = CGFloat(abs(sin(time * 7.0)) * 6.0)
-            squashStretch = CGSize(width: 1.0 + CGFloat(sin(time * 7.0) * 0.08), height: 1.0)
-
-        case .jumpTwist:
-            let pop = abs(sin(time * 9.0))
-            levitationOffset = CGFloat(pop * 16.0)
-            headTiltAngle = Angle(degrees: sin(time * 9.0) * 22.0)
-            squashStretch = CGSize(width: 1.0 - CGFloat(pop * 0.12), height: 1.0 + CGFloat(pop * 0.18))
-
-        case .confettiPop:
-            levitationOffset = CGFloat(sin(time * 6.0) * 8.0)
-            headTiltAngle = Angle(degrees: sin(time * 5.0) * 10.0)
-            updateConfetti(dt: dt)
-
-        case .audioStep:
-            // Rhythmic side-step
-            let beat = CGFloat(abs(sin(time * 10.0)))
-            levitationOffset = beat * 10.0
-            headTiltAngle = Angle(degrees: (sin(time * 5.0) > 0 ? 1 : -1) * 12.0)
-            squashStretch = CGSize(width: 1.0 - beat * 0.06, height: 1.0 + beat * 0.10)
-        }
-    }
-
-    // MARK: - Particles Engine
-
-    public func spawnThoughtSparks() {
-        thoughtSparks.removeAll()
-        for _ in 0..<7 {
-            let spark = ThoughtSpark(
-                x: CGFloat.random(in: 40...100),
-                y: CGFloat.random(in: 30...70),
-                vx: CGFloat.random(in: -10...10),
-                vy: CGFloat.random(in: -25 ... -12),
-                size: CGFloat.random(in: 3...7),
-                alpha: Double.random(in: 0.6...1.0),
-                hue: Double.random(in: 0.5...0.85),
-                life: Double.random(in: 0.0...0.4)
-            )
-            thoughtSparks.append(spark)
-        }
-    }
-
-    private func updateThoughtSparks(dt: Double) {
-        for i in thoughtSparks.indices {
-            thoughtSparks[i].x += thoughtSparks[i].vx * CGFloat(dt)
-            thoughtSparks[i].y += thoughtSparks[i].vy * CGFloat(dt)
-            thoughtSparks[i].life += dt * 0.6
-            thoughtSparks[i].alpha = max(0, 1.0 - thoughtSparks[i].life)
-            if thoughtSparks[i].life >= 1.0 {
-                // Respawn spark
-                thoughtSparks[i].x = CGFloat.random(in: 45...95)
-                thoughtSparks[i].y = CGFloat.random(in: 45...75)
-                thoughtSparks[i].life = 0.0
-                thoughtSparks[i].alpha = 0.9
+        // 8. Weather Overlay (Only if enabled and active)
+        var weatherParts: [WeatherAtmosphereParticle] = []
+        if !isSafeMode, let atmo = atmosphere, atmo == .rain || atmo == .snow {
+            let isRain = atmo == .rain
+            for i in 0..<8 {
+                let pT = (time * (isRain ? 4.0 : 1.2) + Double(i) * 0.4).truncatingRemainder(dividingBy: 2.0)
+                let progress = pT / 2.0
+                let x = CGFloat(i * 18 + 5)
+                let y = CGFloat(progress * 130.0) - 10.0
+                weatherParts.append(WeatherAtmosphereParticle(
+                    id: i,
+                    x: x,
+                    y: y,
+                    size: isRain ? 1.5 : 3.0,
+                    alpha: Double(0.4 + sin(Double(i)) * 0.3),
+                    length: isRain ? 10.0 : 0.0
+                ))
             }
         }
-    }
 
-    public func spawnConfettiBurst() {
-        let colors: [Color] = [.pink, .yellow, .purple, .cyan, .green, .orange]
-        confettiList.removeAll()
-        for _ in 0..<24 {
-            let confetti = ConfettiParticle(
-                x: 70 + CGFloat.random(in: -20...20),
-                y: 60 + CGFloat.random(in: -10...10),
-                vx: CGFloat.random(in: -45...45),
-                vy: CGFloat.random(in: -70 ... -25),
-                rotation: Double.random(in: 0...360),
-                vRot: Double.random(in: -180...180),
-                color: colors.randomElement() ?? .yellow,
-                size: CGSize(width: CGFloat.random(in: 4...8), height: CGFloat.random(in: 6...12)),
-                life: 0.0
-            )
-            confettiList.append(confetti)
-        }
-    }
-
-    private func updateConfetti(dt: Double) {
-        for i in confettiList.indices {
-            confettiList[i].vy += 120.0 * CGFloat(dt) // Gravity
-            confettiList[i].x += confettiList[i].vx * CGFloat(dt)
-            confettiList[i].y += confettiList[i].vy * CGFloat(dt)
-            confettiList[i].rotation += confettiList[i].vRot * dt
-            confettiList[i].life += dt * 0.7
-        }
-        confettiList.removeAll { $0.life >= 1.0 }
-    }
-
-    private func updateWeatherParticles(atmosphere: WeatherAtmosphere, dt: Double) {
-        switch atmosphere {
-        case .rain, .thunderstorm:
-            if weatherParticles.count < 20 && Double.random(in: 0...1) < 0.4 {
-                weatherParticles.append(
-                    WeatherAtmosphereParticle(
-                        x: CGFloat.random(in: 0...140),
-                        y: -10,
-                        vx: -15,
-                        vy: CGFloat.random(in: 140...220),
-                        size: 1.5,
-                        alpha: Double.random(in: 0.4...0.8),
-                        length: CGFloat.random(in: 6...14)
-                    )
-                )
-            }
-
-        case .snow:
-            if weatherParticles.count < 16 && Double.random(in: 0...1) < 0.3 {
-                weatherParticles.append(
-                    WeatherAtmosphereParticle(
-                        x: CGFloat.random(in: 0...140),
-                        y: -8,
-                        vx: CGFloat.random(in: -12...12),
-                        vy: CGFloat.random(in: 25...55),
-                        size: CGFloat.random(in: 2...5),
-                        alpha: Double.random(in: 0.5...0.9),
-                        length: 0
-                    )
-                )
-            }
-
-        default:
-            weatherParticles.removeAll()
-            return
-        }
-
-        for i in weatherParticles.indices {
-            weatherParticles[i].x += weatherParticles[i].vx * CGFloat(dt)
-            weatherParticles[i].y += weatherParticles[i].vy * CGFloat(dt)
-        }
-        weatherParticles.removeAll { $0.y > 150 || $0.x < -20 || $0.x > 160 }
+        return AnimationSnapshot(
+            time: time,
+            breathOffset: breathOffset,
+            blinkProgress: blinkProgress,
+            eyeOffset: eyeOffset,
+            headTiltAngle: headTiltAngle,
+            levitationOffset: levitationOffset,
+            tailWagAngle: tailWagAngle,
+            squashStretch: squashStretch,
+            walkCyclePhase: walkCyclePhase,
+            hopProgress: hopProgress,
+            wingFlapAngle: wingFlapAngle,
+            ghostWaveOffset: ghostWaveOffset,
+            thoughtSparks: sparks,
+            confettiList: confetti,
+            weatherParticles: weatherParts
+        )
     }
 }

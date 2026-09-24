@@ -25,12 +25,28 @@ Ollama Pet has been rebuilt natively for macOS using **Swift**, **SwiftUI**, and
 
 ---
 
+## ⚡ Highlights & Recent Architectural Improvements
+
+- 📐 **Anchor-Aware Geometry Engine**: Opening and closing the interactive panel dynamically calculates quadrant anchoring relative to the active display (`workArea`). The pet remains locked at its exact visual position without snapping to bottom-right or drifting over repeated open/close cycles (0px cumulative drift).
+- 🔒 **Unified Position Persistence**: Single authoritative position system that restores custom coordinates synchronously on launch. Smooth corner-snapping with a 90px threshold preserves intentional custom edge and center coordinates.
+- 🛡️ **Total Event Isolation**: Control panel inputs, tabs, scrolling, and action buttons are fully protected with `-webkit-app-region: no-drag;` and event propagation guards, eliminating accidental pet window moves or unintended closes.
+- 🎨 **Deep Visual Differentiation**: Each pet character features a bespoke silhouette, unique anatomy, distinct facial features, and dedicated animations:
+  - 🐱 **Mochi (Cat)**: Tapered feline body, pointed ears with pink tufts, crisp whiskers, lavender collar with golden bell, S-curved animated tail, feline `:3` mouth.
+  - 🐉 **Ember (Dragon)**: Horned head ridges, jagged bat wings spreading on sides, scaly belly scutes, flared nostrils puffing ember smoke, talons with sharp black claws, arrowhead spade tail.
+  - 🤖 **ARIA (Robot)**: Chamfered rectangular chassis, corner rivets, overhead antenna with glowing cyan diode, side audio cans, dark visor screen with digital LED matrix eyes & frequency waveform mouth, articulated servo arms, dual magnetic tread pads.
+  - 👻 **BOO (Ghost)**: Floating in mid-air (no feet!), undulating scalloped hem, wispy phantom hands, hollow glowing spooky eyes, orbiting spirit wisps.
+  - 🦊 **KITA (Fox)**: Pointed muzzle with black nose, tall sharp ears with black tips & white fluff, flaring cheek tufts, creamy chest ruff, dark paw stockings, and a massive bushy fluffy fox tail with white tip.
+  - 🐰 **POCHI (Bunny)**: Plump body, extra tall upright rabbit ears with one floppy folded tip, chubby cheeks, twitching pink Y-nose, buck teeth, round white cotton tail, long rabbit hind feet with pads.
+- 🎲 **Random Pet on Launch Toggle**: Choose to keep your favorite pet permanently across sessions or enable the optional "Random Pet on Launch" toggle in More settings.
+
+---
+
 ## ✨ Features
 
 | Feature | What it does |
 |---|---|
 | 💬 **AI Chat** | Talk to your pet using Ollama local models (`gemma4`, `llama3.2`, `phi3`, etc.). Auto-detects installed models and supports exact-prompt retries. |
-| 🐾 **7 Unique Characters** | **Mochi** (Cat 🐱), **Ember** (Dragon 🐉), **ARIA** (Robot 🤖), **NEO** (RobotCat 🐱‍💻), **BOO** (Ghost 👻), **KITA** (Fox 🦊), and **POCHI** (Bunny 🐰) — each with custom animations, colors, and personalities. |
+| 🐾 **7 Unique Characters** | **Mochi** (Cat 🐱), **Ember** (Dragon 🐉), **ARIA** (Robot 🤖), **NEO** (RobotCat 🐱‍💻), **BOO** (Ghost 👻), **KITA** (Fox 🦊), and **POCHI** (Bunny 🐰) — each with custom anatomy, colors, and personalities. |
 | 🎭 **5 Animation States** | `Idle`, `Dance`, `Thinking`, `Sleep` (with Zzz bubbles), and `Shock`. |
 | 🎵 **Music & Dance** | Upload an audio file — the pet dances to an 8-band live beat visualizer with selectable vibes (Pop, Rock, Chill, Rave). |
 | ⏰ **Persistent Reminders** | Set reminders that survive restarts (`~/ollama-pet-data.json`). Immediate overdue alerts if due date passed while offline. |

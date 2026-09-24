@@ -38,6 +38,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('position-reply', handler);
     return () => ipcRenderer.removeListener('position-reply', handler);
   },
+  onAnchorUpdate: (callback) => {
+    const handler = (e, val) => callback(val);
+    ipcRenderer.on('anchor-update', handler);
+    return () => ipcRenderer.removeListener('anchor-update', handler);
+  },
   onDataLoaded: (callback) => {
     const handler = (e, val) => callback(val);
     ipcRenderer.on('data-loaded', handler);

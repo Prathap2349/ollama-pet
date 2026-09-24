@@ -111,6 +111,21 @@ if (!gotLock) {
 }
 
 // ── MULTI-MONITOR POSITION HELPERS ───────────────
+let petClosedPos = null;
+let currentAnchor = { x: 'right', y: 'bottom' };
+
+function loadSavedDataFromDisk() {
+  try {
+    if (fs.existsSync(SAVE_PATH)) {
+      const raw = fs.readFileSync(SAVE_PATH, 'utf8');
+      return JSON.parse(raw);
+    }
+  } catch (err) {
+    console.error('Failed to read saved data from disk:', err.message);
+  }
+  return null;
+}
+
 function getValidWorkAreaForPosition(x, y, w, h) {
   const displays = screen.getAllDisplays();
   if (!displays || displays.length === 0) {
@@ -142,6 +157,7 @@ function ensureWindowOnScreen(targetWin) {
 
   if (Math.abs(curX - valid.x) > 5 || Math.abs(curY - valid.y) > 5) {
     targetWin.setPosition(valid.x, valid.y);
+    if (curW <= 135) petClosedPos = { x: valid.x, y: valid.y };
     targetWin.webContents.send('position-reply', { x: valid.x, y: valid.y });
   }
 
@@ -168,8 +184,17 @@ app.whenReady().then(() => {
 
   const defaultW = 130;
   const defaultH = 145;
-  const defaultX = px + pw - defaultW - 10;
-  const defaultY = py + ph - defaultH - 10;
+  let defaultX = px + pw - defaultW - 10;
+  let defaultY = py + ph - defaultH - 10;
+
+  // Restore saved position directly at launch to prevent jump/drift
+  const savedData = loadSavedDataFromDisk();
+  if (savedData && savedData.position && typeof savedData.position.x === 'number' && typeof savedData.position.y === 'number') {
+    const valid = getValidWorkAreaForPosition(savedData.position.x, savedData.position.y, defaultW, defaultH);
+    defaultX = valid.x;
+    defaultY = valid.y;
+  }
+  petClosedPos = { x: defaultX, y: defaultY };
 
   // Main pet window
   win = new BrowserWindow({
@@ -394,23 +419,75 @@ ipcMain.handle('check-ollama', async () => {
 
 ipcMain.on('set-size', (e, { open }) => {
   if (!win || win.isDestroyed()) return;
-  const display = screen.getDisplayMatching(win.getBounds());
-  const { x, y, width, height } = display.workArea;
 
-  const newW = open ? 340 : 130;
-  const newH = open ? 640 : 145;
+  // 1. Resolve display and workArea BEFORE resizing
+  const currentBounds = win.getBounds();
+  const display = screen.getDisplayMatching(currentBounds);
+  const wa = display.workArea;
 
-  const newX = x + width - newW - 10;
-  const newY = y + height - newH - 10;
+  const closedW = 130;
+  const closedH = 145;
+  const openW = 340;
+  const openH = 640;
 
-  win.setSize(newW, newH);
-  win.setPosition(newX, newY);
+  if (open) {
+    if (!petClosedPos) {
+      petClosedPos = { x: currentBounds.x, y: currentBounds.y };
+    }
+
+    // Determine anchor based on pet closed position relative to the display work area
+    const isLeft = (petClosedPos.x + closedW / 2) < (wa.x + wa.width / 2);
+    const isTop = (petClosedPos.y + closedH / 2) < (wa.y + wa.height / 2);
+    currentAnchor = { x: isLeft ? 'left' : 'right', y: isTop ? 'top' : 'bottom' };
+
+    let targetX = isLeft ? petClosedPos.x : petClosedPos.x - (openW - closedW);
+    let targetY = isTop ? petClosedPos.y : petClosedPos.y - (openH - closedH);
+
+    // Strictly clamp within the SAME display's workArea
+    targetX = Math.max(wa.x, Math.min(targetX, wa.x + wa.width - openW));
+    targetY = Math.max(wa.y, Math.min(targetY, wa.y + wa.height - openH));
+
+    win.webContents.send('anchor-update', currentAnchor);
+    win.setBounds({
+      x: Math.round(targetX),
+      y: Math.round(targetY),
+      width: openW,
+      height: openH
+    });
+  } else {
+    // Restoring to closed pet position with ZERO drift
+    const targetX = petClosedPos ? petClosedPos.x : currentBounds.x;
+    const targetY = petClosedPos ? petClosedPos.y : currentBounds.y;
+
+    const clampedX = Math.max(wa.x, Math.min(targetX, wa.x + wa.width - closedW));
+    const clampedY = Math.max(wa.y, Math.min(targetY, wa.y + wa.height - closedH));
+    petClosedPos = { x: clampedX, y: clampedY };
+
+    win.setBounds({
+      x: Math.round(clampedX),
+      y: Math.round(clampedY),
+      width: closedW,
+      height: closedH
+    });
+    win.webContents.send('position-reply', petClosedPos);
+  }
 });
 
 ipcMain.on('move-win', (e, { x, y }) => {
   if (!win || win.isDestroyed()) return;
   if (typeof x !== 'number' || typeof y !== 'number' || isNaN(x) || isNaN(y)) return;
-  win.setPosition(Math.round(x), Math.round(y));
+  const roundX = Math.round(x);
+  const roundY = Math.round(y);
+  win.setPosition(roundX, roundY);
+
+  const [w] = win.getSize();
+  if (w <= 135) {
+    petClosedPos = { x: roundX, y: roundY };
+  } else {
+    const closedX = currentAnchor.x === 'left' ? roundX : roundX + (340 - 130);
+    const closedY = currentAnchor.y === 'top' ? roundY : roundY + (640 - 145);
+    petClosedPos = { x: closedX, y: closedY };
+  }
 });
 
 ipcMain.on('snap-corner', () => {
@@ -420,10 +497,31 @@ ipcMain.on('snap-corner', () => {
   const [cx, cy] = win.getPosition();
   const [cw, ch] = win.getSize();
 
-  const snapX = (cx + cw / 2 < x + width / 2) ? x + 10 : x + width - cw - 10;
-  const snapY = (cy + ch / 2 < y + height / 2) ? y + 10 : y + height - ch - 10;
+  const CORNER_THRESHOLD = 90;
+  const nearLeft = Math.abs(cx - (x + 10)) < CORNER_THRESHOLD;
+  const nearRight = Math.abs(cx - (x + width - cw - 10)) < CORNER_THRESHOLD;
+  const nearTop = Math.abs(cy - (y + 10)) < CORNER_THRESHOLD;
+  const nearBottom = Math.abs(cy - (y + height - ch - 10)) < CORNER_THRESHOLD;
+
+  let snapX = cx;
+  let snapY = cy;
+
+  if ((nearLeft || nearRight) && (nearTop || nearBottom)) {
+    snapX = nearLeft ? (x + 10) : (x + width - cw - 10);
+    snapY = nearTop ? (y + 10) : (y + height - ch - 10);
+  } else {
+    snapX = Math.max(x + 10, Math.min(cx, x + width - cw - 10));
+    snapY = Math.max(y + 10, Math.min(cy, y + height - ch - 10));
+  }
 
   win.setPosition(snapX, snapY);
+  if (cw <= 135) {
+    petClosedPos = { x: snapX, y: snapY };
+  } else {
+    const closedX = currentAnchor.x === 'left' ? snapX : snapX + (340 - 130);
+    const closedY = currentAnchor.y === 'top' ? snapY : snapY + (640 - 145);
+    petClosedPos = { x: closedX, y: closedY };
+  }
   win.webContents.send('position-reply', { x: snapX, y: snapY });
 });
 
@@ -456,9 +554,16 @@ ipcMain.on('load-data', (e) => {
     if (fs.existsSync(SAVE_PATH)) {
       const raw = fs.readFileSync(SAVE_PATH, 'utf8');
       const d = JSON.parse(raw);
+      const validChars = ['cat', 'dragon', 'robot', 'ghost', 'fox', 'bunny'];
+      let chosenChar = typeof d.currentChar === 'string' && validChars.includes(d.currentChar) ? d.currentChar : 'cat';
+      if (d.randomCharOnLaunch === true) {
+        chosenChar = validChars[Math.floor(Math.random() * validChars.length)];
+      }
+
       const validated = {
         version: d.version || CURRENT_SCHEMA_VERSION,
-        currentChar: typeof d.currentChar === 'string' ? d.currentChar : 'cat',
+        currentChar: chosenChar,
+        randomCharOnLaunch: !!d.randomCharOnLaunch,
         streak: typeof d.streak === 'number' ? d.streak : 0,
         lastChatDate: typeof d.lastChatDate === 'string' ? d.lastChatDate : '',
         moodPoints: typeof d.moodPoints === 'number' ? d.moodPoints : 100,
@@ -477,6 +582,7 @@ ipcMain.on('load-data', (e) => {
         const [w, h] = win.getSize();
         const valid = getValidWorkAreaForPosition(validated.position.x, validated.position.y, w, h);
         validated.position = { x: valid.x, y: valid.y };
+        petClosedPos = { x: valid.x, y: valid.y };
       }
 
       win.webContents.send('data-loaded', validated);
@@ -515,7 +621,9 @@ ipcMain.on('walk-char', (e, svgContent) => {
 ipcMain.on('get-position', (e) => {
   if (win && !win.isDestroyed()) {
     const [x, y] = win.getPosition();
-    e.reply('position-reply', { x, y });
+    const [w] = win.getSize();
+    const pos = (w <= 135 && petClosedPos) ? petClosedPos : { x, y };
+    e.reply('position-reply', pos);
   }
 });
 

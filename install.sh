@@ -21,6 +21,8 @@ else
     FINAL_PATH="$USER_DEST"
 fi
 
+touch "dist-native/.metadata_never_index" 2>/dev/null || true
+
 echo "✓ Successfully installed to: ${FINAL_PATH}"
 echo "Launching Ollama Pet..."
 open "${FINAL_PATH}"

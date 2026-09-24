@@ -80,17 +80,7 @@ public class DataManager: ObservableObject {
     }
 
     public func postNotification(title: String, body: String) {
-        guard Bundle.main.bundleIdentifier != nil else {
-            print("Notification (CLI fallback): [\(title)] \(body)")
-            return
-        }
-        let content = UNMutableNotificationContent()
-        content.title = title
-        content.body = body
-        content.sound = .default
-
-        let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
-        UNUserNotificationCenter.current().add(request)
+        NotificationScheduler.shared.postImmediate(title: title, body: body)
     }
 
     public func addReminder(text: String, minutes: Int) {
@@ -103,9 +93,20 @@ public class DataManager: ObservableObject {
         let newReminder = PetReminder(text: text, due: due)
         savedData.reminders.append(newReminder)
         saveData()
+
+        // Schedule native macOS UserNotification trigger immediately
+        NotificationScheduler.shared.scheduleReminder(
+            id: newReminder.id,
+            text: text,
+            inSeconds: secs,
+            notificationId: newReminder.notificationId
+        )
     }
 
     public func removeReminder(id: Int64) {
+        if let reminder = savedData.reminders.first(where: { $0.id == id }) {
+            NotificationScheduler.shared.cancelReminder(notificationId: reminder.notificationId ?? "reminder-\(id)")
+        }
         savedData.reminders.removeAll { $0.id == id }
         saveData()
     }
@@ -123,7 +124,6 @@ public class DataManager: ObservableObject {
         for item in overdue {
             onTrigger(item, true)
             removeReminder(id: item.id)
-            postNotification(title: "⏰ Reminder Overdue", body: item.text)
         }
     }
 

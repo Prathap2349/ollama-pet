@@ -7,6 +7,7 @@ public enum MacActionType: String, Codable, CaseIterable {
     case openURL = "OPEN_URL"
     case searchWeb = "SEARCH_WEB"
     case createReminder = "CREATE_REMINDER"
+    case setTimer = "SET_TIMER"
     case openReminders = "OPEN_REMINDERS"
     case openCalendar = "OPEN_CALENDAR"
     case openWhatsApp = "OPEN_WHATSAPP"
@@ -24,6 +25,7 @@ public enum MacActionType: String, Codable, CaseIterable {
         case .openURL: return "Open Website"
         case .searchWeb: return "Search Web"
         case .createReminder: return "Create Reminder"
+        case .setTimer: return "Set Timer"
         case .openReminders: return "Open Reminders"
         case .openCalendar: return "Open Calendar"
         case .openWhatsApp: return "Open WhatsApp"
@@ -59,6 +61,7 @@ public struct MacAction: Identifiable, Codable, Equatable {
     public let type: MacActionType
     public var app: String?
     public var url: String?
+    public var browser: String?          // nil for default, or "Safari", "Google Chrome", "Firefox", "Microsoft Edge"
     public var query: String?
     public var reminderTitle: String?
     public var delaySeconds: Int?
@@ -75,6 +78,7 @@ public struct MacAction: Identifiable, Codable, Equatable {
         type: MacActionType,
         app: String? = nil,
         url: String? = nil,
+        browser: String? = nil,
         query: String? = nil,
         reminderTitle: String? = nil,
         delaySeconds: Int? = nil,
@@ -90,6 +94,7 @@ public struct MacAction: Identifiable, Codable, Equatable {
         self.type = type
         self.app = app
         self.url = url
+        self.browser = browser
         self.query = query
         self.reminderTitle = reminderTitle
         self.delaySeconds = delaySeconds
@@ -120,12 +125,21 @@ public struct MacAction: Identifiable, Codable, Equatable {
         case .openApp:
             return "Open application '\(app ?? "App")'"
         case .openURL:
+            if let b = browser, !b.isEmpty {
+                return "Open '\(url ?? "URL")' in \(b)"
+            }
             return "Open website '\(url ?? "URL")'"
         case .searchWeb:
+            if let b = browser, !b.isEmpty {
+                return "Search '\(query ?? "")' in \(b)"
+            }
             return "Search web for '\(query ?? "")'"
         case .createReminder:
             let delayStr = formatDelay(delaySeconds ?? 60)
             return "Reminder: '\(reminderTitle ?? "")' in \(delayStr)"
+        case .setTimer:
+            let delayStr = formatDelay(delaySeconds ?? 60)
+            return "Timer: \(delayStr)"
         case .openReminders:
             return "Open Reminders app"
         case .openCalendar:

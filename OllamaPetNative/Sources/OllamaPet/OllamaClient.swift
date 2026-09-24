@@ -11,6 +11,7 @@ public class OllamaClient: ObservableObject {
     @Published public var isChecking: Bool = false
 
     private let baseURL = URL(string: "http://127.0.0.1:11434")!
+    public var endpoint: String { baseURL.absoluteString }
     private let session: URLSession
 
     public init() {

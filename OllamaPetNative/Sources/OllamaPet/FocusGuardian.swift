@@ -76,6 +76,14 @@ public class FocusGuardian: ObservableObject {
             ScreenGuardian.shared.startMonitoring()
         }
 
+        // Schedule native notification trigger so it fires even if pet window is closed
+        NotificationScheduler.shared.scheduleTimer(
+            timerId: "focus-session",
+            title: "🎯 Focus Complete",
+            body: "You completed your focus session! Take a break.",
+            inSeconds: secs
+        )
+
         PetState.shared.showBubble("🎯 Focus session started! Let's do this!", duration: 2.5)
         SoundEffect.wake.play()
     }
@@ -89,6 +97,8 @@ public class FocusGuardian: ObservableObject {
         isSessionActive = false
         sessionTimer?.invalidate()
         sessionTimer = nil
+
+        NotificationScheduler.shared.cancelTimer(timerId: "focus-session")
 
         // Release vision and screen monitoring
         VisionGuardian.shared.stopSession()
@@ -142,6 +152,8 @@ public class FocusGuardian: ObservableObject {
 
         VisionGuardian.shared.stopSession()
         ScreenGuardian.shared.stopMonitoring()
+
+        NotificationScheduler.shared.cancelTimer(timerId: "focus-session")
 
         PetState.shared.showBubble("🎉 Focus session completed! Great job!", duration: 5.0)
         SoundEffect.receive.play()

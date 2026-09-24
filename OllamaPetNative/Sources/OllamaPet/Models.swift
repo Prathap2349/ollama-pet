@@ -202,13 +202,22 @@ public struct PetReminder: Identifiable, Codable, Equatable {
     public var due: Double // epoch milliseconds
     public var createdAt: Double
     public var status: String // "pending", "completed"
+    public var notificationId: String?
 
-    public init(id: Int64 = Int64(Date().timeIntervalSince1970 * 1000), text: String, due: Double, createdAt: Double = Date().timeIntervalSince1970 * 1000, status: String = "pending") {
+    public init(
+        id: Int64 = Int64(Date().timeIntervalSince1970 * 1000),
+        text: String,
+        due: Double,
+        createdAt: Double = Date().timeIntervalSince1970 * 1000,
+        status: String = "pending",
+        notificationId: String? = nil
+    ) {
         self.id = id
         self.text = text
         self.due = due
         self.createdAt = createdAt
         self.status = status
+        self.notificationId = notificationId ?? "reminder-\(id)"
     }
 }
 
@@ -315,7 +324,7 @@ public struct PetSavedData: Codable {
         speechVolume: Double? = 1.0,
         speakAiResponses: Bool? = true,
         walkSpeed: Double? = 1.0,
-        shortcutVoice: String? = "⌘⇧Space",
+        shortcutVoice: String? = "⌘⇧V",
         shortcutTogglePet: String? = "⌘⇧P",
         shortcutSettings: String? = "⌘⇧,",
         cameraAwarenessEnabled: Bool? = false,

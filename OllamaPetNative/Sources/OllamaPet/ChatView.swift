@@ -118,7 +118,7 @@ struct ChatView: View {
                         tabButton(title: "Weather", id: "weather", icon: "cloud.sun")
                     }
                     if dataManager.isFeatureVisible("game") {
-                        tabButton(title: "Music & Play", id: "game", icon: "music.note")
+                        tabButton(title: "Focus & Audio", id: "game", icon: "headphones")
                     }
                     if dataManager.isFeatureVisible("system") {
                         tabButton(title: "System", id: "system", icon: "cpu")
@@ -237,7 +237,7 @@ struct ChatView: View {
                         .foregroundColor(voiceAssistant.state == .listening ? Color.red : (voiceAssistant.isSpeaking ? petState.currentSpecies.accentColor : Color.white.opacity(0.7)))
                 }
                 .buttonStyle(.plain)
-                .help("Push-to-Talk Voice Assistant (⌘⇧Space)")
+                .help("Push-to-Talk Voice Assistant (\(ShortcutManager.shared.voiceShortcut.displayString))")
 
                 TextField(voiceAssistant.state == .listening ? "Listening to your voice..." : "Message \(petState.currentSpecies.displayName)...", text: $inputText)
                     .textFieldStyle(.plain)
@@ -838,55 +838,6 @@ struct ChatView: View {
                 .padding(10)
                 .background(Color.white.opacity(0.04))
                 .cornerRadius(10)
-
-                Divider().background(Color.white.opacity(0.1))
-
-                // Mini Games: RPS & Trivia
-                VStack(spacing: 8) {
-                    Text("Mini Games")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundColor(.white)
-
-                    HStack(spacing: 16) {
-                        Button("✊ Rock") { petState.playRPS(choice: "✊") }
-                        Button("✋ Paper") { petState.playRPS(choice: "✋") }
-                        Button("✌️ Scissors") { petState.playRPS(choice: "✌️") }
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-
-                    if !petState.rpsResult.isEmpty {
-                        Text(petState.rpsResult)
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundColor(petState.currentSpecies.accentColor)
-                    }
-
-                    Button("Load Trivia Question") {
-                        Task { await petState.fetchTrivia() }
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-
-                    if !petState.triviaQuestion.isEmpty {
-                        VStack(spacing: 4) {
-                            Text(petState.triviaQuestion)
-                                .font(.system(size: 11))
-                                .foregroundColor(.white)
-                                .multilineTextAlignment(.center)
-
-                            ForEach(petState.triviaAnswers, id: \.self) { ans in
-                                Button(ans) {
-                                    petState.answerTrivia(ans)
-                                }
-                                .buttonStyle(.bordered)
-                                .controlSize(.mini)
-                            }
-                        }
-                        .padding(8)
-                        .background(Color.white.opacity(0.06))
-                        .cornerRadius(8)
-                    }
-                }
             }
             .padding(12)
         }

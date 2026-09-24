@@ -124,6 +124,21 @@ public struct ActionValidator {
             verifiedAction.delaySeconds = delay
             return .valid(verifiedAction)
 
+        case .setTimer:
+            guard settings.remindersEnabled else {
+                return .blocked("Timers and reminders are disabled in Settings.")
+            }
+            let delay = action.delaySeconds ?? 60
+            guard delay > 0 else {
+                return .blocked("Timer duration must be greater than zero.")
+            }
+            guard delay <= (24 * 3600) else {
+                return .blocked("Timer duration cannot exceed 24 hours.")
+            }
+            var verifiedAction = action
+            verifiedAction.delaySeconds = delay
+            return .valid(verifiedAction)
+
         case .openReminders:
             guard settings.remindersEnabled else {
                 return .blocked("Reminders integration is disabled in Settings.")

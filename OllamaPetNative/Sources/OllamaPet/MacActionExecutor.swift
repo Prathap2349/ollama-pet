@@ -115,11 +115,21 @@ public class MacActionExecutor {
             guard let urlStr = action.url, let url = URL(string: urlStr) else {
                 throw NSError(domain: "MacAction", code: 400, userInfo: [NSLocalizedDescriptionKey: "Invalid website URL."])
             }
-            let success = NSWorkspace.shared.open(url)
-            if success {
-                return "Opened \(urlStr)"
+            if let browserName = action.browser, !browserName.isEmpty {
+                guard let browserURL = findBrowserAppURL(browserName: browserName) else {
+                    throw NSError(domain: "MacAction", code: 404, userInfo: [NSLocalizedDescriptionKey: "\(browserName) is not installed."])
+                }
+                let config = NSWorkspace.OpenConfiguration()
+                config.activates = true
+                _ = try await NSWorkspace.shared.open([url], withApplicationAt: browserURL, configuration: config)
+                return "Opened \(urlStr) in \(browserName)"
             } else {
-                throw NSError(domain: "MacAction", code: 500, userInfo: [NSLocalizedDescriptionKey: "Unable to open URL in browser."])
+                let success = NSWorkspace.shared.open(url)
+                if success {
+                    return "Opened \(urlStr)"
+                } else {
+                    throw NSError(domain: "MacAction", code: 500, userInfo: [NSLocalizedDescriptionKey: "Unable to open URL in browser."])
+                }
             }
 
         case .searchWeb:
@@ -128,11 +138,21 @@ public class MacActionExecutor {
             }
             let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
             let searchURL = URL(string: "https://www.google.com/search?q=\(encoded)")!
-            let success = NSWorkspace.shared.open(searchURL)
-            if success {
-                return "Searched web for '\(query)'"
+            if let browserName = action.browser, !browserName.isEmpty {
+                guard let browserURL = findBrowserAppURL(browserName: browserName) else {
+                    throw NSError(domain: "MacAction", code: 404, userInfo: [NSLocalizedDescriptionKey: "\(browserName) is not installed."])
+                }
+                let config = NSWorkspace.OpenConfiguration()
+                config.activates = true
+                _ = try await NSWorkspace.shared.open([searchURL], withApplicationAt: browserURL, configuration: config)
+                return "Searched web for '\(query)' in \(browserName)"
             } else {
-                throw NSError(domain: "MacAction", code: 500, userInfo: [NSLocalizedDescriptionKey: "Unable to open browser search."])
+                let success = NSWorkspace.shared.open(searchURL)
+                if success {
+                    return "Searched web for '\(query)'"
+                } else {
+                    throw NSError(domain: "MacAction", code: 500, userInfo: [NSLocalizedDescriptionKey: "Unable to open browser search."])
+                }
             }
 
         case .createReminder:
@@ -143,6 +163,18 @@ public class MacActionExecutor {
             DataManager.shared.addReminder(text: title, seconds: delay)
             let formattedDelay = formatSeconds(delay)
             return "Reminder set: '\(title)' in \(formattedDelay)"
+
+        case .setTimer:
+            let delay = action.delaySeconds ?? 60
+            let formattedDelay = formatSeconds(delay)
+            let timerId = UUID().uuidString
+            NotificationScheduler.shared.scheduleTimer(
+                timerId: timerId,
+                title: "Timer Finished",
+                body: "Your \(formattedDelay) timer has ended.",
+                inSeconds: delay
+            )
+            return "Timer set for \(formattedDelay)"
 
         case .openReminders:
             if let url = URL(string: "x-apple-reminderkit:") {
@@ -266,11 +298,34 @@ public class MacActionExecutor {
         )
     }
 
+    private func findBrowserAppURL(browserName: String) -> URL? {
+        let bId = bundleId(for: browserName)
+        if !bId.isEmpty, let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bId) {
+            return url
+        }
+        let candidates = [
+            "/Applications/\(browserName).app",
+            "/Applications/Google Chrome.app",
+            "/Applications/Safari.app",
+            "/Applications/Firefox.app",
+            "/Applications/Microsoft Edge.app",
+            FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications/\(browserName).app").path
+        ]
+        for path in candidates {
+            if FileManager.default.fileExists(atPath: path) {
+                return URL(fileURLWithPath: path)
+            }
+        }
+        return nil
+    }
+
     private func bundleId(for appName: String) -> String {
         let lower = appName.lowercased()
         switch lower {
         case "safari": return "com.apple.Safari"
         case "chrome", "google chrome": return "com.google.Chrome"
+        case "firefox": return "org.mozilla.firefox"
+        case "edge", "microsoft edge": return "com.microsoft.edgemac"
         case "messages": return "com.apple.MobileSMS"
         case "whatsapp": return "net.whatsapp.WhatsApp"
         case "calendar": return "com.apple.iCal"

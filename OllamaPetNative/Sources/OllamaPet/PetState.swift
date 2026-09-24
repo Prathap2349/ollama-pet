@@ -25,20 +25,6 @@ public class PetState: ObservableObject {
 
     @Published public var animTime: Double = 0.0
 
-    // Pomodoro
-    @Published public var pomoSeconds: Int = 25 * 60
-    @Published public var pomoRunning: Bool = false
-    @Published public var pomoIsBreak: Bool = false
-
-    // RPS & Trivia
-    @Published public var rpsScore: Int = 0
-    @Published public var rpsResult: String = ""
-    @Published public var triviaScore: Int = 0
-    @Published public var triviaQuestion: String = ""
-    @Published public var triviaAnswers: [String] = []
-    @Published public var triviaCorrectAnswer: String = ""
-    @Published public var triviaAnswered: Bool = false
-
     // Companion Mode
     @Published public var companionMode: Bool = false
 
@@ -46,7 +32,6 @@ public class PetState: ObservableObject {
     private var dreamTimer: Timer?
     private var sleepTimer: Timer?
     private var animTimer: Timer?
-    private var pomoTimer: Timer?
 
     private let dreams = ["🍕", "🌈", "⭐", "🐟", "🎮", "🏖️", "🚀", "💤", "🌙", "🎵", "🍦", "🦋"]
 
@@ -196,133 +181,6 @@ public class PetState: ObservableObject {
             currentMood = next
             showBubble("\(next.rawValue.capitalized) \(currentSpecies.moodEmoji(for: next))", duration: 1.2)
             SoundEffect.click.play()
-        }
-    }
-
-    // MARK: - Pomodoro Logic
-
-    public func togglePomo() {
-        if pomoRunning {
-            pomoRunning = false
-            pomoTimer?.invalidate()
-        } else {
-            pomoRunning = true
-            showBubble(pomoIsBreak ? "Break started! ☕" : "Focus time! 💼")
-            pomoTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-                Task { @MainActor in
-                    guard let self = self else { return }
-                    if self.pomoSeconds > 0 {
-                        self.pomoSeconds -= 1
-                    } else {
-                        self.pomoTimer?.invalidate()
-                        self.pomoRunning = false
-                        if self.pomoIsBreak {
-                            self.showBubble("Break over! Back to work 💪", duration: 4.0)
-                            self.pomoSeconds = 25 * 60
-                            self.pomoIsBreak = false
-                        } else {
-                            self.showBubble("Great work! Take a break 🎉", duration: 4.0)
-                            self.pomoSeconds = 5 * 60
-                            self.pomoIsBreak = true
-                            self.moodPoints = min(100.0, self.moodPoints + 15.0)
-                        }
-                        DataManager.shared.postNotification(
-                            title: "Pomodoro!",
-                            body: self.pomoIsBreak ? "Work session done! Take a break." : "Break over, back to work!"
-                        )
-                    }
-                }
-            }
-        }
-    }
-
-    public func resetPomo() {
-        pomoTimer?.invalidate()
-        pomoRunning = false
-        pomoIsBreak = false
-        pomoSeconds = 25 * 60
-    }
-
-    // MARK: - RPS Logic
-
-    public func playRPS(choice: String) {
-        let cpuChoices = ["✊", "✋", "✌️"]
-        let cpu = cpuChoices.randomElement() ?? "✊"
-
-        if choice == cpu {
-            rpsResult = "Tie! \(choice) vs \(cpu) 🤝"
-            showBubble("Tie!", duration: 1.2)
-        } else if (choice == "✊" && cpu == "✌️") || (choice == "✋" && cpu == "✊") || (choice == "✌️" && cpu == "✋") {
-            rpsScore += 1
-            rpsResult = "You win! \(choice) beats \(cpu) 🎉"
-            showBubble("You win! 🎉", duration: 1.5)
-            moodPoints = min(100.0, moodPoints + 5.0)
-        } else {
-            rpsResult = "You lose! \(cpu) beats \(choice) 😅"
-            showBubble("I win! 😏", duration: 1.5)
-        }
-        SoundEffect.click.play()
-    }
-
-    // MARK: - Trivia Logic
-
-    public func fetchTrivia() async {
-        guard let url = URL(string: "https://opentdb.com/api.php?amount=1&type=multiple&difficulty=easy") else { return }
-        do {
-            let (data, _) = try await URLSession.shared.data(from: url)
-            struct TriviaResp: Decodable {
-                struct Item: Decodable {
-                    let question: String
-                    let correct_answer: String
-                    let incorrect_answers: [String]
-                }
-                let results: [Item]
-            }
-
-            let resp = try JSONDecoder().decode(TriviaResp.self, from: data)
-            if let first = resp.results.first {
-                let cleanQ = first.question
-                    .replacingOccurrences(of: "&quot;", with: "\"")
-                    .replacingOccurrences(of: "&#039;", with: "'")
-                    .replacingOccurrences(of: "&amp;", with: "&")
-                let cleanCorrect = first.correct_answer
-                    .replacingOccurrences(of: "&quot;", with: "\"")
-                    .replacingOccurrences(of: "&#039;", with: "'")
-                let cleanIncorrect = first.incorrect_answers.map {
-                    $0.replacingOccurrences(of: "&quot;", with: "\"")
-                      .replacingOccurrences(of: "&#039;", with: "'")
-                }
-
-                self.triviaQuestion = cleanQ
-                self.triviaCorrectAnswer = cleanCorrect
-                var answers = cleanIncorrect
-                answers.append(cleanCorrect)
-                self.triviaAnswers = answers.shuffled()
-                self.triviaAnswered = false
-            }
-        } catch {
-            self.triviaQuestion = "Could not load trivia question (offline?)"
-            self.triviaAnswers = []
-        }
-    }
-
-    public func answerTrivia(_ answer: String) {
-        guard !triviaAnswered else { return }
-        triviaAnswered = true
-
-        if answer == triviaCorrectAnswer {
-            triviaScore += 1
-            showBubble("Correct! 🧠", duration: 1.5)
-            moodPoints = min(100.0, moodPoints + 5.0)
-            SoundEffect.receive.play()
-        } else {
-            showBubble("Wrong! 😅", duration: 1.5)
-            SoundEffect.alert.play()
-        }
-
-        Task {
-            try? await Task.sleep(nanoseconds: 2_500_000_000)
-            await self.fetchTrivia()
         }
     }
 }

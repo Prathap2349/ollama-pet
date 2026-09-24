@@ -77,7 +77,7 @@ public enum SettingsTab: String, CaseIterable, Identifiable {
     case screen = "Screen Awareness"
     case focus = "Focus & Health"
     case privacy = "Privacy & Data"
-    case performance = "Performance & Safety"
+    case performance = "System & Performance"
 
     public var id: String { rawValue }
 
@@ -331,7 +331,7 @@ struct CharacterSettingsSection: View {
             Text("Select Companion")
                 .font(.system(size: 14, weight: .semibold))
 
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 10)], spacing: 10) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 160), spacing: 12)], spacing: 12) {
                 ForEach(PetSpecies.allCases) { species in
                     SpeciesPreviewCard(
                         species: species,
@@ -388,9 +388,9 @@ struct SpeciesPreviewCard: View {
 
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 8) {
-                // Live Canvas Preview
-                ZStack {
+            VStack(alignment: .leading, spacing: 8) {
+                // Live Canvas Preview Stage with Selection Badge
+                ZStack(alignment: .topTrailing) {
                     RoundedRectangle(cornerRadius: 8)
                         .fill(perf.grayscaleTestMode ? Color(white: 0.15) : Color.black.opacity(0.85))
 
@@ -415,25 +415,41 @@ struct SpeciesPreviewCard: View {
                             )
                         }
                     }
+
+                    if isSelected {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundColor(.accentColor)
+                            .font(.system(size: 16))
+                            .padding(6)
+                    }
                 }
-                .frame(height: 76)
+                .frame(height: 86)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
 
-                VStack(spacing: 2) {
-                    HStack(spacing: 4) {
-                        Text(species.icon)
-                            .font(.system(size: 13))
+                // Character Identity & Unique Silhouette Description
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack {
                         Text(species.displayName)
-                            .font(.system(size: 12, weight: .bold))
+                            .font(.system(size: 13, weight: .bold))
                             .foregroundColor(isSelected ? .accentColor : .primary)
+                        Spacer()
+                        Text(species.speciesName)
+                            .font(.system(size: 10, weight: .medium))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(RoundedRectangle(cornerRadius: 4).fill(Color.primary.opacity(0.06)))
+                            .foregroundColor(.secondary)
                     }
-                    Text(species.speciesName)
+
+                    Text(uniqueDescription(for: species))
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .padding(8)
-            .frame(maxWidth: .infinity)
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
             .background(
                 RoundedRectangle(cornerRadius: 12)
                     .fill(isSelected ? Color.accentColor.opacity(0.12) : Color.primary.opacity(0.04))
@@ -444,6 +460,25 @@ struct SpeciesPreviewCard: View {
             )
         }
         .buttonStyle(.plain)
+    }
+
+    private func uniqueDescription(for species: PetSpecies) -> String {
+        switch species {
+        case .cat:
+            return "Feline sitting silhouette with triangular ears and curved tail."
+        case .dragon:
+            return "Winged dragon with dual horns, dorsal spikes, and spade tail."
+        case .robot:
+            return "Rectangular mechanical android with top antenna and LED chest core."
+        case .robotcat:
+            return "Cybernetic feline hybrid with plated ears and circuit tail."
+        case .ghost:
+            return "Legless floating spectral shroud with wavy undulating wisps."
+        case .fox:
+            return "Slender fox with elongated snout muzzle and large bushy tail."
+        case .bunny:
+            return "Very tall upright ears, chubby round body, and cotton puff tail."
+        }
     }
 }
 
@@ -554,74 +589,275 @@ struct AnimationSettingsSection: View {
     }
 }
 
-// MARK: - Performance & Safety Section
+// MARK: - System & Performance Section
 
 struct PerformanceSettingsSection: View {
+    @ObservedObject var sys = SystemMonitor.shared
     @ObservedObject var perf = PerformanceManager.shared
+    @ObservedObject var ollama = OllamaClient.shared
+    @ObservedObject var dataManager = DataManager.shared
+    @ObservedObject var perm = PermissionManager.shared
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Text("Performance & Shaders")
-                .font(.system(size: 18, weight: .bold))
-
-            Text("All visual enhancements are strictly decoupled and opt-in to prevent high GPU/CPU cycles.")
-                .font(.system(size: 12))
-                .foregroundColor(.secondary)
-
-            VStack(spacing: 12) {
-                Toggle(isOn: $perf.dynamicLightingEnabled) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Dynamic Radial Lighting & Highlights")
-                            .font(.system(size: 13, weight: .medium))
-                        Text("Adds soft directional aura and rim glow. Off by default.")
-                            .font(.system(size: 11))
-                            .foregroundColor(.secondary)
-                    }
+        VStack(alignment: .leading, spacing: 20) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("System & Performance")
+                        .font(.system(size: 18, weight: .bold))
+                    Text("Real-time telemetry and hardware specs for your Mac.")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
                 }
-
-                Divider()
-
-                Toggle(isOn: $perf.weatherEffectsEnabled) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Weather Atmospheric Effects")
-                            .font(.system(size: 13, weight: .medium))
-                        Text("Renders raindrops, snow flurries, or golden hour particles in stage.")
-                            .font(.system(size: 11))
-                            .foregroundColor(.secondary)
+                Spacer()
+                Button(action: {
+                    sys.manualRefreshAll()
+                }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.clockwise")
+                        Text("Refresh Metrics")
                     }
+                    .font(.system(size: 11))
                 }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
 
-                Divider()
+            // 1. SYSTEM & LOCAL AI CARD
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Mac & AI Environment")
+                    .font(.system(size: 13, weight: .bold))
 
-                Toggle(isOn: $perf.cpuReactiveGlowEnabled) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("CPU Thermal Reactive Glow")
-                            .font(.system(size: 13, weight: .medium))
-                        Text("Gently pulses when CPU activity spikes above normal.")
-                            .font(.system(size: 11))
-                            .foregroundColor(.secondary)
-                    }
-                }
-
-                Divider()
-
-                Toggle(isOn: $perf.particlesEnabled) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Floating Thought Particles & Sparks")
-                            .font(.system(size: 13, weight: .medium))
-                        Text("Renders levitating thought particles during LLM generation.")
-                            .font(.system(size: 11))
-                            .foregroundColor(.secondary)
-                    }
+                VStack(spacing: 6) {
+                    metricRow(title: "Hardware Model", value: sys.macModel)
+                    Divider()
+                    metricRow(title: "Architecture", value: "\(sys.architecture) (\(sys.cpuCores) Cores)")
+                    Divider()
+                    metricRow(title: "Operating System", value: sys.macOSVersion)
+                    Divider()
+                    metricRow(
+                        title: "Ollama Status",
+                        value: ollama.isOnline ? "● Online (Connected)" : "○ Offline / Unreachable",
+                        valueColor: ollama.isOnline ? .green : .red
+                    )
+                    Divider()
+                    metricRow(title: "Ollama Endpoint", value: ollama.endpoint)
+                    Divider()
+                    metricRow(title: "Active LLM Model", value: dataManager.savedData.selectedModel ?? (ollama.activeModel.isEmpty ? "None" : ollama.activeModel))
                 }
             }
             .padding(14)
             .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
 
-            Button("Reset Performance to Defaults") {
-                perf.resetToDefaults()
+            // 2. LIVE PERFORMANCE METRICS
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Performance & Power")
+                    .font(.system(size: 13, weight: .bold))
+
+                VStack(spacing: 10) {
+                    // CPU Gauge
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text("CPU Load")
+                                .font(.system(size: 12, weight: .medium))
+                            Spacer()
+                            Text(String(format: "%.1f%%", sys.cpuPercent))
+                                .font(.system(size: 12, weight: .bold, design: .monospaced))
+                                .foregroundColor(sys.cpuPercent > 75 ? .red : (sys.cpuPercent > 45 ? .orange : .primary))
+                        }
+                        ProgressView(value: min(100.0, max(0.0, sys.cpuPercent)), total: 100.0)
+                            .progressViewStyle(.linear)
+                            .accentColor(sys.cpuPercent > 75 ? .red : (sys.cpuPercent > 45 ? .orange : .accentColor))
+                    }
+
+                    Divider()
+
+                    // Memory Gauge
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text("Memory (RAM)")
+                                .font(.system(size: 12, weight: .medium))
+                            Spacer()
+                            Text(String(format: "%.1f GB / %.1f GB (%.0f%%)", sys.memoryUsedGB, sys.memoryTotalGB, sys.memoryPercent))
+                                .font(.system(size: 12, weight: .bold, design: .monospaced))
+                        }
+                        ProgressView(value: min(100.0, max(0.0, sys.memoryPercent)), total: 100.0)
+                            .progressViewStyle(.linear)
+                    }
+
+                    Divider()
+
+                    // Battery & Power
+                    if sys.hasBattery {
+                        HStack {
+                            Text("Battery")
+                                .font(.system(size: 12, weight: .medium))
+                            Spacer()
+                            HStack(spacing: 6) {
+                                Image(systemName: sys.isCharging ? "battery.100.bolt" : "battery.75")
+                                    .foregroundColor(sys.isCharging ? .green : (sys.batteryPercent <= 20 ? .red : .primary))
+                                Text("\(sys.batteryPercent)% (\(sys.isCharging ? "Charging" : "On Battery"))")
+                                    .font(.system(size: 12, weight: .bold, design: .monospaced))
+                            }
+                        }
+                        Divider()
+                    }
+
+                    metricRow(title: "System Uptime", value: sys.uptimeString)
+                }
             }
-            .buttonStyle(.bordered)
+            .padding(14)
+            .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
+
+            // 3. STORAGE & DISK
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Disk Storage (Primary Volume)")
+                    .font(.system(size: 13, weight: .bold))
+
+                VStack(spacing: 8) {
+                    HStack {
+                        Text("Space Allocation")
+                            .font(.system(size: 12, weight: .medium))
+                        Spacer()
+                        Text(String(format: "%.1f GB used of %.1f GB (%.1f GB free)", sys.diskUsedGB, sys.diskTotalGB, sys.diskAvailableGB))
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundColor(.secondary)
+                    }
+                    ProgressView(value: min(100.0, max(0.0, sys.diskPercent)), total: 100.0)
+                        .progressViewStyle(.linear)
+                        .accentColor(sys.diskPercent > 90 ? .red : .accentColor)
+                }
+            }
+            .padding(14)
+            .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
+
+            // 4. APP & PERMISSION INTEGRITY STATUS
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Application Status & Permissions")
+                    .font(.system(size: 13, weight: .bold))
+
+                VStack(spacing: 6) {
+                    metricRow(title: "Ollama Pet Version", value: sys.appVersion)
+                    Divider()
+                    metricRow(title: "Installed Location", value: sys.appInstallationPath)
+                    Divider()
+                    metricRow(
+                        title: "Notifications",
+                        value: perm.notificationsStatus.rawValue,
+                        valueColor: perm.notificationsStatus == .granted ? .green : .orange
+                    )
+                    Divider()
+                    metricRow(
+                        title: "Accessibility Permission",
+                        value: ShortcutManager.shared.isAccessibilityGranted ? "Granted" : "Required for Global Shortcuts",
+                        valueColor: ShortcutManager.shared.isAccessibilityGranted ? .green : .orange
+                    )
+                    Divider()
+                    metricRow(title: "Foreground App", value: sys.frontmostApp)
+                    Divider()
+                    metricRow(title: "Active GUI Applications", value: "\(sys.runningAppsCount) applications")
+                }
+            }
+            .padding(14)
+            .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
+
+            // 5. VISUAL SHADERS & GPU WORKLOAD
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text("Visual Enhancements & Safe Mode")
+                        .font(.system(size: 13, weight: .bold))
+                    Spacer()
+                    if perf.isSafeMode {
+                        Text("🛡️ Safe Mode Active")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(.yellow)
+                    }
+                }
+
+                Text("Visual shaders are strictly decoupled from companion physics. Turn off to minimize GPU utilization.")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+
+                VStack(spacing: 10) {
+                    Toggle(isOn: $perf.dynamicLightingEnabled) {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("Dynamic Radial Lighting")
+                                .font(.system(size: 12, weight: .semibold))
+                            Text("Adds soft directional aura and rim glow.")
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    Divider()
+                    Toggle(isOn: $perf.weatherEffectsEnabled) {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("Weather Atmospheric Effects")
+                                .font(.system(size: 12, weight: .semibold))
+                            Text("Renders raindrops, flurries, and golden hour particles.")
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    Divider()
+                    Toggle(isOn: $perf.cpuReactiveGlowEnabled) {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("CPU Thermal Reactive Glow")
+                                .font(.system(size: 12, weight: .semibold))
+                            Text("Pulsates companion aura when CPU usage spikes above 40%.")
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    Divider()
+                    Toggle(isOn: $perf.particlesEnabled) {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("Floating Thought Particles")
+                                .font(.system(size: 12, weight: .semibold))
+                            Text("Floating sparks while LLM responses are streaming.")
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+                .padding(.top, 4)
+
+                Divider()
+
+                HStack {
+                    Button(perf.isSafeMode ? "Exit Safe Mode (Restore 60 FPS)" : "Enable Safe Mode (15 FPS Low-Resource)") {
+                        perf.toggleSafeMode()
+                    }
+                    .font(.system(size: 11))
+                    .buttonStyle(.bordered)
+
+                    Spacer()
+
+                    Button("Reset Visuals to Default") {
+                        perf.resetToDefaults()
+                    }
+                    .font(.system(size: 11))
+                    .buttonStyle(.bordered)
+                }
+            }
+            .padding(14)
+            .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
+        }
+        .onAppear {
+            sys.manualRefreshAll()
+            perm.checkAllPermissions()
+            ShortcutManager.shared.checkAccessibilityPermission()
+        }
+    }
+
+    private func metricRow(title: String, value: String, valueColor: Color = .primary) -> some View {
+        HStack {
+            Text(title)
+                .font(.system(size: 12, weight: .medium))
+            Spacer()
+            Text(value.isEmpty ? "Unavailable" : value)
+                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                .foregroundColor(valueColor)
+                .lineLimit(1)
+                .truncationMode(.middle)
         }
     }
 }
@@ -806,30 +1042,139 @@ struct ShortcutsSettingsSection: View {
             Text("Keyboard Shortcuts")
                 .font(.system(size: 18, weight: .bold))
 
-            VStack(spacing: 10) {
-                shortcutRow(title: "Toggle Companion Window", shortcut: "⌘ ⇧ P")
+            Text("Customize system-wide keyboard shortcuts for quick companion access. Press Escape while recording to cancel.")
+                .font(.system(size: 12))
+                .foregroundColor(.secondary)
+
+            // Accessibility Permission Banner
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(shortcut.isAccessibilityGranted ? Color.green : Color.orange)
+                            .frame(width: 8, height: 8)
+                        Text(shortcut.isAccessibilityGranted ? "Accessibility Permission: Enabled" : "Accessibility Permission: Required")
+                            .font(.system(size: 12, weight: .semibold))
+                    }
+                    Text(shortcut.isAccessibilityGranted
+                         ? "Global shortcuts are active even when other applications are focused."
+                         : "macOS requires Accessibility permission to detect shortcuts while other apps are active.")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                }
+                Spacer()
+                if !shortcut.isAccessibilityGranted {
+                    Button("Grant in System Settings") {
+                        shortcut.openAccessibilitySettings()
+                    }
+                    .font(.system(size: 11))
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                }
+            }
+            .padding(12)
+            .background(RoundedRectangle(cornerRadius: 8).fill(shortcut.isAccessibilityGranted ? Color.green.opacity(0.08) : Color.orange.opacity(0.12)))
+
+            // Conflict Warning
+            if let conflict = shortcut.conflictMessage {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundColor(.red)
+                    Text(conflict)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.red)
+                    Spacer()
+                    Button("Dismiss") {
+                        shortcut.conflictMessage = nil
+                    }
+                    .font(.system(size: 10))
+                    .buttonStyle(.plain)
+                }
+                .padding(10)
+                .background(RoundedRectangle(cornerRadius: 6).fill(Color.red.opacity(0.1)))
+            }
+
+            // Shortcuts List
+            VStack(spacing: 12) {
+                editableShortcutRow(
+                    actionId: "togglePet",
+                    title: "Toggle Companion Window",
+                    subtitle: "Shows or hides the desktop companion window.",
+                    currentCombo: shortcut.togglePetShortcut
+                )
+
                 Divider()
-                shortcutRow(title: "Open Chat / Panel", shortcut: "⌘ ⇧ C")
+
+                editableShortcutRow(
+                    actionId: "voice",
+                    title: "Push-to-Talk Voice",
+                    subtitle: "Hold to speak, release to send audio to companion.",
+                    currentCombo: shortcut.voiceShortcut
+                )
+
                 Divider()
-                shortcutRow(title: "Push-to-Talk Voice", shortcut: "Hold ⌘ ⇧ V")
-                Divider()
-                shortcutRow(title: "Trigger Walk Cycle", shortcut: "⌘ ⇧ W")
+
+                editableShortcutRow(
+                    actionId: "settings",
+                    title: "Open Settings Center",
+                    subtitle: "Directly opens the comprehensive Settings Window.",
+                    currentCombo: shortcut.settingsShortcut
+                )
             }
             .padding(14)
             .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
         }
+        .onAppear {
+            shortcut.checkAccessibilityPermission()
+        }
     }
 
-    private func shortcutRow(title: String, shortcut: String) -> some View {
-        HStack {
-            Text(title)
-                .font(.system(size: 13, weight: .medium))
+    private func editableShortcutRow(actionId: String, title: String, subtitle: String, currentCombo: KeyCombo) -> some View {
+        let isRecording = shortcut.recordingAction == actionId
+
+        return HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 13, weight: .medium))
+                Text(subtitle)
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+            }
+
             Spacer()
-            Text(shortcut)
-                .font(.system(size: 12, weight: .bold, design: .monospaced))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.08)))
+
+            if isRecording {
+                HStack(spacing: 8) {
+                    Text("Press new shortcut (Esc to cancel)...")
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .foregroundColor(.accentColor)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(RoundedRectangle(cornerRadius: 6).fill(Color.accentColor.opacity(0.15)))
+
+                    Button("Cancel") {
+                        shortcut.cancelRecording()
+                    }
+                    .font(.system(size: 11))
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+            } else {
+                HStack(spacing: 8) {
+                    Text(currentCombo.displayString)
+                        .font(.system(size: 12, weight: .bold, design: .monospaced))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.08)))
+
+                    Button("Change") {
+                        shortcut.startRecording(action: actionId)
+                    }
+                    .font(.system(size: 11))
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+            }
         }
     }
 }
@@ -1281,7 +1626,7 @@ struct MacControlSettingsSection: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Voice Mac Control")
                                 .font(.system(size: 12, weight: .medium))
-                            Text("Allow push-to-talk voice commands (⌘⇧Space) to trigger Mac actions.")
+                            Text("Allow push-to-talk voice commands (\(ShortcutManager.shared.voiceShortcut.displayString)) to trigger Mac actions.")
                                 .font(.system(size: 11))
                                 .foregroundColor(.secondary)
                         }

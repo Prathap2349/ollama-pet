@@ -2,6 +2,7 @@ import Foundation
 import AppKit
 import SwiftUI
 import ServiceManagement
+import UserNotifications
 
 @MainActor
 public class AppDelegate: NSObject, NSApplicationDelegate {
@@ -12,6 +13,10 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
     public func applicationDidFinishLaunching(_ notification: Notification) {
         // Hide dock icon (LSUIElement mode)
         NSApp.setActivationPolicy(.accessory)
+
+        // Setup UserNotifications delegate & request auth
+        UNUserNotificationCenter.current().delegate = self
+        NotificationScheduler.shared.requestAuthorization()
 
         // Setup menu bar status item
         setupStatusItem()
@@ -236,5 +241,33 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
 
     public func applicationWillTerminate(_ notification: Notification) {
         DataManager.shared.saveData()
+    }
+}
+
+// MARK: - UNUserNotificationCenterDelegate
+
+extension AppDelegate: UNUserNotificationCenterDelegate {
+    public nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        // Display banner, sound, and badge even when app is active/foreground
+        if #available(macOS 11.0, *) {
+            completionHandler([.banner, .sound, .badge, .list])
+        } else {
+            completionHandler([.alert, .sound, .badge])
+        }
+    }
+
+    public nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        Task { @MainActor in
+            PetWindowController.shared.showWindow()
+        }
+        completionHandler()
     }
 }

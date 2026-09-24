@@ -10,9 +10,12 @@ MACOS_DIR="${APP_BUNDLE}/Contents/MacOS"
 RESOURCES_DIR="${APP_BUNDLE}/Contents/Resources"
 
 rm -rf "${APP_BUNDLE}"
+mkdir -p "${BUILD_DIR}"
+touch "${BUILD_DIR}/.metadata_never_index"
 mkdir -p "${MACOS_DIR}"
 mkdir -p "${RESOURCES_DIR}"
 mkdir -p .cache
+touch .cache/.metadata_never_index
 
 echo "1. Compiling Swift Release Binary (Apple Silicon / ARM64)..."
 swiftc \

@@ -50,86 +50,95 @@ public class ActionIntentParser {
             return parseReminder(from: text, lower: lower)
         }
 
-        // B. Search Web
-        if lower.starts(with: "search youtube for ") {
-            let q = String(text.dropFirst("search youtube for ".count)).trimmingCharacters(in: .whitespaces)
-            return MacAction(type: .openURL, url: "https://www.youtube.com/results?search_query=\(q.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? q)")
-        }
-        if lower.starts(with: "search the web for ") || lower.starts(with: "search web for ") {
-            let prefix = lower.starts(with: "search the web for ") ? "search the web for " : "search web for "
-            let q = String(text.dropFirst(prefix.count)).trimmingCharacters(in: .whitespaces)
-            return MacAction(type: .searchWeb, query: q)
-        }
-        if lower.starts(with: "google ") {
-            let q = String(text.dropFirst("google ".count)).trimmingCharacters(in: .whitespaces)
-            return MacAction(type: .searchWeb, query: q)
+        // B. Timers (e.g. "set a timer for 10 minutes", "timer for 1 minute")
+        if let timerAction = parseTimer(from: text, lower: lower) {
+            return timerAction
         }
 
-        // C. Direct System Apps / Services
-        if lower == "open calendar" || lower == "launch calendar" {
+        // C. Extract specific browser target if present (e.g. "in Google Chrome", "in Safari", "in Firefox")
+        let (cleanedText, cleanedLower, targetBrowser) = extractBrowser(from: text, lower: lower)
+
+        // D. Search Web
+        if cleanedLower.starts(with: "search youtube for ") {
+            let q = String(cleanedText.dropFirst("search youtube for ".count)).trimmingCharacters(in: .whitespaces)
+            let encoded = q.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? q
+            return MacAction(type: .openURL, url: "https://www.youtube.com/results?search_query=\(encoded)", browser: targetBrowser)
+        }
+        if cleanedLower.starts(with: "search the web for ") || cleanedLower.starts(with: "search web for ") {
+            let prefix = cleanedLower.starts(with: "search the web for ") ? "search the web for " : "search web for "
+            let q = String(cleanedText.dropFirst(prefix.count)).trimmingCharacters(in: .whitespaces)
+            return MacAction(type: .searchWeb, browser: targetBrowser, query: q)
+        }
+        if cleanedLower.starts(with: "google ") {
+            let q = String(cleanedText.dropFirst("google ".count)).trimmingCharacters(in: .whitespaces)
+            return MacAction(type: .searchWeb, browser: targetBrowser, query: q)
+        }
+
+        // E. Direct System Apps / Services
+        if cleanedLower == "open calendar" || cleanedLower == "launch calendar" {
             return MacAction(type: .openCalendar)
         }
-        if lower == "open reminders" || lower == "launch reminders" {
+        if cleanedLower == "open reminders" || cleanedLower == "launch reminders" {
             return MacAction(type: .openReminders)
         }
-        if lower == "open whatsapp" || lower == "launch whatsapp" {
+        if cleanedLower == "open whatsapp" || cleanedLower == "launch whatsapp" {
             return MacAction(type: .openWhatsApp)
         }
-        if lower == "open messages" || lower == "launch messages" || lower == "open imessage" {
+        if cleanedLower == "open messages" || cleanedLower == "launch messages" || cleanedLower == "open imessage" {
             return MacAction(type: .openMessages)
         }
-        if lower == "open system settings" || lower == "open settings" || lower == "launch system settings" {
+        if cleanedLower == "open system settings" || cleanedLower == "open settings" || cleanedLower == "launch system settings" {
             return MacAction(type: .openSystemSettings)
         }
-        if lower == "show action history" || lower == "open action history" {
+        if cleanedLower == "show action history" || cleanedLower == "open action history" {
             return MacAction(type: .showActionHistory)
         }
 
-        // D. Approved Shortcuts
-        if lower.starts(with: "run shortcut ") || lower.starts(with: "run my shortcut ") || lower.starts(with: "run approved shortcut ") {
+        // F. Approved Shortcuts
+        if cleanedLower.starts(with: "run shortcut ") || cleanedLower.starts(with: "run my shortcut ") || cleanedLower.starts(with: "run approved shortcut ") {
             let prefixes = ["run approved shortcut ", "run my shortcut ", "run shortcut "]
             for p in prefixes {
-                if lower.starts(with: p) {
-                    let name = String(text.dropFirst(p.count)).trimmingCharacters(in: .whitespaces)
+                if cleanedLower.starts(with: p) {
+                    let name = String(cleanedText.dropFirst(p.count)).trimmingCharacters(in: .whitespaces)
                     return MacAction(type: .runApprovedShortcut, shortcutName: name, requiresConfirmation: true)
                 }
             }
         }
 
-        // E. Send Message (WhatsApp / Messages)
-        if lower.starts(with: "send ") && (lower.contains("message") || lower.contains("whatsapp")) {
-            return parseSendMessage(from: text, lower: lower)
+        // G. Send Message (WhatsApp / Messages)
+        if cleanedLower.starts(with: "send ") && (cleanedLower.contains("message") || cleanedLower.contains("whatsapp")) {
+            return parseSendMessage(from: cleanedText, lower: cleanedLower)
         }
 
-        // F. Open URLs
-        if lower.starts(with: "open http://") || lower.starts(with: "open https://") {
-            let urlStr = String(text.dropFirst(5)).trimmingCharacters(in: .whitespaces)
-            return MacAction(type: .openURL, url: urlStr)
+        // H. Open URLs / Websites with optional Browser Target
+        if cleanedLower.starts(with: "open http://") || cleanedLower.starts(with: "open https://") {
+            let urlStr = String(cleanedText.dropFirst(5)).trimmingCharacters(in: .whitespaces)
+            return MacAction(type: .openURL, url: urlStr, browser: targetBrowser)
         }
-        if lower == "open youtube" || lower == "launch youtube" {
-            return MacAction(type: .openURL, url: "https://www.youtube.com")
+        if cleanedLower == "open youtube" || cleanedLower == "launch youtube" {
+            return MacAction(type: .openURL, url: "https://www.youtube.com", browser: targetBrowser)
         }
-        if lower == "open github" || lower == "launch github" {
-            return MacAction(type: .openURL, url: "https://www.github.com")
+        if cleanedLower == "open github" || cleanedLower == "launch github" {
+            return MacAction(type: .openURL, url: "https://www.github.com", browser: targetBrowser)
         }
-        if lower == "open google" || lower == "launch google" {
-            return MacAction(type: .openURL, url: "https://www.google.com")
+        if cleanedLower == "open google" || cleanedLower == "launch google" {
+            return MacAction(type: .openURL, url: "https://www.google.com", browser: targetBrowser)
         }
 
-        // G. General Open App
-        if lower.starts(with: "open ") || lower.starts(with: "launch ") || lower.starts(with: "start ") {
+        // I. General Open App
+        if cleanedLower.starts(with: "open ") || cleanedLower.starts(with: "launch ") || cleanedLower.starts(with: "start ") {
             let appName: String
-            if lower.starts(with: "open ") {
-                appName = String(text.dropFirst(5)).trimmingCharacters(in: .whitespaces)
-            } else if lower.starts(with: "launch ") {
-                appName = String(text.dropFirst(7)).trimmingCharacters(in: .whitespaces)
+            if cleanedLower.starts(with: "open ") {
+                appName = String(cleanedText.dropFirst(5)).trimmingCharacters(in: .whitespaces)
+            } else if cleanedLower.starts(with: "launch ") {
+                appName = String(cleanedText.dropFirst(7)).trimmingCharacters(in: .whitespaces)
             } else {
-                appName = String(text.dropFirst(6)).trimmingCharacters(in: .whitespaces)
+                appName = String(cleanedText.dropFirst(6)).trimmingCharacters(in: .whitespaces)
             }
 
             // If appName ends with a website domain, treat as URL
             if appName.contains(".com") || appName.contains(".org") || appName.contains(".net") || appName.contains(".io") {
-                return MacAction(type: .openURL, url: "https://\(appName)")
+                return MacAction(type: .openURL, url: "https://\(appName)", browser: targetBrowser)
             }
 
             if !appName.isEmpty {
@@ -137,6 +146,42 @@ public class ActionIntentParser {
             }
         }
 
+        return nil
+    }
+
+    // MARK: - Browser Target Extraction
+
+    private func extractBrowser(from text: String, lower: String) -> (cleanedText: String, cleanedLower: String, browser: String?) {
+        let browserPatterns: [(pattern: String, name: String)] = [
+            (" in google chrome", "Google Chrome"),
+            (" in chrome", "Google Chrome"),
+            (" in safari", "Safari"),
+            (" in firefox", "Firefox"),
+            (" in microsoft edge", "Microsoft Edge"),
+            (" in edge", "Microsoft Edge")
+        ]
+
+        for (pattern, name) in browserPatterns {
+            if lower.hasSuffix(pattern) {
+                let cleaned = String(text.dropLast(pattern.count)).trimmingCharacters(in: .whitespaces)
+                let cleanedLower = String(lower.dropLast(pattern.count)).trimmingCharacters(in: .whitespaces)
+                return (cleaned, cleanedLower, name)
+            }
+        }
+        return (text, lower, nil)
+    }
+
+    // MARK: - Timer Extraction
+
+    private func parseTimer(from text: String, lower: String) -> MacAction? {
+        let prefixes = ["set a timer for ", "set timer for ", "start a timer for ", "start timer for ", "timer for "]
+        for p in prefixes {
+            if lower.starts(with: p) {
+                let timeStr = String(text.dropFirst(p.count)).trimmingCharacters(in: .whitespaces)
+                let secs = parseTimeInterval(timeStr.lowercased())
+                return MacAction(type: .setTimer, delaySeconds: secs)
+            }
+        }
         return nil
     }
 

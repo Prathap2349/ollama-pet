@@ -1,82 +1,205 @@
-const { app, BrowserWindow, ipcMain, screen, Notification, globalShortcut, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, Notification, globalShortcut, dialog, powerMonitor, nativeTheme } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const http = require('http');
 const { execSync, spawn } = require('child_process');
 
-let win;
-let walkerWin;
+let win = null;
+let walkerWin = null;
 let petVisible = true;
 let ollamaProcess = null;
+let brightnessCliAvailable = null;
 
+const CURRENT_SCHEMA_VERSION = 1;
 const SAVE_PATH = path.join(os.homedir(), 'ollama-pet-data.json');
 
-// ── AUTO-START OLLAMA ─────────────────────────
-function startOllama() {
-  // Full path needed — .app bundles have a restricted PATH
-  const ollamaPath = '/usr/local/bin/ollama';
-  try {
-    execSync('curl -s http://localhost:11434/api/tags', { timeout: 1000 });
-    console.log('Ollama already running ✓');
-  } catch(_) {
+// ── RELIABLE OLLAMA DETECTION & MANAGEMENT ───────
+function findOllamaExecutable() {
+  const candidatePaths = [
+    '/opt/homebrew/bin/ollama',
+    '/usr/local/bin/ollama',
+    '/usr/bin/ollama'
+  ];
+
+  for (const candidate of candidatePaths) {
     try {
-      ollamaProcess = spawn(ollamaPath, ['serve'], {
-        detached: true,
-        stdio: 'ignore',
-        env: { ...process.env, PATH: '/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin' },
+      if (fs.existsSync(candidate)) return candidate;
+    } catch (_) {}
+  }
+
+  try {
+    const stdout = execSync('which ollama', { encoding: 'utf8', timeout: 1500 }).trim();
+    if (stdout && fs.existsSync(stdout)) return stdout;
+  } catch (_) {}
+
+  return null;
+}
+
+function checkOllamaApiRunning(timeoutMs = 1500) {
+  return new Promise((resolve) => {
+    const req = http.get('http://localhost:11434/api/tags', { timeout: timeoutMs }, (res) => {
+      let raw = '';
+      res.on('data', chunk => { raw += chunk; });
+      res.on('end', () => {
+        try {
+          const data = JSON.parse(raw);
+          const models = Array.isArray(data.models) ? data.models.map(m => m.name || m.model).filter(Boolean) : [];
+          resolve({ running: true, models });
+        } catch (_) {
+          resolve({ running: true, models: [] });
+        }
       });
-      ollamaProcess.unref();
-      console.log('Ollama started automatically ✓');
-    } catch(err) {
-      console.warn('Could not start Ollama:', err.message);
-    }
+    });
+
+    req.on('timeout', () => {
+      req.destroy();
+      resolve({ running: false, models: [] });
+    });
+
+    req.on('error', () => {
+      resolve({ running: false, models: [] });
+    });
+  });
+}
+
+async function startOllama() {
+  const execPath = findOllamaExecutable();
+  const apiCheck = await checkOllamaApiRunning(1500);
+
+  if (apiCheck.running) {
+    console.log('Ollama server is already running ✓');
+    return { status: 'running', execPath, models: apiCheck.models };
+  }
+
+  if (!execPath) {
+    console.warn('Ollama executable not found in /opt/homebrew/bin, /usr/local/bin, or PATH');
+    return { status: 'not_installed', execPath: null, models: [] };
+  }
+
+  try {
+    const envPath = ['/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin', process.env.PATH].filter(Boolean).join(':');
+    ollamaProcess = spawn(execPath, ['serve'], {
+      detached: true,
+      stdio: 'ignore',
+      env: { ...process.env, PATH: envPath }
+    });
+    ollamaProcess.unref();
+    console.log(`Ollama started automatically using ${execPath} ✓`);
+    return { status: 'started', execPath, models: [] };
+  } catch (err) {
+    console.error('Could not auto-start Ollama:', err.message);
+    return { status: 'failed', execPath, error: err.message, models: [] };
   }
 }
 
-startOllama();
+// Start Ollama check safely
+startOllama().catch(err => console.error('Error during startOllama:', err));
 
-// ── SINGLE INSTANCE LOCK ─────────────────────
+// ── SINGLE INSTANCE LOCK ─────────────────────────
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
 } else {
   app.on('second-instance', () => {
-    if (win) win.showInactive();
+    if (win && !win.isDestroyed()) {
+      win.showInactive();
+      petVisible = true;
+      win.webContents.send('pet-visibility', true);
+    }
   });
 }
 
-app.whenReady().then(() => {
-  // Auto-start at login (macOS) — starts hidden, no dock bounce
-  if (process.platform === 'darwin') {
-    app.setLoginItemSettings({ openAtLogin: true, openAsHidden: true });
-    app.dock.hide(); // floating pet, not a dock app
+// ── MULTI-MONITOR POSITION HELPERS ───────────────
+function getValidWorkAreaForPosition(x, y, w, h) {
+  const displays = screen.getAllDisplays();
+  if (!displays || displays.length === 0) {
+    const primary = screen.getPrimaryDisplay();
+    return { display: primary, x: primary.workArea.x, y: primary.workArea.y };
   }
 
-  const { width, height } = screen.getPrimaryDisplay().workAreaSize;
+  let match = displays.find(d => {
+    const wa = d.workArea;
+    return x >= wa.x - 20 && x <= wa.x + wa.width + 20 &&
+           y >= wa.y - 20 && y <= wa.y + wa.height + 20;
+  });
+
+  if (!match) {
+    match = screen.getDisplayNearestPoint({ x: Math.round(x), y: Math.round(y) }) || screen.getPrimaryDisplay();
+  }
+
+  const wa = match.workArea;
+  const clampedX = Math.max(wa.x + 10, Math.min(x, wa.x + wa.width - w - 10));
+  const clampedY = Math.max(wa.y + 10, Math.min(y, wa.y + wa.height - h - 10));
+  return { display: match, x: clampedX, y: clampedY };
+}
+
+function ensureWindowOnScreen(targetWin) {
+  if (!targetWin || targetWin.isDestroyed()) return;
+  const [curX, curY] = targetWin.getPosition();
+  const [curW, curH] = targetWin.getSize();
+  const valid = getValidWorkAreaForPosition(curX, curY, curW, curH);
+
+  if (Math.abs(curX - valid.x) > 5 || Math.abs(curY - valid.y) > 5) {
+    targetWin.setPosition(valid.x, valid.y);
+    targetWin.webContents.send('position-reply', { x: valid.x, y: valid.y });
+  }
+
+  if (walkerWin && !walkerWin.isDestroyed()) {
+    const wa = valid.display.workArea;
+    walkerWin.setBounds({
+      x: wa.x,
+      y: wa.y + wa.height - 120,
+      width: wa.width,
+      height: 120
+    });
+  }
+}
+
+// ── APP READY ────────────────────────────────────
+app.whenReady().then(() => {
+  if (process.platform === 'darwin') {
+    app.setLoginItemSettings({ openAtLogin: true, openAsHidden: true });
+    if (app.dock) app.dock.hide();
+  }
+
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const { x: px, y: py, width: pw, height: ph } = primaryDisplay.workArea;
+
+  const defaultW = 130;
+  const defaultH = 145;
+  const defaultX = px + pw - defaultW - 10;
+  const defaultY = py + ph - defaultH - 10;
 
   // Main pet window
   win = new BrowserWindow({
-    width: 130,
-    height: 145,
-    x: width - 140,
-    y: height - 155,
+    width: defaultW,
+    height: defaultH,
+    x: defaultX,
+    y: defaultY,
     frame: false,
     transparent: true,
+    backgroundColor: '#00000000',
+    show: false,
     alwaysOnTop: true,
     resizable: false,
     skipTaskbar: true,
     hasShadow: false,
     webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false,
-      webSecurity: false,
-      autoplayPolicy: 'no-user-gesture-required',
-    },
+      preload: path.join(__dirname, 'preload.js'),
+      nodeIntegration: false,
+      contextIsolation: true,
+      webSecurity: true,
+      autoplayPolicy: 'no-user-gesture-required'
+    }
   });
 
   win.loadFile('index.html');
 
-  // Mac: 'floating' level + visibleOnFullScreen so it shows over other apps and spaces
+  win.once('ready-to-show', () => {
+    win.showInactive();
+  });
+
   if (process.platform === 'darwin') {
     win.setAlwaysOnTop(true, 'floating', 1);
     win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
@@ -85,7 +208,7 @@ app.whenReady().then(() => {
     win.setVisibleOnAllWorkspaces(true);
   }
 
-  // Global shortcut — Cmd+H on Mac, Ctrl+H on Windows/Linux
+  // Global shortcut — Cmd+Shift+P on Mac, Ctrl+Shift+P on Windows/Linux
   const shortcut = process.platform === 'darwin' ? 'Command+Shift+P' : 'Ctrl+Shift+P';
   globalShortcut.register(shortcut, () => {
     petVisible = !petVisible;
@@ -94,36 +217,86 @@ app.whenReady().then(() => {
       win.webContents.send('pet-visibility', true);
     } else {
       win.webContents.send('pet-visibility', false);
-      setTimeout(() => win.hide(), 200); // let fade animation play
+      setTimeout(() => {
+        if (!petVisible && win && !win.isDestroyed()) win.hide();
+      }, 200);
     }
   });
 
   // Walker window
   walkerWin = new BrowserWindow({
-    width: width,
+    width: pw,
     height: 120,
-    x: 0,
-    y: height - 120,
+    x: px,
+    y: py + ph - 120,
     frame: false,
     transparent: true,
+    backgroundColor: '#00000000',
+    show: false,
     alwaysOnTop: true,
     resizable: false,
     skipTaskbar: true,
     focusable: false,
     hasShadow: false,
     webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false,
-    },
+      preload: path.join(__dirname, 'preload.js'),
+      nodeIntegration: false,
+      contextIsolation: true,
+      webSecurity: true
+    }
   });
+
   walkerWin.loadFile('walker.html');
   walkerWin.setIgnoreMouseEvents(true);
+
+  walkerWin.once('ready-to-show', () => {
+    walkerWin.showInactive();
+  });
+
   if (process.platform === 'darwin') {
     walkerWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   } else {
     walkerWin.setVisibleOnAllWorkspaces(true);
   }
+
+  // Crash recovery guards
+  setupCrashRecovery(win, 'main', 'index.html');
+  setupCrashRecovery(walkerWin, 'walker', 'walker.html');
+
+  // Monitor topology change listeners
+  screen.on('display-metrics-changed', () => ensureWindowOnScreen(win));
+  screen.on('display-removed', () => ensureWindowOnScreen(win));
+  screen.on('display-added', () => ensureWindowOnScreen(win));
 });
+
+// ── RENDERER CRASH HANDLING ──────────────────────
+const crashTracker = {
+  main: { count: 0, lastTime: 0 },
+  walker: { count: 0, lastTime: 0 }
+};
+
+function setupCrashRecovery(targetWin, name, fileToLoad) {
+  if (!targetWin) return;
+  targetWin.webContents.on('render-process-gone', (event, details) => {
+    console.error(`[CRASH] ${name} renderer process gone:`, details);
+    const now = Date.now();
+    const tracker = crashTracker[name];
+    if (now - tracker.lastTime > 60000) tracker.count = 0;
+    tracker.lastTime = now;
+    tracker.count++;
+
+    if (tracker.count <= 3) {
+      console.log(`[RECOVERY] Reloading ${name} window (attempt ${tracker.count}/3)...`);
+      setTimeout(() => {
+        if (targetWin && !targetWin.isDestroyed()) {
+          targetWin.loadFile(fileToLoad).catch(e => console.error(`Failed to reload ${name}:`, e));
+        }
+      }, 500);
+    } else {
+      console.error(`[CRASH] ${name} crashed repeatedly. Halting auto-reload to avoid loop.`);
+    }
+  });
+}
 
 app.on('will-quit', () => globalShortcut.unregisterAll());
 
@@ -131,76 +304,210 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
-// ── IPC ────────────────────────────────────────────────────────
+// ── SYSTEM CPU MEASUREMENT (REAL SYSTEM DELTA) ──
+let lastCpuSnapshot = null;
+
+function computeSystemCpuUsage() {
+  const cpus = os.cpus();
+  if (!cpus || cpus.length === 0) return null;
+
+  let idle = 0;
+  let total = 0;
+
+  for (const core of cpus) {
+    for (const key in core.times) {
+      total += core.times[key];
+    }
+    idle += core.times.idle;
+  }
+
+  if (!lastCpuSnapshot) {
+    lastCpuSnapshot = { idle, total };
+    return null;
+  }
+
+  const idleDiff = idle - lastCpuSnapshot.idle;
+  const totalDiff = total - lastCpuSnapshot.total;
+  lastCpuSnapshot = { idle, total };
+
+  if (totalDiff <= 0) return 0;
+  const usage = 100 - Math.round((idleDiff / totalDiff) * 100);
+  return Math.max(0, Math.min(100, usage));
+}
+
+setInterval(() => {
+  try {
+    if (win && !win.isDestroyed()) {
+      const cpuPct = computeSystemCpuUsage();
+      if (cpuPct !== null) {
+        win.webContents.send('cpu-update', cpuPct);
+      }
+    }
+  } catch (err) {
+    console.warn('CPU monitor tick error:', err.message);
+  }
+}, 3000);
+
+// ── SYSTEM IDLE TIME ─────────────────────────────
+setInterval(() => {
+  try {
+    if (win && !win.isDestroyed()) {
+      const idleSecs = powerMonitor.getSystemIdleTime();
+      win.webContents.send('idle-update', idleSecs);
+    }
+  } catch (err) {
+    console.warn('Idle monitor tick error:', err.message);
+  }
+}, 10000);
+
+// ── DARK/LIGHT THEME ─────────────────────────────
+function sendTheme() {
+  try {
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('theme-update', nativeTheme.shouldUseDarkColors ? 'dark' : 'light');
+    }
+  } catch (_) {}
+}
+nativeTheme.on('updated', sendTheme);
+app.whenReady().then(() => setTimeout(sendTheme, 1500));
+
+// ── IPC HANDLERS ─────────────────────────────────
 ipcMain.on('close-app', () => app.quit());
+
+ipcMain.handle('check-ollama', async () => {
+  const execPath = findOllamaExecutable();
+  const apiCheck = await checkOllamaApiRunning(2000);
+
+  if (apiCheck.running) {
+    if (apiCheck.models.length > 0) {
+      return { status: 'ready', models: apiCheck.models, binaryPath: execPath };
+    }
+    return { status: 'no_models', models: [], binaryPath: execPath };
+  }
+
+  if (execPath) {
+    return { status: 'server_offline', models: [], binaryPath: execPath };
+  }
+
+  return { status: 'not_installed', models: [], binaryPath: null };
+});
 
 ipcMain.on('set-size', (e, { open }) => {
   if (!win || win.isDestroyed()) return;
-  // Anchor resize to the display the window is on, not always the primary
   const display = screen.getDisplayMatching(win.getBounds());
-  const { width, height } = display.workArea;
-  // When open: 340w fits the 320px chatbox. Height = chatbox(450) + pet(130) + gap(30) = 620
-  // When closed: just the pet 130x145
+  const { x, y, width, height } = display.workArea;
+
   const newW = open ? 340 : 130;
   const newH = open ? 640 : 145;
-  // Always anchor window to bottom-right so pet stays in corner
-  const newX = width  - newW - 10;
-  const newY = height - newH - 10;
+
+  const newX = x + width - newW - 10;
+  const newY = y + height - newH - 10;
+
   win.setSize(newW, newH);
   win.setPosition(newX, newY);
 });
 
 ipcMain.on('move-win', (e, { x, y }) => {
+  if (!win || win.isDestroyed()) return;
+  if (typeof x !== 'number' || typeof y !== 'number' || isNaN(x) || isNaN(y)) return;
   win.setPosition(Math.round(x), Math.round(y));
 });
 
 ipcMain.on('snap-corner', () => {
   if (!win || win.isDestroyed()) return;
-  // Use the display the window is currently on, not always the primary
   const display = screen.getDisplayMatching(win.getBounds());
-  const { width, height } = display.workAreaSize;
+  const { x, y, width, height } = display.workArea;
   const [cx, cy] = win.getPosition();
   const [cw, ch] = win.getSize();
-  // Snap to nearest corner with a small margin
-  const snapX = cx + cw/2 < display.workArea.x + width  / 2 ? 10 : display.workArea.x + width  - cw - 10;
-  const snapY = cy + ch/2 < display.workArea.y + height / 2 ? 10 : display.workArea.y + height - ch - 10;
+
+  const snapX = (cx + cw / 2 < x + width / 2) ? x + 10 : x + width - cw - 10;
+  const snapY = (cy + ch / 2 < y + height / 2) ? y + 10 : y + height - ch - 10;
+
   win.setPosition(snapX, snapY);
-  // Reply so renderer can persist the new position
   win.webContents.send('position-reply', { x: snapX, y: snapY });
 });
 
 ipcMain.on('notify', (e, { title, body }) => {
   if (Notification.isSupported()) {
-    new Notification({ title, body, silent: true }).show();
+    try {
+      new Notification({ title, body, silent: true }).show();
+    } catch (err) {
+      console.warn('Failed to display notification:', err.message);
+    }
   }
 });
 
+// ── DATA PERSISTENCE WITH SCHEMA VERSIONING ──────
 ipcMain.on('save-data', (e, data) => {
-  try { fs.writeFileSync(SAVE_PATH, JSON.stringify(data, null, 2)); } catch(_) {}
+  try {
+    const payload = {
+      version: CURRENT_SCHEMA_VERSION,
+      ...data,
+      updatedAt: Date.now()
+    };
+    fs.writeFileSync(SAVE_PATH, JSON.stringify(payload, null, 2), 'utf8');
+  } catch (err) {
+    console.error('Failed to save data:', err.message);
+  }
 });
 
 ipcMain.on('load-data', (e) => {
   try {
     if (fs.existsSync(SAVE_PATH)) {
-      const d = JSON.parse(fs.readFileSync(SAVE_PATH, 'utf8'));
-      win.webContents.send('data-loaded', d);
+      const raw = fs.readFileSync(SAVE_PATH, 'utf8');
+      const d = JSON.parse(raw);
+      const validated = {
+        version: d.version || CURRENT_SCHEMA_VERSION,
+        currentChar: typeof d.currentChar === 'string' ? d.currentChar : 'cat',
+        streak: typeof d.streak === 'number' ? d.streak : 0,
+        lastChatDate: typeof d.lastChatDate === 'string' ? d.lastChatDate : '',
+        moodPoints: typeof d.moodPoints === 'number' ? d.moodPoints : 100,
+        gameBest: typeof d.gameBest === 'number' ? d.gameBest : 0,
+        activeTab: typeof d.activeTab === 'string' ? d.activeTab : 'chat',
+        selectedModel: typeof d.selectedModel === 'string' ? d.selectedModel : '',
+        history: Array.isArray(d.history) ? d.history : [],
+        reminders: Array.isArray(d.reminders) ? d.reminders : [],
+        position: (d.position && typeof d.position.x === 'number' && typeof d.position.y === 'number')
+          ? d.position
+          : null
+      };
+
+      // Validate coordinates if present
+      if (validated.position) {
+        const [w, h] = win.getSize();
+        const valid = getValidWorkAreaForPosition(validated.position.x, validated.position.y, w, h);
+        validated.position = { x: valid.x, y: valid.y };
+      }
+
+      win.webContents.send('data-loaded', validated);
     }
-  } catch(_) {}
+  } catch (err) {
+    console.error('Failed to load data:', err.message);
+  }
 });
 
 ipcMain.on('export-chat', async (e, text) => {
-  const defaultName = `ollama-chat-${new Date().toISOString().slice(0,10)}.txt`;
-  const { canceled, filePath } = await dialog.showSaveDialog(win, {
-    title: 'Export Chat',
-    defaultPath: path.join(os.homedir(), defaultName),
-    filters: [{ name: 'Text Files', extensions: ['txt'] }]
-  });
-  if (canceled || !filePath) return;
-  try { fs.writeFileSync(filePath, text); win.webContents.send('export-done', filePath); } catch(_) {}
+  try {
+    const defaultName = `ollama-chat-${new Date().toISOString().slice(0, 10)}.txt`;
+    const { canceled, filePath } = await dialog.showSaveDialog(win, {
+      title: 'Export Chat',
+      defaultPath: path.join(os.homedir(), defaultName),
+      filters: [{ name: 'Text Files', extensions: ['txt'] }]
+    });
+    if (canceled || !filePath) return;
+    fs.writeFileSync(filePath, text, 'utf8');
+    win.webContents.send('export-done', filePath);
+  } catch (err) {
+    console.error('Failed to export chat:', err.message);
+  }
 });
 
 ipcMain.on('walk-char', (e, svgContent) => {
   if (walkerWin && !walkerWin.isDestroyed()) {
+    // Ensure walker is positioned on current window's display
+    const display = screen.getDisplayMatching(win.getBounds());
+    const { x, y, width, height } = display.workArea;
+    walkerWin.setBounds({ x, y: y + height - 120, width, height: 120 });
     walkerWin.webContents.send('start-walk', svgContent);
   }
 });
@@ -213,54 +520,63 @@ ipcMain.on('get-position', (e) => {
 });
 
 ipcMain.on('set-ignore-mouse', (e, flag) => {
-  if (win && !win.isDestroyed()) win.setIgnoreMouseEvents(flag, { forward: true });
+  if (win && !win.isDestroyed()) {
+    try {
+      win.setIgnoreMouseEvents(Boolean(flag), { forward: true });
+    } catch (err) {
+      console.warn('Failed to setIgnoreMouseEvents:', err.message);
+    }
+  }
 });
 
 ipcMain.on('open-music-dialog', async () => {
-  const { canceled, filePaths } = await dialog.showOpenDialog(win, {
-    title: 'Select Music File',
-    properties: ['openFile'],
-    filters: [{ name: 'Audio', extensions: ['mp3','wav','ogg','flac','m4a','aac'] }]
-  });
-  if (canceled || !filePaths.length) return;
-  const fp = filePaths[0];
-  const fileName = require('path').basename(fp);
-  win.webContents.send('music-file-selected', { filePath: fp, fileName });
+  try {
+    const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+      title: 'Select Music File',
+      properties: ['openFile'],
+      filters: [{ name: 'Audio', extensions: ['mp3', 'wav', 'ogg', 'flac', 'm4a', 'aac'] }]
+    });
+    if (canceled || !filePaths.length) return;
+    const fp = filePaths[0];
+    const fileName = path.basename(fp);
+    win.webContents.send('music-file-selected', { filePath: fp, fileName });
+  } catch (err) {
+    console.error('Failed to open music dialog:', err.message);
+  }
 });
 
-
+// ── SYSTEM STATUS (DIAGNOSTICS & HARDWARE) ────────
 ipcMain.on('get-system-status', (e) => {
   try {
     const platform = process.platform;
     const totalMem = os.totalmem();
     const freeMem  = os.freemem();
     const usedMem  = totalMem - freeMem;
-    const memPct   = Math.round(usedMem / totalMem * 100);
+    const memPct   = Math.round((usedMem / totalMem) * 100);
 
     let battery = null;
     if (platform === 'darwin') {
       try {
-        const raw = execSync('pmset -g batt', { timeout: 1500 }).toString();
+        const raw = execSync('pmset -g batt', { timeout: 1500, encoding: 'utf8' });
         const pct = raw.match(/(\d+)%/);
         const charging = raw.includes('AC Power') || raw.includes('charging');
-        if (pct) battery = { level: parseInt(pct[1]), charging };
-      } catch(_) {}
+        if (pct) battery = { level: parseInt(pct[1], 10), charging };
+      } catch (_) {}
     }
 
     const cpus = os.cpus();
-    const model = cpus[0]?.model || 'Unknown CPU';
-    const cores = cpus.length;
+    const model = cpus && cpus[0]?.model ? cpus[0].model : 'Apple Silicon / x86';
+    const cores = cpus ? cpus.length : 1;
     const uptimeSec = os.uptime();
     const uptimeH = Math.floor(uptimeSec / 3600);
     const uptimeM = Math.floor((uptimeSec % 3600) / 60);
 
-    // Get top process on Mac
     let topProc = null;
     if (platform === 'darwin') {
       try {
-        const raw = execSync('ps -Ao comm,pcpu -r | head -3', { timeout: 1500 }).toString().trim().split('\n');
+        const raw = execSync('ps -Ao comm,pcpu -r | head -3', { timeout: 1500, encoding: 'utf8' }).trim().split('\n');
         topProc = raw.slice(1).map(l => l.trim()).filter(Boolean)[0] || null;
-      } catch(_) {}
+      } catch (_) {}
     }
 
     win.webContents.send('system-status', {
@@ -269,99 +585,92 @@ ipcMain.on('get-system-status', (e) => {
       usedMemGB:  (usedMem  / 1073741824).toFixed(1),
       memPct,
       battery,
-      cpuModel: model.replace(/\s+/g,' ').trim(),
+      cpuModel: model.replace(/\s+/g, ' ').trim(),
       cores,
       uptime: `${uptimeH}h ${uptimeM}m`,
       topProc,
       hostname: os.hostname(),
     });
-  } catch(err) {
-    // Fallback: send basic info even if shell commands fail (e.g. desktop Mac, no battery)
+  } catch (err) {
+    console.warn('System status collection fallback triggered:', err.message);
     try {
       win.webContents.send('system-status', {
         platform: process.platform,
         hostname: os.hostname(),
-        cpuModel: (os.cpus()[0]?.model || 'Unknown CPU').replace(/\s+/g,' ').trim(),
-        cores: os.cpus().length,
-        totalMemGB: (os.totalmem()/1073741824).toFixed(1),
-        usedMemGB:  ((os.totalmem()-os.freemem())/1073741824).toFixed(1),
-        memPct: Math.round((os.totalmem()-os.freemem())/os.totalmem()*100),
-        uptime: `${Math.floor(os.uptime()/3600)}h ${Math.floor((os.uptime()%3600)/60)}m`,
+        cpuModel: 'System CPU',
+        cores: os.cpus() ? os.cpus().length : 1,
+        totalMemGB: (os.totalmem() / 1073741824).toFixed(1),
+        usedMemGB:  ((os.totalmem() - os.freemem()) / 1073741824).toFixed(1),
+        memPct: Math.round(((os.totalmem() - os.freemem()) / os.totalmem()) * 100),
+        uptime: `${Math.floor(os.uptime() / 3600)}h ${Math.floor((os.uptime() % 3600) / 60)}m`,
         battery: null,
         topProc: '—'
       });
-    } catch(_) {}
+    } catch (_) {}
   }
 });
 
-
-setInterval(() => {
-  try {
-    if (win && !win.isDestroyed()) {
-      const cpuUsage = process.cpuUsage();
-      win.webContents.send('cpu-update', Math.min(100, Math.round(cpuUsage.user / 10000)));
-    }
-  } catch(_) {}
-}, 5000);
-
-// ── IDLE TIME ──────────────────────────────────
-const { powerMonitor } = require('electron');
-setInterval(() => {
-  try {
-    if (win && !win.isDestroyed()) {
-      const idleSecs = powerMonitor.getSystemIdleTime();
-      win.webContents.send('idle-update', idleSecs);
-    }
-  } catch(_) {}
-}, 10000);
-
-// ── DARK/LIGHT MODE ───────────────────────────
-const { nativeTheme } = require('electron');
-function sendTheme() {
-  try {
-    if (win && !win.isDestroyed()) {
-      win.webContents.send('theme-update', nativeTheme.shouldUseDarkColors ? 'dark' : 'light');
-    }
-  } catch(_) {}
-}
-nativeTheme.on('updated', sendTheme);
-app.whenReady().then(() => setTimeout(sendTheme, 1500));
-
-// ── ACTIVE APPS (extended) ─────────────────────
+// ── ACTIVE APPS (ACCURATE MACOS FOREGROUND DETECTION) ──
 ipcMain.on('get-active-apps', (e) => {
   try {
     const platform = process.platform;
     let apps = [];
     if (platform === 'darwin') {
-      const raw = execSync("ps -Ao comm -r | head -20", { timeout: 2000 }).toString().trim().split('\n');
-      apps = [...new Set(raw.map(l => l.trim().split('/').pop()).filter(Boolean))].slice(0, 10);
+      try {
+        const script = 'tell application "System Events" to get name of every process whose background only is false';
+        const raw = execSync(`osascript -e '${script}'`, { timeout: 2000, encoding: 'utf8' }).trim();
+        apps = raw.split(',').map(s => s.trim()).filter(Boolean).slice(0, 10);
+      } catch (osascriptErr) {
+        // Fallback to top running processes
+        const raw = execSync("ps -Ao comm -r | head -20", { timeout: 2000, encoding: 'utf8' }).trim().split('\n');
+        apps = [...new Set(raw.map(l => l.trim().split('/').pop()).filter(Boolean))].slice(0, 10);
+      }
     } else if (platform === 'linux') {
-      const raw = execSync("ps -Ao comm --sort=-%cpu | head -15", { timeout: 2000 }).toString().trim().split('\n');
+      const raw = execSync("ps -Ao comm --sort=-%cpu | head -15", { timeout: 2000, encoding: 'utf8' }).trim().split('\n');
       apps = [...new Set(raw.map(l => l.trim()).filter(Boolean))].slice(0, 10);
     } else {
       apps = ['explorer', 'chrome', 'code'];
     }
     win.webContents.send('active-apps', apps);
-  } catch(_) {
+  } catch (err) {
+    console.warn('Active apps error:', err.message);
     win.webContents.send('active-apps', []);
   }
 });
 
-// ── SCREEN BRIGHTNESS (macOS) ─────────────────
+// ── SCREEN BRIGHTNESS (FAIL-SAFE) ────────────────
+function checkBrightnessSupport() {
+  if (brightnessCliAvailable !== null) return brightnessCliAvailable;
+  if (process.platform !== 'darwin') {
+    brightnessCliAvailable = false;
+    return false;
+  }
+  try {
+    execSync('which brightness', { timeout: 1000, stdio: 'ignore' });
+    brightnessCliAvailable = true;
+  } catch (_) {
+    brightnessCliAvailable = false;
+  }
+  return brightnessCliAvailable;
+}
+
 ipcMain.on('get-brightness', (e) => {
   try {
-    if (process.platform === 'darwin') {
-      const raw = execSync("brightness -l 2>/dev/null | grep 'display 0' | awk '{print $NF}'", { timeout: 1500 }).toString().trim();
+    if (checkBrightnessSupport()) {
+      const raw = execSync("brightness -l 2>/dev/null | grep 'display 0' | awk '{print $NF}'", { timeout: 1500, encoding: 'utf8' }).trim();
       const val = parseFloat(raw);
       win.webContents.send('brightness-update', isNaN(val) ? -1 : Math.round(val * 100));
     } else {
       win.webContents.send('brightness-update', -1);
     }
-  } catch(_) { win.webContents.send('brightness-update', -1); }
+  } catch (err) {
+    win.webContents.send('brightness-update', -1);
+  }
 });
 
-// ── TYPING SPEED ─────────────────────────────
+// ── TYPING SPEED ─────────────────────────────────
 ipcMain.on('typing-speed', (e, wpm) => {
-  // just relay back; renderer handles reaction
-  win.webContents.send('typing-speed-reaction', wpm);
+  if (win && !win.isDestroyed()) {
+    win.webContents.send('typing-speed-reaction', wpm);
+  }
 });

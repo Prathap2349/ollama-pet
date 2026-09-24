@@ -648,13 +648,55 @@ body{
 </div>
 
 <script>
-const { ipcRenderer } = require('electron');
+// ══════════════════════════════════════════════
+// ELECTRON IPC SECURE COMPATIBILITY BRIDGE
+// ══════════════════════════════════════════════
+const api = window.electronAPI || {};
+const ipcRenderer = {
+  send: (channel, data) => {
+    switch (channel) {
+      case 'close-app': api.closeApp?.(); break;
+      case 'set-size': api.setSize?.(data); break;
+      case 'move-win': api.moveWindow?.(data); break;
+      case 'snap-corner': api.snapCorner?.(); break;
+      case 'notify': api.notify?.(data); break;
+      case 'save-data': api.saveData?.(data); break;
+      case 'load-data': api.loadData?.(); break;
+      case 'export-chat': api.exportChat?.(data); break;
+      case 'walk-char': api.walkChar?.(data); break;
+      case 'get-position': api.getPosition?.(); break;
+      case 'set-ignore-mouse': api.setIgnoreMouse?.(data); break;
+      case 'open-music-dialog': api.openMusicDialog?.(); break;
+      case 'get-system-status': api.getSystemStatus?.(); break;
+      case 'get-active-apps': api.getActiveApps?.(); break;
+      case 'get-brightness': api.getBrightness?.(); break;
+      case 'typing-speed': api.sendTypingSpeed?.(data); break;
+      default: console.warn('Unhandled ipc send channel:', channel);
+    }
+  },
+  on: (channel, callback) => {
+    switch (channel) {
+      case 'pet-visibility': return api.onPetVisibility?.((val) => callback(null, val));
+      case 'position-reply': return api.onPositionReply?.((pos) => callback(null, pos));
+      case 'data-loaded': return api.onDataLoaded?.((data) => callback(null, data));
+      case 'export-done': return api.onExportDone?.((p) => callback(null, p));
+      case 'music-file-selected': return api.onMusicFileSelected?.((f) => callback(null, f));
+      case 'system-status': return api.onSystemStatus?.((s) => callback(null, s));
+      case 'cpu-update': return api.onCpuUpdate?.((cpu) => callback(null, cpu));
+      case 'idle-update': return api.onIdleUpdate?.((idle) => callback(null, idle));
+      case 'theme-update': return api.onThemeUpdate?.((t) => callback(null, t));
+      case 'active-apps': return api.onActiveApps?.((apps) => callback(null, apps));
+      case 'brightness-update': return api.onBrightnessUpdate?.((b) => callback(null, b));
+      default: console.warn('Unhandled ipc on channel:', channel); return () => {};
+    }
+  }
+};
 
 // ══════════════════════════════════════════════
-// CHARACTERS
+// CHARACTERS — CONSOLIDATED SPECIFICATION
 // ══════════════════════════════════════════════
 const CHARS = {
-  cat:{
+cat:{
     name:'Mochi',accent:'rgba(139,92,246,0.75)',accentBorder:'rgba(139,92,246,0.5)',
     accentSolid:'#8b5cf6',glow:'rgba(139,92,246,0.5)',
     greetings:['Nyaa~ 🐱','Pet me!','Meow!','*purrs*','nya nya~'],
@@ -1143,12 +1185,9 @@ const CHARS = {
       </g>
       <text x="22" y="30" font-size="18"><animate attributeName="opacity" values="0;1;0" dur="0.5s" repeatCount="indefinite"/>⭐</text>
       <text x="112" y="40" font-size="16"><animate attributeName="opacity" values="0;1;0" dur="0.5s" begin="0.25s" repeatCount="indefinite"/>💫</text>`}
-  }
-};
-
-// ── 2 NEW CHARACTERS ──────────────────────────
-CHARS.fox = {
-  name:'KITA',accent:'rgba(251,146,60,0.75)',accentBorder:'rgba(251,146,60,0.5)',
+  },
+  fox: {
+name:'KITA',accent:'rgba(251,146,60,0.75)',accentBorder:'rgba(251,146,60,0.5)',
   accentSolid:'#fb923c',glow:'rgba(251,146,60,0.55)',
   greetings:['Yip! 🦊','Foxy~!','Hehehe 😏','*tail swish*','Kita here!'],
   moods:{happy:'🦊',sad:'😔',hungry:'🍖',sleepy:'😴',excited:'✨',tired:'😓',angry:'😠',love:'🧡',surprised:'😲'},
@@ -1246,10 +1285,9 @@ CHARS.fox = {
     </g>
     <text x="22" y="30" font-size="18"><animate attributeName="opacity" values="0;1;0" dur="0.4s" repeatCount="indefinite"/>🔥</text>
     <text x="112" y="40" font-size="16"><animate attributeName="opacity" values="0;1;0" dur="0.4s" begin="0.2s" repeatCount="indefinite"/>🍊</text>`}
-};
-
-CHARS.bunny = {
-  name:'POCHI',accent:'rgba(244,114,182,0.75)',accentBorder:'rgba(244,114,182,0.5)',
+  },
+  bunny: {
+name:'POCHI',accent:'rgba(244,114,182,0.75)',accentBorder:'rgba(244,114,182,0.5)',
   accentSolid:'#f472b6',glow:'rgba(244,114,182,0.55)',
   greetings:['*hops* 🐰','Binky time!','Bun bun~','Carrots? 🥕','Thump thump!'],
   moods:{happy:'🐰',sad:'🥲',hungry:'🥕',sleepy:'😴',excited:'🐇',tired:'🫠',angry:'😤',love:'💗',surprised:'👀'},
@@ -1343,339 +1381,490 @@ CHARS.bunny = {
     </g>
     <text x="28" y="30" font-size="18"><animate attributeName="opacity" values="0;1;0" dur="0.5s" repeatCount="indefinite"/>🎀</text>
     <text x="110" y="40" font-size="14"><animate attributeName="opacity" values="0;1;0" dur="0.5s" begin="0.25s" repeatCount="indefinite"/>💗</text>`}
+  }
 };
 
 // ══════════════════════════════════════════════
 // STATE
 // ══════════════════════════════════════════════
-let currentChar='cat', chatOpen=false, isThinking=false;
-let animState='idle', mood='happy', moodPoints=100;
-let chatCount=0, streak=0, lastChatDate='', gameScore=0, gameBest=0;
-let history=[], reminders=[], animTime=0, bubbleTimer=null;
-let sleepTimer=null, idleGreetTimer=null, rafId=null;
-let isDaytime=true, cpuLoad=0;
+let currentChar = 'cat';
+let chatOpen = false;
+let isThinking = false;
+let animState = 'idle';
+let mood = 'happy';
+let moodPoints = 100;
+let chatCount = 0;
+let streak = 0;
+let lastChatDate = '';
+let gameScore = 0;
+let gameBest = 0;
+let history = [];
+let reminders = [];
+const reminderTimers = new Map();
+let animTime = 0;
+let bubbleTimer = null;
+let sleepTimer = null;
+let rafId = null;
+let isDaytime = true;
+let cpuLoad = 0;
+let weatherContext = '';
 
-const svg=document.getElementById('pet-svg');
-const chatbox=document.getElementById('chatbox');
-const messages=document.getElementById('messages');
-const input=document.getElementById('userinput');
-const statusdot=document.getElementById('statusdot');
-const bubble=document.getElementById('bubble');
-const glowRing=document.getElementById('glow-ring');
-const petName=document.getElementById('pet-name');
-const moodDisp=document.getElementById('mood-display');
-const streakBadge=document.getElementById('streak-badge');
-const particles=document.getElementById('particles');
-const cpuFill=document.getElementById('cpu-fill');
+// Position tracking
+let winScreenX = 0;
+let winScreenY = 0;
+let isMouseDown = false;
+let isDragging = false;
+let dragStartX = 0, dragStartY = 0;
+let mouseOffsetWinX = 0, mouseOffsetWinY = 0;
+let suppressClickUntil = 0;
+
+// Ollama Model Selection
+let ollamaOnline = false;
+let installedModels = [];
+let activeModel = '';
+let savedModelPreference = '';
+
+// DOM Elements
+const svg = document.getElementById('pet-svg');
+const chatbox = document.getElementById('chatbox');
+const messages = document.getElementById('messages');
+const input = document.getElementById('userinput');
+const statusdot = document.getElementById('statusdot');
+const bubble = document.getElementById('bubble');
+const glowRing = document.getElementById('glow-ring');
+const petName = document.getElementById('pet-name');
+const moodDisp = document.getElementById('mood-display');
+const streakBadge = document.getElementById('streak-badge');
+const particles = document.getElementById('particles');
+const cpuFill = document.getElementById('cpu-fill');
+const danceSvg = document.getElementById('dance-svg');
+const danceLights = document.getElementById('dance-lights');
 
 // ══════════════════════════════════════════════
-// DRAG — mouse drag anywhere on pet
+// DRAG & CLICK HANDLING (ZERO JUMP, THRESHOLD-BASED)
 // ══════════════════════════════════════════════
-let dragging=false, dragOX=0, dragOY=0;
-document.getElementById('pet-stage').addEventListener('mousedown', e=>{
-  if(e.button!==0) return;
-  dragging=true; dragOX=e.screenX; dragOY=e.screenY;
-  document.addEventListener('mousemove', onDrag);
-  document.addEventListener('mouseup', onDrop);
+ipcRenderer.on('position-reply', (e, pos) => {
+  if (pos && typeof pos.x === 'number' && typeof pos.y === 'number') {
+    winScreenX = pos.x;
+    winScreenY = pos.y;
+    savePosition(pos.x, pos.y);
+  }
+});
+ipcRenderer.send('get-position');
+
+const petStage = document.getElementById('pet-stage');
+
+petStage.addEventListener('mousedown', (e) => {
+  if (e.button !== 0) return;
+  isMouseDown = true;
+  isDragging = false;
+  dragStartX = e.screenX;
+  dragStartY = e.screenY;
+  mouseOffsetWinX = e.screenX - winScreenX;
+  mouseOffsetWinY = e.screenY - winScreenY;
+
+  document.addEventListener('mousemove', onPetMouseMove);
+  document.addEventListener('mouseup', onPetMouseUp);
   e.preventDefault();
 });
-function onDrag(e){
-  if(!dragging) return;
-  ipcRenderer.send('move-win', { x: e.screenX - 100, y: e.screenY - 100 });
+
+function onPetMouseMove(e) {
+  if (!isMouseDown) return;
+  const dist = Math.hypot(e.screenX - dragStartX, e.screenY - dragStartY);
+  if (dist > 5) {
+    isDragging = true;
+    const newX = e.screenX - mouseOffsetWinX;
+    const newY = e.screenY - mouseOffsetWinY;
+    winScreenX = newX;
+    winScreenY = newY;
+    ipcRenderer.send('move-win', { x: newX, y: newY });
+  }
 }
-// onDrop defined later (after savePosition) to include position persistence
+
+function onPetMouseUp(e) {
+  if (!isMouseDown) return;
+  isMouseDown = false;
+  document.removeEventListener('mousemove', onPetMouseMove);
+  document.removeEventListener('mouseup', onPetMouseUp);
+
+  if (isDragging) {
+    isDragging = false;
+    suppressClickUntil = Date.now() + 200;
+    ipcRenderer.send('snap-corner');
+    ipcRenderer.send('get-position');
+  }
+}
 
 // ══════════════════════════════════════════════
 // THEME
 // ══════════════════════════════════════════════
-function applyTheme(ch){
-  const c=CHARS[ch];
-  document.documentElement.style.setProperty('--accent',c.accent);
-  document.documentElement.style.setProperty('--accent-border',c.accentBorder);
-  document.documentElement.style.setProperty('--accent-solid',c.accentSolid);
-  document.documentElement.style.setProperty('--glow',c.glow);
-  petName.textContent="["+c.name+"]"; petName.style.color="#4ade80"; petName.style.fontFamily="'Courier New',monospace"; petName.style.fontSize="12px";
+function applyTheme(ch) {
+  const c = CHARS[ch] || CHARS.cat;
+  document.documentElement.style.setProperty('--accent', c.accent);
+  document.documentElement.style.setProperty('--accent-border', c.accentBorder);
+  document.documentElement.style.setProperty('--accent-solid', c.accentSolid);
+  document.documentElement.style.setProperty('--glow', c.glow);
+  petName.textContent = '[' + c.name + ']';
+  petName.style.color = '#4ade80';
+  petName.style.fontFamily = "'Courier New',monospace";
+  petName.style.fontSize = '12px';
 }
 
 // ══════════════════════════════════════════════
 // DAY/NIGHT SKIN
 // ══════════════════════════════════════════════
-function checkDayNight(){
-  const h=new Date().getHours();
-  isDaytime = h>=6 && h<19;
-  document.getElementById('stat-skin').textContent = isDaytime ? 'Day ☀️' : 'Night 🌙';
+function checkDayNight() {
+  const h = new Date().getHours();
+  isDaytime = h >= 6 && h < 19;
+  const skinEl = document.getElementById('stat-skin');
+  if (skinEl) skinEl.textContent = isDaytime ? 'Day ☀️' : 'Night 🌙';
   document.body.style.filter = isDaytime ? 'none' : 'hue-rotate(15deg) brightness(0.88)';
 }
 checkDayNight();
 setInterval(checkDayNight, 60000);
 
 // ══════════════════════════════════════════════
-// ANIMATION LOOP
+// OPTIMIZED SVG ANIMATION LOOP (NO COMPLETE REBUILDS EVERY FRAME)
 // ══════════════════════════════════════════════
-function renderFrame(ts){
-  animTime=ts/1000;
-  const c=CHARS[currentChar];
-  let content='';
-  if     (animState==='thinking') content=c.thinking(animTime);
-  else if(animState==='sleep')    content=c.sleep(animTime);
-  else if(animState==='shock')    content=c.shock(animTime);
-  else if(animState==='dance')    content=c.dance(animTime);
-  else                            content=c.idle(animTime);
-  svg.innerHTML=content;
-  rafId=requestAnimationFrame(renderFrame);
+let currentRenderKey = '';
+let lastIdleRenderTime = 0;
+
+function renderFrame(ts) {
+  animTime = ts / 1000;
+  const c = CHARS[currentChar] || CHARS.cat;
+  const renderKey = `${currentChar}_${animState}`;
+
+  if (renderKey !== currentRenderKey) {
+    currentRenderKey = renderKey;
+    let content = '';
+    if      (animState === 'thinking') content = c.thinking();
+    else if (animState === 'sleep')    content = c.sleep();
+    else if (animState === 'shock')    content = c.shock();
+    else if (animState === 'dance')    content = c.dance(animTime);
+    else                               content = c.idle(animTime);
+    svg.innerHTML = content;
+  } else if (animState === 'dance') {
+    // In dance mode, update transform of dancing group if available
+    const dg = svg.querySelector('g[transform]');
+    if (dg && c.dance) {
+      const sp = window._danceSpeed || 6;
+      const sw = window._danceSwing || 10;
+      let tr = '';
+      if (currentChar === 'cat') tr = `translate(0,${Math.sin(animTime * sp) * sw * 0.7}) rotate(${Math.sin(animTime * (sp * 0.67)) * sw},80,80)`;
+      else if (currentChar === 'dragon') tr = `translate(0,${Math.sin(animTime * sp) * 8}) rotate(${Math.sin(animTime * (sp * 0.83)) * sw},80,80)`;
+      else if (currentChar === 'robot') tr = `translate(${Math.sin(animTime * sp) * 6},${Math.abs(Math.sin(animTime * sp)) * -4})`;
+      else if (currentChar === 'ghost') tr = `translate(${Math.sin(animTime * (sp * 0.67)) * sw},${Math.sin(animTime * sp) * sw * 0.7}) rotate(${Math.sin(animTime * (sp * 0.5)) * sw},80,80)`;
+      else if (currentChar === 'fox') tr = `translate(${Math.sin(animTime * (sp * 0.83)) * sw * 0.7},${Math.abs(Math.sin(animTime * (sp * 0.83))) * -3}) rotate(${Math.sin(animTime * (sp * 0.67)) * sw * 1.1},80,80)`;
+      else if (currentChar === 'bunny') tr = `translate(0,${Math.sin(animTime * sp) * 8}) rotate(${Math.sin(animTime * (sp * 0.83)) * sw},80,80)`;
+      else tr = `translate(0,${Math.sin(animTime * sp) * sw * 0.7}) rotate(${Math.sin(animTime * (sp * 0.67)) * sw},80,80)`;
+      dg.setAttribute('transform', tr);
+    }
+  } else if (animState === 'idle') {
+    // Smooth 30fps animation for idle sine waves to prevent 120fps DOM thrashing
+    if (ts - lastIdleRenderTime > 32) {
+      lastIdleRenderTime = ts;
+      svg.innerHTML = c.idle(animTime);
+    }
+  }
+  // When animState is 'sleep', 'thinking', or 'shock', SMIL animations run natively!
+
+  // Update Dance Tab SVG only when Dance tab is active
+  const danceTabActive = document.getElementById('game-panel')?.classList.contains('active');
+  if (danceSvg && danceTabActive) {
+    if (!danceSvg.dataset.renderedKey || danceSvg.dataset.renderedKey !== currentChar) {
+      danceSvg.innerHTML = c.dance ? c.dance(animTime) : c.idle(animTime);
+      danceSvg.dataset.renderedKey = currentChar;
+    } else {
+      const dg = danceSvg.querySelector('g[transform]');
+      if (dg) {
+        const sp = window._danceSpeed || 6;
+        const sw = window._danceSwing || 10;
+        dg.setAttribute('transform', `translate(0,${Math.sin(animTime * sp) * sw * 0.7}) rotate(${Math.sin(animTime * (sp * 0.67)) * sw},80,80)`);
+      }
+    }
+  }
+
+  rafId = requestAnimationFrame(renderFrame);
 }
-rafId=requestAnimationFrame(renderFrame);
+rafId = requestAnimationFrame(renderFrame);
 
 // ══════════════════════════════════════════════
 // SLEEP TIMER (5 min idle)
 // ══════════════════════════════════════════════
-function resetSleepTimer(){
+function resetSleepTimer() {
   clearTimeout(sleepTimer);
-  if(animState==='sleep') animState='idle';
-  sleepTimer=setTimeout(()=>{
-    if(!chatOpen && !isThinking){
-      animState='sleep'; mood='sleepy'; updateMood();
-      showBubble('zZz... 😴',3500);
+  if (animState === 'sleep') {
+    animState = 'idle';
+    currentRenderKey = '';
+  }
+  sleepTimer = setTimeout(() => {
+    if (!chatOpen && !isThinking) {
+      animState = 'sleep';
+      currentRenderKey = '';
+      mood = 'sleepy';
+      updateMood();
+      showBubble('zZz... 😴', 3500);
     }
-  }, 5*60*1000);
+  }, 5 * 60 * 1000);
 }
 resetSleepTimer();
 document.addEventListener('mousemove', resetSleepTimer);
 
 // ══════════════════════════════════════════════
-// MOOD
+// MOOD MANAGEMENT (DETERMINISTIC PRIORITY)
 // ══════════════════════════════════════════════
-// ══════════════════════════════════════════════
-// MOOD — 10 emotions, auto-switch + tap to override
-// ══════════════════════════════════════════════
-const MOOD_CYCLE = ['happy','excited','love','surprised','hungry','tired','angry','sad','crying','sleepy'];
-let moodOverride = null; // set when user taps mood display
+const MOOD_CYCLE = ['happy', 'excited', 'love', 'surprised', 'hungry', 'tired', 'angry', 'sad', 'crying', 'sleepy'];
+let moodOverride = null;
 let moodOverrideTimer = null;
 
-function updateMood(){
-  const c=CHARS[currentChar];
-  const h=new Date().getHours();
+function updateMood() {
+  const c = CHARS[currentChar] || CHARS.cat;
+  const h = new Date().getHours();
 
-  // Auto-logic (only if no manual override active)
-  if(!moodOverride){
-    if(animState==='sleep')                    mood='sleepy';
-    else if(cpuLoad>85)                        mood='tired';
-    else if(cpuLoad>65)                        mood='angry';
-    else if(isThinking)                        mood='surprised';
-    else if(moodPoints>90)                     mood='love';
-    else if(moodPoints>75)                     mood='happy';
-    else if(moodPoints>60)                     mood='excited';
-    else if(moodPoints>45)                     mood='hungry';
-    else if(moodPoints>25)                     mood='sad';
-    else if(moodPoints>10)                     mood='crying';
-    else                                       mood='sad';
-    // time-based overrides
-    if(h>=0 && h<6 && animState!=='sleep')     mood='sleepy';
+  if (!moodOverride) {
+    if (animState === 'sleep')               mood = 'sleepy';
+    else if (isThinking)                     mood = 'surprised';
+    else if (cpuLoad > 85)                   mood = 'tired';
+    else if (cpuLoad > 65)                   mood = 'angry';
+    else if (moodPoints > 90)                mood = 'love';
+    else if (moodPoints > 75)                mood = 'happy';
+    else if (moodPoints > 60)                mood = 'excited';
+    else if (moodPoints > 45)                mood = 'hungry';
+    else if (moodPoints > 25)                mood = 'sad';
+    else if (moodPoints > 10)                mood = 'crying';
+    else                                     mood = 'sad';
+
+    if (h >= 0 && h < 6 && animState !== 'sleep') mood = 'sleepy';
   }
 
   const emoji = c.moods[mood] || '😊';
   moodDisp.textContent = emoji;
-  // Animate the emoji on change
-  moodDisp.style.transform='scale(1.5)';
-  setTimeout(()=>moodDisp.style.transform='scale(1)',300);
+  moodDisp.style.transform = 'scale(1.5)';
+  setTimeout(() => { moodDisp.style.transform = 'scale(1)'; }, 300);
 
-  document.getElementById('stat-mood').textContent = mood.charAt(0).toUpperCase()+mood.slice(1)+' '+emoji;
-  document.getElementById('mood-bar-fill').style.width = moodPoints+'%';
-  moodPoints = Math.max(0, moodPoints-0.5);
+  const statMood = document.getElementById('stat-mood');
+  if (statMood) statMood.textContent = mood.charAt(0).toUpperCase() + mood.slice(1) + ' ' + emoji;
+  const moodFill = document.getElementById('mood-bar-fill');
+  if (moodFill) moodFill.style.width = moodPoints + '%';
+  moodPoints = Math.max(0, moodPoints - 0.5);
 }
 setInterval(updateMood, 20000);
 
-// Tap mood display to manually cycle through all 10 emotions
-moodDisp.style.cursor='pointer';
-moodDisp.title='Tap to change mood';
-moodDisp.addEventListener('click', e=>{
+moodDisp.style.cursor = 'pointer';
+moodDisp.title = 'Tap to change mood';
+moodDisp.addEventListener('click', (e) => {
   e.stopPropagation();
   const idx = MOOD_CYCLE.indexOf(mood);
-  mood = MOOD_CYCLE[(idx+1) % MOOD_CYCLE.length];
+  mood = MOOD_CYCLE[(idx + 1) % MOOD_CYCLE.length];
   moodOverride = mood;
   clearTimeout(moodOverrideTimer);
-  // Override lasts 60 seconds then auto-mode resumes
-  moodOverrideTimer = setTimeout(()=>{ moodOverride=null; }, 60000);
+  moodOverrideTimer = setTimeout(() => { moodOverride = null; }, 60000);
   updateMood();
-  showBubble(mood.charAt(0).toUpperCase()+mood.slice(1)+' '+(CHARS[currentChar].moods[mood]||''), 1200);
+  showBubble(mood.charAt(0).toUpperCase() + mood.slice(1) + ' ' + ((CHARS[currentChar] || CHARS.cat).moods[mood] || ''), 1200);
   playTone(660, 0.08, 'sine', 0.05);
 });
 
 // ══════════════════════════════════════════════
 // CPU MONITOR
 // ══════════════════════════════════════════════
-ipcRenderer.on('cpu-update', (e, val)=>{
-  cpuLoad=val;
-  const pct=Math.min(100,val);
-  cpuFill.style.width=pct+'%';
-  cpuFill.style.background=pct>70?'#ef4444':pct>40?'#f59e0b':'#22c55e';
-  document.getElementById('stat-cpu').textContent=pct+'%';
-  if(pct>85 && animState==='idle'){
-    showBubble('I\'m getting hot! 🌡️',2500);
-    animState='shock'; setTimeout(()=>animState='idle',2000);
+ipcRenderer.on('cpu-update', (e, val) => {
+  if (typeof val !== 'number') return;
+  cpuLoad = val;
+  const pct = Math.min(100, Math.max(0, val));
+  if (cpuFill) {
+    cpuFill.style.width = pct + '%';
+    cpuFill.style.background = pct > 70 ? '#ef4444' : pct > 40 ? '#f59e0b' : '#22c55e';
+  }
+  const statCpu = document.getElementById('stat-cpu');
+  if (statCpu) statCpu.textContent = pct + '%';
+
+  if (pct > 85 && animState === 'idle') {
+    showBubble("I'm getting hot! 🌡️", 2500);
+    animState = 'shock';
+    currentRenderKey = '';
+    setTimeout(() => { animState = 'idle'; currentRenderKey = ''; }, 2000);
   }
 });
 
 // ══════════════════════════════════════════════
 // CLOCK
 // ══════════════════════════════════════════════
-setInterval(()=>{
-  const now=new Date();
-  document.getElementById('stat-time').textContent=now.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
-},1000);
+setInterval(() => {
+  const now = new Date();
+  const statTime = document.getElementById('stat-time');
+  if (statTime) statTime.textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}, 1000);
 
 // ══════════════════════════════════════════════
-// BUBBLE
+// BUBBLE & PARTICLES
 // ══════════════════════════════════════════════
-function showBubble(text,duration=2500){
+function showBubble(text, duration = 2500) {
   clearTimeout(bubbleTimer);
-  bubble.textContent=text;
+  bubble.textContent = text;
   bubble.classList.add('show');
-  bubbleTimer=setTimeout(()=>bubble.classList.remove('show'),duration);
+  bubbleTimer = setTimeout(() => bubble.classList.remove('show'), duration);
 }
 
-// ══════════════════════════════════════════════
-// PARTICLES
-// ══════════════════════════════════════════════
-function spawnParticles(count=8,color){
-  const c=CHARS[currentChar];
-  for(let i=0;i<count;i++){
-    const p=document.createElement('div');
-    p.className='particle';
-    const size=4+Math.random()*6;
-    const angle=Math.random()*Math.PI*2;
-    const dist=40+Math.random()*55;
-    p.style.cssText=`width:${size}px;height:${size}px;background:${color||c.accentSolid};left:${80+Math.random()*40}px;top:${80+Math.random()*40}px;--dx:${Math.cos(angle)*dist}px;--dy:${Math.sin(angle)*dist}px;animation-duration:${0.5+Math.random()*0.7}s;opacity:0.9;`;
+function spawnParticles(count = 8, color) {
+  const c = CHARS[currentChar] || CHARS.cat;
+  for (let i = 0; i < count; i++) {
+    const p = document.createElement('div');
+    p.className = 'particle';
+    const size = 4 + Math.random() * 6;
+    const angle = Math.random() * Math.PI * 2;
+    const dist = 40 + Math.random() * 55;
+    p.style.cssText = `width:${size}px;height:${size}px;background:${color || c.accentSolid};left:${80 + Math.random() * 40}px;top:${80 + Math.random() * 40}px;--dx:${Math.cos(angle) * dist}px;--dy:${Math.sin(angle) * dist}px;animation-duration:${0.5 + Math.random() * 0.7}s;opacity:0.9;`;
     particles.appendChild(p);
-    setTimeout(()=>p.remove(),1300);
+    setTimeout(() => p.remove(), 1300);
   }
 }
-function spawnConfetti(){
-  const colors=['#f59e0b','#10b981','#6366f1','#f43f5e','#06b6d4','#a78bfa','#34d399'];
-  for(let i=0;i<20;i++){
-    const c=document.createElement('div');
-    c.className='confetti';
-    const angle=Math.random()*Math.PI*2;
-    const dist=55+Math.random()*75;
-    c.style.cssText=`background:${colors[Math.floor(Math.random()*colors.length)]};left:${65+Math.random()*70}px;top:${65+Math.random()*70}px;--cx:${Math.cos(angle)*dist}px;--cy:${Math.sin(angle)*dist-40}px;animation-duration:${0.8+Math.random()*0.6}s;`;
+
+function spawnConfetti() {
+  const colors = ['#f59e0b', '#10b981', '#6366f1', '#f43f5e', '#06b6d4', '#a78bfa', '#34d399'];
+  for (let i = 0; i < 20; i++) {
+    const c = document.createElement('div');
+    c.className = 'confetti';
+    const angle = Math.random() * Math.PI * 2;
+    const dist = 55 + Math.random() * 75;
+    c.style.cssText = `background:${colors[Math.floor(Math.random() * colors.length)]};left:${65 + Math.random() * 70}px;top:${65 + Math.random() * 70}px;--cx:${Math.cos(angle) * dist}px;--cy:${Math.sin(angle) * dist - 40}px;animation-duration:${0.8 + Math.random() * 0.6}s;`;
     particles.appendChild(c);
-    setTimeout(()=>c.remove(),1600);
+    setTimeout(() => c.remove(), 1600);
   }
 }
 
 // ══════════════════════════════════════════════
-// SOUND
+// SOUND & AUDIO GRAPH
 // ══════════════════════════════════════════════
-let actx=null;
-function playTone(freq=800,dur=0.09,type='sine',vol=0.07){
-  try{
-    if(!actx) actx=new (window.AudioContext||window.webkitAudioContext)();
-    const o=actx.createOscillator(), g=actx.createGain();
-    o.connect(g); g.connect(actx.destination);
-    o.type=type; o.frequency.value=freq;
-    g.gain.setValueAtTime(vol,actx.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.001,actx.currentTime+dur);
-    o.start(); o.stop(actx.currentTime+dur);
-  }catch(e){}
+let actx = null;
+function getActx() {
+  if (!actx || actx.state === 'closed') {
+    actx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  return actx;
 }
-function playSend(){ playTone(600,0.1,'sine',0.06); }
-function playReceive(){ playTone(880,0.07,'sine',0.055); setTimeout(()=>playTone(1100,0.06,'sine',0.045),85); }
-function playClick(){ playTone(440,0.05,'triangle',0.05); }
-function playWake(){ playTone(660,0.12,'sine',0.07); setTimeout(()=>playTone(880,0.1,'sine',0.06),120); }
+
+function playTone(freq = 800, dur = 0.09, type = 'sine', vol = 0.07) {
+  try {
+    const ctx = getActx();
+    if (ctx.state === 'suspended') ctx.resume();
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.connect(g);
+    g.connect(ctx.destination);
+    o.type = type;
+    o.frequency.value = freq;
+    g.gain.setValueAtTime(vol, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+    o.start();
+    o.stop(ctx.currentTime + dur);
+  } catch (_) {}
+}
+
+function playSend() { playTone(600, 0.1, 'sine', 0.06); }
+function playReceive() { playTone(880, 0.07, 'sine', 0.055); setTimeout(() => playTone(1100, 0.06, 'sine', 0.045), 85); }
+function playClick() { playTone(440, 0.05, 'triangle', 0.05); }
+function playWake() { playTone(660, 0.12, 'sine', 0.07); setTimeout(() => playTone(880, 0.1, 'sine', 0.06), 120); }
 
 // ══════════════════════════════════════════════
 // PET CLICK
 // ══════════════════════════════════════════════
-let clickCount=0, clickTimer2=null;
-document.getElementById('pet-stage').addEventListener('click', e=>{
-  if(dragging) return;
-  if(animState==='sleep'){ animState='idle'; playWake(); resetSleepTimer(); showBubble('*yawns* 😴'); return; }
+let clickCount = 0;
+let clickTimer2 = null;
+
+petStage.addEventListener('click', (e) => {
+  if (Date.now() < suppressClickUntil || isDragging) return;
+  if (animState === 'sleep') {
+    animState = 'idle';
+    currentRenderKey = '';
+    playWake();
+    resetSleepTimer();
+    showBubble('*yawns* 😴');
+    return;
+  }
   playClick();
   clickCount++;
   clearTimeout(clickTimer2);
-  clickTimer2=setTimeout(()=>{ clickCount=0; },700);
-  if(clickCount>=5){
-    clickCount=0;
-    animState='dance'; showBubble('Wheee! 🎉'); spawnConfetti(); spawnParticles(12);
-    setTimeout(()=>{ animState='idle'; },4500);
+  clickTimer2 = setTimeout(() => { clickCount = 0; }, 700);
+
+  if (clickCount >= 5) {
+    clickCount = 0;
+    animState = 'dance';
+    currentRenderKey = '';
+    showBubble('Wheee! 🎉');
+    spawnConfetti();
+    spawnParticles(12);
+    setTimeout(() => { animState = 'idle'; currentRenderKey = ''; }, 4500);
     return;
   }
-  chatOpen=!chatOpen;
-  chatbox.classList.toggle('open',chatOpen);
+
+  chatOpen = !chatOpen;
+  chatbox.classList.toggle('open', chatOpen);
   ipcRenderer.send('set-size', { open: chatOpen });
-  if(chatOpen){
-    
+
+  if (chatOpen) {
     input.focus();
-    if(messages.children.length===0){
-      addMsg('checking ollama…','system');
+    if (messages.children.length === 0) {
+      addMsg('checking ollama…', 'system');
       checkOllama();
     }
-
-    const g=CHARS[currentChar].greetings;
-    showBubble(g[Math.floor(Math.random()*g.length)]);
+    const g = (CHARS[currentChar] || CHARS.cat).greetings;
+    showBubble(g[Math.floor(Math.random() * g.length)]);
     spawnParticles(6);
-    moodPoints=Math.min(100,moodPoints+8);
+    moodPoints = Math.min(100, moodPoints + 8);
     updateStreak();
-  } else {
-    
   }
 });
 
-document.getElementById('close-chat').addEventListener('click', e=>{
+document.getElementById('close-chat').addEventListener('click', (e) => {
   e.stopPropagation();
-  chatOpen=false;
+  chatOpen = false;
   chatbox.classList.remove('open');
   ipcRenderer.send('set-size', { open: false });
-  
 });
 
 // ══════════════════════════════════════════════
 // STREAK
 // ══════════════════════════════════════════════
-function updateStreak(){
-  const today=new Date().toDateString();
-  if(today!==lastChatDate){
-    const yesterday=new Date(Date.now()-86400000).toDateString();
-    streak = lastChatDate===yesterday ? streak+1 : 1;
-    lastChatDate=today;
+function updateStreak() {
+  const today = new Date().toDateString();
+  if (today !== lastChatDate) {
+    const yesterday = new Date(Date.now() - 86400000).toDateString();
+    streak = lastChatDate === yesterday ? streak + 1 : 1;
+    lastChatDate = today;
   }
-  streakBadge.textContent=`🔥 ${streak} day${streak!==1?'s':''}`;
-  document.getElementById('stat-streak').textContent=`${streak} day${streak!==1?'s':''} 🔥`;
+  streakBadge.textContent = `🔥 ${streak} day${streak !== 1 ? 's' : ''}`;
+  const statStreak = document.getElementById('stat-streak');
+  if (statStreak) statStreak.textContent = `${streak} day${streak !== 1 ? 's' : ''} 🔥`;
   saveData();
 }
 
 // ══════════════════════════════════════════════
-// TABS — Dance tab triggers actual pet dancing
+// TABS
 // ══════════════════════════════════════════════
-let previousAnimState = 'idle';
-document.querySelectorAll('.tab-btn').forEach(btn=>{
-  btn.addEventListener('click', e=>{
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', (e) => {
     e.stopPropagation();
-    document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
-    document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
     btn.classList.add('active');
-    const panelId = btn.dataset.tab+'-panel';
-    document.getElementById(panelId).classList.add('active');
+    const panelId = btn.dataset.tab + '-panel';
+    const panel = document.getElementById(panelId);
+    if (panel) panel.classList.add('active');
 
-    // KEY FIX: switching TO dance tab starts dancing on the main pet
-    if(btn.dataset.tab==='game'){
-      previousAnimState = animState;
+    if (btn.dataset.tab === 'game') {
       animState = 'dance';
+      currentRenderKey = '';
       spawnConfetti();
       spawnParticles(8);
-      document.getElementById('game-panel').classList.add('dancing');
+      document.getElementById('game-panel')?.classList.add('dancing');
       setDanceVibe(currentDanceVibe);
-    } else if(btn.dataset.tab==='system'){
-      // weather auto-loads via its own tab listener
     } else {
-      // leaving dance tab — restore previous state
-      if(animState==='dance'){
-        animState = (isThinking ? 'thinking' : 'idle');
+      if (animState === 'dance') {
+        animState = isThinking ? 'thinking' : 'idle';
+        currentRenderKey = '';
       }
-      document.getElementById('game-panel').classList.remove('dancing');
+      document.getElementById('game-panel')?.classList.remove('dancing');
       stopMusicBeat();
-      // Resize back to standard chat height when returning to chat/stats tabs
-      // size unchanged
     }
   });
 });
@@ -1683,177 +1872,510 @@ document.querySelectorAll('.tab-btn').forEach(btn=>{
 // ══════════════════════════════════════════════
 // CHARACTER SWITCH
 // ══════════════════════════════════════════════
-document.querySelectorAll('.char-btn').forEach(btn=>{
-  btn.addEventListener('click', e=>{
+document.querySelectorAll('.char-btn').forEach(btn => {
+  btn.addEventListener('click', (e) => {
     e.stopPropagation();
-    currentChar=btn.dataset.char;
-    document.querySelectorAll('.char-btn').forEach(b=>b.classList.remove('active'));
+    currentChar = btn.dataset.char;
+    document.querySelectorAll('.char-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     applyTheme(currentChar);
-    animState='dance';
-    showBubble(CHARS[currentChar].greetings[0]);
-    spawnParticles(10); playWake();
-    setTimeout(()=>animState='idle',3000);
+    animState = 'dance';
+    currentRenderKey = '';
+    showBubble((CHARS[currentChar] || CHARS.cat).greetings[0]);
+    spawnParticles(10);
+    playWake();
+    setTimeout(() => { animState = 'idle'; currentRenderKey = ''; }, 3000);
     saveData();
   });
 });
 
-document.getElementById('closebtn').addEventListener('click', e=>{ e.stopPropagation(); ipcRenderer.send('close-app'); });
+document.getElementById('closebtn').addEventListener('click', (e) => {
+  e.stopPropagation();
+  ipcRenderer.send('close-app');
+});
 
 // ══════════════════════════════════════════════
-// CHAT
+// CHAT UI & MESSAGES
 // ══════════════════════════════════════════════
-function setThinking(v){
-  isThinking=v;
-  statusdot.className=v?'thinking':'';
-  animState=v?'thinking':'idle';
-  glowRing.className=v?'active':'';
+function setThinking(v) {
+  isThinking = v;
+  statusdot.className = v ? 'thinking' : '';
+  animState = v ? 'thinking' : 'idle';
+  currentRenderKey = '';
+  glowRing.className = v ? 'active' : '';
 }
 
-function addMsg(text,role){
-  const div=document.createElement('div');
-  div.className=`msg ${role}`;
-  if(role==='user'){
-    // Fix 3: No "you >" prefix — clean bubble
-    div.textContent=text;
-  } else if(role==='bot'||role==='bot thinking'){
-    // Fix 3: No "pet >" prefix
-    div.textContent=text;
-    if(role==='bot'){
-      const btn=document.createElement('button');
-      btn.className='copy-btn'; btn.textContent='⎘';
-      btn.onclick=()=>{ navigator.clipboard.writeText(text); btn.textContent='✓'; setTimeout(()=>btn.textContent='⎘',1200); };
-      div.appendChild(btn);
-    }
-  } else {
-    div.textContent=text;
+function addMsg(text, role) {
+  const div = document.createElement('div');
+  div.className = `msg ${role}`;
+  div.textContent = text;
+  if (role === 'bot') {
+    const btn = document.createElement('button');
+    btn.className = 'copy-btn';
+    btn.textContent = '⎘';
+    btn.onclick = () => {
+      navigator.clipboard.writeText(text);
+      btn.textContent = '✓';
+      setTimeout(() => { btn.textContent = '⎘'; }, 1200);
+    };
+    div.appendChild(btn);
   }
   messages.appendChild(div);
-  messages.scrollTop=messages.scrollHeight;
+  messages.scrollTop = messages.scrollHeight;
   return div;
 }
 
-async function sendMessage(){
-  const text=input.value.trim();
-  if(!text||isThinking) return;
-  // Double-click guard: disable button during generation
+function buildSystemContext() {
+  const now = new Date();
+  const h = now.getHours();
+  const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const dayPart = h < 6 ? 'late night' : h < 12 ? 'morning' : h < 18 ? 'afternoon' : 'evening';
+  const dayName = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][now.getDay()];
+  let ctx = `You are ${(CHARS[currentChar] || CHARS.cat).name}, a cute desktop companion. It is ${timeStr} on a ${dayName} ${dayPart}.`;
+  if (weatherContext) ctx += ` Outside: ${weatherContext}.`;
+  if (window._batteryLevel !== undefined && window._batteryLevel < 20) ctx += ` Battery is low at ${window._batteryLevel}%.`;
+  ctx += ' Keep answers concise, helpful, and in character.';
+  return ctx;
+}
+
+// ══════════════════════════════════════════════
+// OLLAMA CHECK & MODEL DETECTION
+// ══════════════════════════════════════════════
+async function checkOllama() {
+  const ollamaDot = document.getElementById('ollama-dot');
+  const ollamaLabel = document.getElementById('ollama-label');
+  if (!ollamaDot || !ollamaLabel) return;
+
+  ollamaDot.className = 'checking';
+  ollamaLabel.textContent = 'Ollama: checking…';
+
+  let result = null;
+  try {
+    if (window.electronAPI && typeof window.electronAPI.checkOllama === 'function') {
+      result = await window.electronAPI.checkOllama();
+    }
+  } catch (_) {}
+
+  if (!result || !result.models || result.models.length === 0) {
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 2500);
+      const r = await fetch('http://localhost:11434/api/tags', { signal: ctrl.signal });
+      clearTimeout(timer);
+      if (r.ok) {
+        const data = await r.json();
+        const models = Array.isArray(data.models) ? data.models.map(m => m.name || m.model).filter(Boolean) : [];
+        result = { status: models.length > 0 ? 'ready' : 'no_models', models };
+      }
+    } catch (_) {}
+  }
+
+  if (result && (result.status === 'ready' || (result.models && result.models.length > 0))) {
+    ollamaOnline = true;
+    installedModels = result.models || [];
+    if (savedModelPreference && installedModels.includes(savedModelPreference)) {
+      activeModel = savedModelPreference;
+    } else if (!activeModel || !installedModels.includes(activeModel)) {
+      activeModel = installedModels[0];
+    }
+    ollamaDot.className = '';
+    ollamaLabel.textContent = `🟢 Ollama (${activeModel})`;
+    statusdot.className = '';
+    const sys = messages.querySelector('.msg.system');
+    if (sys && sys.textContent.includes('checking')) {
+      sys.textContent = `session started — ollama connected (${activeModel}) ✓`;
+    }
+  } else if (result && result.status === 'no_models') {
+    ollamaOnline = true;
+    installedModels = [];
+    activeModel = '';
+    ollamaDot.className = 'offline';
+    ollamaLabel.textContent = '⚠ Ollama online: no models installed. Run: ollama pull <model>';
+    statusdot.className = 'offline';
+    const sys = messages.querySelector('.msg.system');
+    if (sys && sys.textContent.includes('checking')) {
+      sys.textContent = '⚠ Ollama online, but no models installed. Run: ollama pull <model>';
+    }
+  } else {
+    ollamaOnline = false;
+    installedModels = [];
+    activeModel = '';
+    ollamaDot.className = 'offline';
+    ollamaLabel.textContent = '🔴 Ollama offline — run: ollama serve';
+    statusdot.className = 'offline';
+    const sys = messages.querySelector('.msg.system');
+    if (sys && sys.textContent.includes('checking')) {
+      sys.textContent = '⚠ Ollama offline — run: ollama serve';
+    }
+  }
+}
+checkOllama();
+setInterval(checkOllama, 6000);
+
+document.getElementById('ollama-retry-inline')?.addEventListener('click', (e) => {
+  e.stopPropagation();
+  checkOllama();
+});
+
+// ══════════════════════════════════════════════
+// AUTHORITATIVE CHAT PIPELINE (SINGLE SOURCE OF TRUTH)
+// ══════════════════════════════════════════════
+async function sendChatMessage(retryText) {
+  const text = retryText !== undefined ? retryText : input.value.trim();
+  if (!text || isThinking) return;
+
+  if (retryText === undefined) {
+    input.value = '';
+  }
+
+  if (!ollamaOnline || !activeModel) {
+    await checkOllama();
+  }
+
+  if (!ollamaOnline || !activeModel) {
+    const isNoModels = ollamaOnline && (!activeModel || installedModels.length === 0);
+    const reason = isNoModels
+      ? 'Ollama is running, but no models are installed. Please run: ollama pull <model>'
+      : 'Ollama is not running. Please start Ollama with: ollama serve';
+
+    const errDiv = document.createElement('div');
+    errDiv.className = 'msg bot';
+    errDiv.style.cssText = 'border-color:rgba(239,68,68,0.35);background:linear-gradient(135deg,rgba(239,68,68,0.12),rgba(220,38,38,0.06));';
+    errDiv.innerHTML = `<div style="font-weight:700;color:#f87171;margin-bottom:6px;">⚠ ${isNoModels ? 'No Model Available' : 'Ollama Offline'}</div><div style="color:rgba(255,255,255,0.7);font-size:11px;margin-bottom:8px;">${reason}</div><code style="display:block;background:rgba(0,0,0,0.4);border-radius:6px;padding:5px 8px;color:#4ade80;font-size:11px;margin-bottom:8px;">${isNoModels ? 'ollama pull phi3' : 'ollama serve'}</code>`;
+
+    const retryBtn = document.createElement('button');
+    retryBtn.textContent = '↻ Retry';
+    retryBtn.style.cssText = 'background:rgba(239,68,68,0.2);border:1px solid rgba(239,68,68,0.4);border-radius:8px;color:#f87171;font-size:11px;padding:5px 14px;cursor:pointer;font-family:"Courier New",monospace;';
+    retryBtn.onclick = () => { errDiv.remove(); sendChatMessage(text); };
+    errDiv.appendChild(retryBtn);
+    messages.appendChild(errDiv);
+    messages.scrollTop = messages.scrollHeight;
+    return;
+  }
+
   const sendBtn = document.getElementById('sendbtn');
   sendBtn.disabled = true;
-  input.value='';
-  addMsg(text,'user');
-  playSend();
-  history.push({role:'user',content:text});
+
+  if (retryText === undefined) {
+    addMsg(text, 'user');
+    playSend();
+    history.push({ role: 'user', content: text });
+  }
+
   setThinking(true);
-  const thinking=addMsg('thinking...','bot thinking');
-  try{
-    const res=await fetch('http://localhost:11434/api/chat',{
-      method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({model:'llama3.2',messages:history.slice(-12),stream:false})
+  const thinking = addMsg('thinking...', 'bot thinking');
+
+  const systemContext = buildSystemContext();
+  const payload = [
+    { role: 'system', content: systemContext },
+    ...history.slice(-12)
+  ];
+
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 60000);
+
+    const res = await fetch('http://localhost:11434/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: activeModel,
+        messages: payload,
+        stream: false
+      }),
+      signal: ctrl.signal
     });
-    if(!res.ok) throw new Error('http_'+res.status);
-    // Support both stream:false (single JSON) and older Ollama NDJSON streaming
+
+    clearTimeout(timer);
+
+    if (!res.ok) {
+      throw new Error(`Ollama error: HTTP ${res.status}`);
+    }
+
     const rawText = await res.text();
     let reply = '';
     try {
       const data = JSON.parse(rawText);
       reply = data.message?.content || data.response || 'No response';
-    } catch {
-      // NDJSON fallback: concatenate all content chunks
+    } catch (_) {
       rawText.trim().split('\n').forEach(line => {
         try {
           const chunk = JSON.parse(line);
-          if(chunk.message?.content) reply += chunk.message.content;
-          else if(chunk.response) reply += chunk.response;
-        } catch {}
+          if (chunk.message?.content) reply += chunk.message.content;
+          else if (chunk.response) reply += chunk.response;
+        } catch (_) {}
       });
-      if(!reply) reply = 'No response';
+      if (!reply) reply = 'No response';
     }
+
     thinking.remove();
-    addMsg(reply,'bot');
-    history.push({role:'assistant',content:reply});
+    addMsg(reply, 'bot');
+    history.push({ role: 'assistant', content: reply });
     playReceive();
     spawnConfetti();
-    moodPoints=Math.min(100,moodPoints+12);
+    moodPoints = Math.min(100, moodPoints + 12);
     chatCount++;
-    document.getElementById('stat-chats').textContent=chatCount;
-    showBubble('✓',1000);
-    statusdot.className='';
-    ipcRenderer.send('notify',{title:CHARS[currentChar].name+' says:',body:reply.slice(0,80)+(reply.length>80?'…':'')});
+    document.getElementById('stat-chats').textContent = chatCount;
+    showBubble('✓', 1000);
+    statusdot.className = '';
+
+    if (!chatOpen) {
+      ipcRenderer.send('notify', {
+        title: (CHARS[currentChar] || CHARS.cat).name + ' says:',
+        body: reply.slice(0, 80) + (reply.length > 80 ? '…' : '')
+      });
+    }
+
     saveData();
-  }catch(err){
+    recordMoodHistory();
+  } catch (err) {
     thinking.remove();
-    animState='shock'; setTimeout(()=>animState='idle',2500);
-    // Fix 4: Styled error card with Retry button
-    const errDiv=document.createElement('div');
-    errDiv.className='msg bot';
-    errDiv.style.cssText='border-color:rgba(239,68,68,0.35);background:linear-gradient(135deg,rgba(239,68,68,0.12),rgba(220,38,38,0.06));';
-    errDiv.innerHTML=`<div style="font-weight:700;color:#f87171;margin-bottom:6px;">⚠ Ollama Offline</div><div style="color:rgba(255,255,255,0.6);font-size:11px;margin-bottom:8px;">Start Ollama to continue:</div><code style="display:block;background:rgba(0,0,0,0.4);border-radius:6px;padding:5px 8px;color:#4ade80;font-size:11px;margin-bottom:8px;">ollama serve</code>`;
-    const retryBtn=document.createElement('button');
-    retryBtn.textContent='↻ Retry';
-    retryBtn.style.cssText='background:rgba(239,68,68,0.2);border:1px solid rgba(239,68,68,0.4);border-radius:8px;color:#f87171;font-size:11px;padding:5px 14px;cursor:pointer;font-family:"Courier New",monospace;';
-    retryBtn.onmouseover=()=>retryBtn.style.background='rgba(239,68,68,0.35)';
-    retryBtn.onmouseout=()=>retryBtn.style.background='rgba(239,68,68,0.2)';
-    retryBtn.onclick=()=>{ errDiv.remove(); sendMessage(); };
+    animState = 'shock';
+    currentRenderKey = '';
+    setTimeout(() => { animState = 'idle'; currentRenderKey = ''; }, 2500);
+
+    const errDiv = document.createElement('div');
+    errDiv.className = 'msg bot';
+    errDiv.style.cssText = 'border-color:rgba(239,68,68,0.35);background:linear-gradient(135deg,rgba(239,68,68,0.12),rgba(220,38,38,0.06));';
+    errDiv.innerHTML = `<div style="font-weight:700;color:#f87171;margin-bottom:6px;">⚠ Request Failed</div><div style="color:rgba(255,255,255,0.7);font-size:11px;margin-bottom:8px;">${err.name === 'AbortError' ? 'Generation timed out after 60s' : err.message}</div><code style="display:block;background:rgba(0,0,0,0.4);border-radius:6px;padding:5px 8px;color:#4ade80;font-size:11px;margin-bottom:8px;">ollama run ${activeModel || 'phi3'}</code>`;
+
+    const retryBtn = document.createElement('button');
+    retryBtn.textContent = '↻ Retry';
+    retryBtn.style.cssText = 'background:rgba(239,68,68,0.2);border:1px solid rgba(239,68,68,0.4);border-radius:8px;color:#f87171;font-size:11px;padding:5px 14px;cursor:pointer;font-family:"Courier New",monospace;';
+    retryBtn.onclick = () => {
+      errDiv.remove();
+      sendChatMessage(text);
+    };
     errDiv.appendChild(retryBtn);
     messages.appendChild(errDiv);
-    messages.scrollTop=messages.scrollHeight;
-    showBubble('Offline! 😱',2500);
-    statusdot.className='offline';
-    setTimeout(()=>statusdot.className='',3000);
+    messages.scrollTop = messages.scrollHeight;
+    showBubble('Error! 😱', 2500);
+    statusdot.className = 'offline';
+    setTimeout(() => { if (!isThinking) statusdot.className = ''; }, 3000);
+  } finally {
+    setThinking(false);
+    currentRenderKey = '';
+    sendBtn.disabled = false;
   }
-  setThinking(false);
-  document.getElementById('sendbtn').disabled = false;
 }
 
-document.getElementById('sendbtn').addEventListener('click', sendMessage);
-input.addEventListener('keydown', e=>{ if(e.key==='Enter') sendMessage(); e.stopPropagation(); });
-input.addEventListener('click', e=>e.stopPropagation());
+document.getElementById('sendbtn').onclick = () => sendChatMessage();
+input.onkeydown = (e) => {
+  if (e.key === 'Enter') {
+    e.stopPropagation();
+    sendChatMessage();
+  }
+};
+input.onclick = (e) => e.stopPropagation();
 
 // ══════════════════════════════════════════════
 // CHAT ACTIONS
 // ══════════════════════════════════════════════
-document.getElementById('btn-export').addEventListener('click', e=>{
+document.getElementById('btn-export').addEventListener('click', (e) => {
   e.stopPropagation();
-  const text=history.map(m=>`[${m.role.toUpperCase()}]: ${m.content}`).join('\n\n');
-  ipcRenderer.send('export-chat',text);
+  const text = history.map(m => `[${m.role.toUpperCase()}]: ${m.content}`).join('\n\n');
+  ipcRenderer.send('export-chat', text);
 });
-ipcRenderer.on('export-done',(e,p)=>showBubble('Saved! 📄',2000));
+ipcRenderer.on('export-done', (e, p) => showBubble('Saved! 📄', 2000));
 
-document.getElementById('btn-clear').addEventListener('click', e=>{
+document.getElementById('btn-clear').addEventListener('click', (e) => {
   e.stopPropagation();
-  history=[]; messages.innerHTML='';
-  addMsg('Chat cleared! Fresh start~ ✨','system');
+  history = [];
+  messages.innerHTML = '';
+  addMsg('Chat cleared! Fresh start~ ✨', 'system');
   saveData();
 });
 
-document.getElementById('btn-walk').addEventListener('click', e=>{
+document.getElementById('btn-walk').addEventListener('click', (e) => {
   e.stopPropagation();
-  ipcRenderer.send('walk-char', CHARS[currentChar].walkSvg);
-  showBubble('Going for a walk! 🚶',2000);
+  ipcRenderer.send('walk-char', (CHARS[currentChar] || CHARS.cat).walkSvg);
+  showBubble('Going for a walk! 🚶', 2000);
 });
 
 // ══════════════════════════════════════════════
-// VOICE INPUT
+// REMINDERS SYSTEM (UNIFIED, PERSISTENT ACROSS RESTARTS)
 // ══════════════════════════════════════════════
-const micBtn=document.getElementById('mic-btn');
-let recognition=null;
-if('webkitSpeechRecognition' in window||'SpeechRecognition' in window){
-  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-  recognition=new SR();
-  recognition.continuous=false; recognition.interimResults=false;
-  recognition.onresult=e=>{ input.value=e.results[0][0].transcript; if(micBtn) micBtn.classList.remove('listening'); playTone(600,0.1); };
-  recognition.onend=()=>{ if(micBtn) micBtn.classList.remove('listening'); };
-  if(micBtn) micBtn.addEventListener('click', e=>{
-    e.stopPropagation();
-    if(micBtn.classList.contains('listening')){ recognition.stop(); }
-    else{ recognition.start(); micBtn.classList.add('listening'); playTone(800,0.08); }
-  });
-} else {
-  if(micBtn){ micBtn.style.opacity='0.3'; micBtn.title='Voice not supported in this mode'; }
+function scheduleReminder(reminder) {
+  if (reminder.status === 'completed') return;
+  if (reminderTimers.has(reminder.id)) {
+    clearTimeout(reminderTimers.get(reminder.id));
+    reminderTimers.delete(reminder.id);
+  }
+
+  const remaining = reminder.due - Date.now();
+  if (remaining <= 0) {
+    triggerReminder(reminder, true);
+  } else {
+    const timer = setTimeout(() => {
+      triggerReminder(reminder, false);
+    }, remaining);
+    reminderTimers.set(reminder.id, timer);
+  }
 }
 
+function triggerReminder(reminder, isOverdue = false) {
+  showBubble(`⏰ ${isOverdue ? 'Overdue: ' : ''}${reminder.text}`, 5000);
+  ipcRenderer.send('notify', {
+    title: isOverdue ? 'Overdue Reminder!' : 'Reminder!',
+    body: reminder.text
+  });
+  playReceive();
+  spawnParticles(8, '#f59e0b');
+
+  if (reminderTimers.has(reminder.id)) {
+    clearTimeout(reminderTimers.get(reminder.id));
+    reminderTimers.delete(reminder.id);
+  }
+
+  reminders = reminders.filter(r => r.id !== reminder.id);
+  saveData();
+  renderReminders();
+}
+
+function renderReminders() {
+  const list = document.getElementById('remind-list');
+  if (!list) return;
+  list.innerHTML = '';
+  if (reminders.length === 0) {
+    list.innerHTML = '<div style="font-size:10px;color:rgba(255,255,255,0.3);text-align:center;padding:4px 0;">No active reminders</div>';
+    return;
+  }
+  reminders.forEach(r => {
+    const div = document.createElement('div');
+    div.className = 'reminder-item';
+    const remainingMs = r.due - Date.now();
+    const minsLeft = Math.max(0, Math.round(remainingMs / 60000));
+    div.innerHTML = `<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${r.text}</span><span style="color:rgba(255,255,255,0.35);font-size:10px;margin-right:4px;">${minsLeft}m</span>`;
+    const del = document.createElement('button');
+    del.className = 'rem-del';
+    del.textContent = '✕';
+    del.title = 'Delete';
+    del.onclick = (e) => {
+      e.stopPropagation();
+      if (reminderTimers.has(r.id)) {
+        clearTimeout(reminderTimers.get(r.id));
+        reminderTimers.delete(r.id);
+      }
+      reminders = reminders.filter(x => x.id !== r.id);
+      saveData();
+      renderReminders();
+    };
+    div.appendChild(del);
+    list.appendChild(div);
+  });
+}
+
+document.getElementById('remind-add')?.addEventListener('click', (e) => {
+  e.stopPropagation();
+  const inputEl = document.getElementById('remind-input');
+  const txt = inputEl?.value.trim();
+  const mins = parseInt(document.getElementById('remind-time')?.value, 10) || 5;
+  if (!txt) return;
+
+  const id = Date.now() + Math.floor(Math.random() * 1000);
+  const due = Date.now() + mins * 60000;
+  const newReminder = { id, text: txt, due, createdAt: Date.now(), status: 'pending' };
+
+  reminders.push(newReminder);
+  scheduleReminder(newReminder);
+  if (inputEl) inputEl.value = '';
+  renderReminders();
+  saveData();
+  showBubble(`I'll remind you in ${mins}m! ⏰`, 2000);
+});
+
+document.getElementById('remind-input')?.addEventListener('click', e => e.stopPropagation());
+document.getElementById('remind-input')?.addEventListener('keydown', e => {
+  if (e.key === 'Enter') {
+    e.stopPropagation();
+    document.getElementById('remind-add')?.click();
+  }
+});
+
 // ══════════════════════════════════════════════
-// WEATHER + LIVE CLOCK
+// DATA PERSISTENCE (SCHEMA VERSIONED)
+// ══════════════════════════════════════════════
+function savePosition(x, y) {
+  try { localStorage.setItem('petPos', JSON.stringify({ x, y })); } catch (_) {}
+}
+
+function saveData() {
+  ipcRenderer.send('save-data', {
+    currentChar,
+    streak,
+    lastChatDate,
+    moodPoints,
+    gameBest,
+    activeTab: document.querySelector('.tab-btn.active')?.dataset.tab || 'chat',
+    selectedModel: activeModel,
+    history: history.slice(-20),
+    reminders: reminders.map(r => ({
+      id: r.id,
+      text: r.text,
+      due: r.due,
+      createdAt: r.createdAt || Date.now(),
+      status: r.status || 'pending'
+    })),
+    position: { x: winScreenX, y: winScreenY }
+  });
+}
+
+ipcRenderer.on('data-loaded', (e, d) => {
+  if (!d) return;
+  if (d.currentChar && CHARS[d.currentChar]) {
+    currentChar = d.currentChar;
+    applyTheme(currentChar);
+    document.querySelectorAll('.char-btn').forEach(b => b.classList.remove('active'));
+    document.querySelector(`[data-char="${currentChar}"]`)?.classList.add('active');
+  }
+  streak = d.streak || 0;
+  lastChatDate = d.lastChatDate || '';
+  moodPoints = typeof d.moodPoints === 'number' ? d.moodPoints : 100;
+  gameBest = d.gameBest || 0;
+  if (d.selectedModel) savedModelPreference = d.selectedModel;
+
+  streakBadge.textContent = `🔥 ${streak} day${streak !== 1 ? 's' : ''}`;
+  const statStreak = document.getElementById('stat-streak');
+  if (statStreak) statStreak.textContent = `${streak} day${streak !== 1 ? 's' : ''} 🔥`;
+
+  if (d.history && d.history.length) {
+    history = d.history;
+    messages.innerHTML = '';
+    history.forEach(m => {
+      addMsg(m.content, m.role === 'user' ? 'user' : 'bot');
+    });
+    addMsg('― session restored ―', 'system');
+  }
+
+  // Restore Reminders reliably
+  if (Array.isArray(d.reminders)) {
+    reminderTimers.forEach(t => clearTimeout(t));
+    reminderTimers.clear();
+    reminders = d.reminders.map(r => ({
+      id: r.id || Date.now() + Math.random(),
+      text: r.text || 'Reminder',
+      due: typeof r.due === 'number' ? r.due : Date.now() + 300000,
+      createdAt: r.createdAt || Date.now(),
+      status: r.status || 'pending'
+    }));
+    reminders.forEach(r => scheduleReminder(r));
+    renderReminders();
+  }
+
+  // Restore Position
+  if (d.position && typeof d.position.x === 'number' && typeof d.position.y === 'number') {
+    winScreenX = d.position.x;
+    winScreenY = d.position.y;
+    ipcRenderer.send('move-win', { x: winScreenX, y: winScreenY });
+  }
+
+  updateMood();
+});
+
+ipcRenderer.send('load-data');
+
+// ══════════════════════════════════════════════
+// WEATHER + LIVE CLOCK (TIMEOUT PROTECTED & ATOMIC UI UPDATE)
 // ══════════════════════════════════════════════
 const WX_ICONS = {
   0:'☀️',1:'🌤',2:'⛅',3:'☁️',45:'🌫',48:'🌫',
@@ -1870,524 +2392,353 @@ const WX_DESC = {
   95:'Thunderstorm',96:'Thunderstorm+hail',99:'Heavy thunderstorm'
 };
 
-let lastCity = localStorage ? (localStorage.getItem('wx-city')||'') : '';
+let lastCity = '';
+try { lastCity = localStorage.getItem('wx-city') || ''; } catch (_) {}
 
-async function fetchWeather(city){
+async function fetchWeather(city) {
   const status = document.getElementById('weather-status');
   const cityInput = document.getElementById('weather-city');
-  const cityCard  = document.getElementById('weather-city-name');
-  // Always reflect what the user typed in BOTH the input and the card label
-  if(cityInput) cityInput.value = city;
-  cityCard.textContent = city;
+  if (!city) return;
+
   status.textContent = '⏳ Fetching location…';
+
   try {
-    // Step 1: geocode city name → lat/lon
+    const geoCtrl = new AbortController();
+    const geoTimer = setTimeout(() => geoCtrl.abort(), 6000);
+
     const geoRes = await fetch(
-      `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=en&format=json`
+      `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=en&format=json`,
+      { signal: geoCtrl.signal }
     );
+    clearTimeout(geoTimer);
+
+    if (!geoRes.ok) throw new Error('Geocoding service unavailable');
     const geoData = await geoRes.json();
-    if(!geoData.results?.length) throw new Error('City not found');
-    const {latitude:lat, longitude:lon, name, country, timezone} = geoData.results[0];
+    if (!geoData.results || geoData.results.length === 0) throw new Error('City not found');
+    const { latitude: lat, longitude: lon, name, country, timezone } = geoData.results[0];
 
     status.textContent = '⏳ Getting weather…';
-    // Step 2: get weather from open-meteo (free, no key needed)
+
+    const wxCtrl = new AbortController();
+    const wxTimer = setTimeout(() => wxCtrl.abort(), 6000);
+
     const wxRes = await fetch(
-      `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}`+
-      `&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m`+
-      `&daily=temperature_2m_max,temperature_2m_min&timezone=${encodeURIComponent(timezone)}&forecast_days=1`
+      `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
+      `&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m` +
+      `&daily=temperature_2m_max,temperature_2m_min&timezone=${encodeURIComponent(timezone)}&forecast_days=1`,
+      { signal: wxCtrl.signal }
     );
+    clearTimeout(wxTimer);
+
+    if (!wxRes.ok) throw new Error('Weather forecast unavailable');
     const wxData = await wxRes.json();
-    if(!wxData.current) throw new Error('Weather data unavailable');
+    if (!wxData.current) throw new Error('Weather data unavailable');
+
+    // ONLY UPDATE DISPLAY ON VALID RESPONSE
     const cur = wxData.current;
     const daily = wxData.daily;
     const code = cur.weather_code;
 
+    if (cityInput) cityInput.value = city;
     document.getElementById('weather-city-name').textContent = `${name}, ${country}`;
     document.getElementById('weather-desc').textContent = WX_DESC[code] || 'Unknown';
     document.getElementById('weather-icon').textContent = WX_ICONS[code] || '🌡';
     document.getElementById('weather-temp').textContent = Math.round(cur.temperature_2m);
     document.getElementById('weather-feels').textContent = `feels ${Math.round(cur.apparent_temperature)}°`;
-    document.getElementById('weather-humidity').textContent = cur.relative_humidity_2m+'%';
-    document.getElementById('weather-wind').textContent = Math.round(cur.wind_speed_10m)+' km/h';
+    document.getElementById('weather-humidity').textContent = cur.relative_humidity_2m + '%';
+    document.getElementById('weather-wind').textContent = Math.round(cur.wind_speed_10m) + ' km/h';
     document.getElementById('weather-hl').textContent =
-      Math.round(daily.temperature_2m_max[0])+'° / '+Math.round(daily.temperature_2m_min[0])+'°';
-    status.textContent = '✓ Updated '+new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+      Math.round(daily.temperature_2m_max[0]) + '° / ' + Math.round(daily.temperature_2m_min[0]) + '°';
+    status.textContent = '✓ Updated ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-    // Save city for next time
-    try{ localStorage.setItem('wx-city', city); }catch(_){}
+    try { localStorage.setItem('wx-city', city); } catch (_) {}
     lastCity = city;
+    weatherContext = `${WX_ICONS[code] || ''} ${WX_DESC[code] || ''}, ${Math.round(cur.temperature_2m)}°C in ${name}`;
 
-    // React on extreme weather
     const t = cur.temperature_2m;
-    if(t > 38)      { showBubble('So hot outside! 🥵', 2500); mood='tired'; updateMood(); }
-    else if(t < 5)  { showBubble('It\'s freezing! 🥶', 2500); mood='sleepy'; updateMood(); }
-    else if(code>=95){ showBubble('Storm alert! ⛈', 2500); mood='surprised'; updateMood(); }
-    else            { showBubble(WX_ICONS[code]+' '+Math.round(t)+'°C in '+name, 2500); }
-
-  } catch(err) {
-    status.textContent = '❌ '+err.message;
-    console.error('Weather fetch failed:', err);
-    showBubble('Weather error: '+err.message, 3000);
-    // Keep the typed city visible even on failure
-    if(cityInput) cityInput.value = city;
-    cityCard.textContent = city;
+    if (t > 38) { showBubble('So hot outside! 🥵', 2500); mood = 'tired'; updateMood(); }
+    else if (t < 5) { showBubble("It's freezing! 🥶", 2500); mood = 'sleepy'; updateMood(); }
+    else if (code >= 95) { showBubble('Storm alert! ⛈', 2500); mood = 'surprised'; updateMood(); }
+    else { showBubble((WX_ICONS[code] || '') + ' ' + Math.round(t) + '°C in ' + name, 2500); }
+  } catch (err) {
+    const msg = err.name === 'AbortError' ? 'Request timed out' : err.message;
+    status.textContent = '❌ ' + msg;
+    console.warn('Weather fetch failed:', msg);
+    showBubble('Weather error: ' + msg, 3000);
   }
 }
 
-document.getElementById('weather-fetch-btn')?.addEventListener('click', e=>{
+document.getElementById('weather-fetch-btn')?.addEventListener('click', (e) => {
   e.stopPropagation();
   const city = document.getElementById('weather-city')?.value.trim();
-  if(city) fetchWeather(city);
+  if (city) fetchWeather(city);
 });
-document.getElementById('weather-city')?.addEventListener('keydown', e=>{
-  if(e.key==='Enter'){ e.preventDefault(); e.stopPropagation(); const c=e.target.value.trim(); if(c) fetchWeather(c); }
-});
-document.getElementById('weather-city')?.addEventListener('click', e=>e.stopPropagation());
-document.getElementById('weather-city')?.addEventListener('mousedown', e=>e.stopPropagation());
-document.getElementById('weather-city')?.addEventListener('focus', ()=>{ try{ ipcRenderer.send('set-ignore-mouse', false); }catch(_){ } });
-document.getElementById('weather-city')?.addEventListener('input', e=>e.stopPropagation());
 
-// Auto-load last saved city when weather tab opens
-document.querySelectorAll('.tab-btn').forEach(btn=>{
-  if(btn.dataset.tab==='system'){
-    btn.addEventListener('click', ()=>{
-      if(lastCity){ document.getElementById('weather-city').value=lastCity; fetchWeather(lastCity); }
-    }, {capture:true});
+document.getElementById('weather-city')?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    e.stopPropagation();
+    const c = e.target.value.trim();
+    if (c) fetchWeather(c);
   }
 });
 
-// Restore saved city on startup — and actually fetch it
-if(lastCity){
-  document.getElementById('weather-city').value = lastCity;
-  // Defer so the UI is ready; ignore failures silently if offline
-  setTimeout(()=>{ fetchWeather(lastCity).catch(()=>{}); }, 800);
+document.getElementById('weather-city')?.addEventListener('click', e => e.stopPropagation());
+
+if (lastCity) {
+  const cityInput = document.getElementById('weather-city');
+  if (cityInput) cityInput.value = lastCity;
+  setTimeout(() => { fetchWeather(lastCity); }, 1200);
 }
 
-// ── Live clock (updates every second) ──
-function updateWxClock(){
+function updateWxClock() {
   const now = new Date();
   const clk = document.getElementById('wx-clock');
-  const dt  = document.getElementById('wx-date');
-  const tz  = document.getElementById('wx-timezone');
-  if(!clk) return;
-  clk.textContent = now.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
-  if(dt)  dt.textContent  = now.toLocaleDateString([],{weekday:'long',year:'numeric',month:'long',day:'numeric'});
-  if(tz)  tz.textContent  = Intl.DateTimeFormat().resolvedOptions().timeZone.replace('_',' ');
+  const dt = document.getElementById('wx-date');
+  const tz = document.getElementById('wx-timezone');
+  if (clk) clk.textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+  if (dt) dt.textContent = now.toLocaleDateString([], { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+  if (tz) tz.textContent = Intl.DateTimeFormat().resolvedOptions().timeZone.replace('_', ' ');
 }
 updateWxClock();
 setInterval(updateWxClock, 1000);
 
 // ══════════════════════════════════════════════
-// MUSIC UPLOAD — via Electron dialog (label+input broken in Electron)
+// MUSIC & DANCE (PROPER AUDIO GRAPH CLEANUP)
 // ══════════════════════════════════════════════
-const _musicUploadBtn = document.getElementById('music-upload-btn');
-if(_musicUploadBtn) _musicUploadBtn.addEventListener('click', e=>{
-  e.stopPropagation();
-  ipcRenderer.send('open-music-dialog');
+let musicAudio = null;
+let musicSource = null;
+let musicAnalyser = null;
+let musicRAF = null;
+let manualVibe = false;
+let currentDanceVibe = 'pop';
+window._danceEnergy = 7;
+window._danceSpeed = 6;
+window._danceSwing = 10;
+
+const VIBES = {
+  pop:   { dur: '0.55s', energy: 7,  speed: 6,  swing: 10, label: 'Pop 🎵' },
+  rock:  { dur: '0.28s', energy: 14, speed: 10, swing: 16, label: 'Rock 🤘' },
+  chill: { dur: '1.2s',  energy: 3,  speed: 3,  swing: 6,  label: 'Chill 😌' },
+  rave:  { dur: '0.18s', energy: 18, speed: 14, swing: 20, label: 'Rave ⚡' }
+};
+
+function setDanceVibe(vibe) {
+  currentDanceVibe = vibe;
+  const v = VIBES[vibe] || VIBES.pop;
+  const panel = document.getElementById('game-panel');
+  if (panel) panel.style.setProperty('--beat-dur', v.dur);
+  window._danceEnergy = v.energy;
+  window._danceSpeed = v.speed;
+  window._danceSwing = v.swing;
+  showBubble(v.label, 1500);
+  const freqs = { pop: 660, rock: 220, chill: 440, rave: 880 };
+  playTone(freqs[vibe] || 600, 0.12, vibe === 'rock' ? 'sawtooth' : 'sine', 0.08);
+}
+
+document.querySelectorAll('.mood-music-btn').forEach(btn => {
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    document.querySelectorAll('.mood-music-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    manualVibe = true;
+    setDanceVibe(btn.dataset.vibe);
+    if (animState !== 'dance') {
+      animState = 'dance';
+      currentRenderKey = '';
+      setTimeout(() => { if (animState === 'dance') { animState = 'idle'; currentRenderKey = ''; } }, 5000);
+    }
+  });
 });
 
-ipcRenderer.on('music-file-selected', async (e, {filePath, fileName}) => {
+function stopMusicBeat() {
+  if (musicRAF) {
+    cancelAnimationFrame(musicRAF);
+    musicRAF = null;
+  }
+  if (musicAudio) {
+    musicAudio.pause();
+    musicAudio.onended = null;
+    musicAudio.onerror = null;
+    musicAudio.src = '';
+    musicAudio = null;
+  }
+  if (musicSource) {
+    try { musicSource.disconnect(); } catch (_) {}
+    musicSource = null;
+  }
+  if (musicAnalyser) {
+    try { musicAnalyser.disconnect(); } catch (_) {}
+    musicAnalyser = null;
+  }
+  const beatBars = document.querySelectorAll('#dance-beat .beat-bar');
+  beatBars.forEach(b => { b.style.height = '6px'; });
+  const stopBtn = document.getElementById('music-stop-btn');
+  if (stopBtn) stopBtn.style.display = 'none';
+  const statusEl = document.getElementById('music-status');
+  if (statusEl) statusEl.textContent = '';
+  const gamePanel = document.getElementById('game-panel');
+  if (gamePanel) gamePanel.classList.remove('dancing-audio');
+  manualVibe = false;
+}
+
+const _musicUploadBtn = document.getElementById('music-upload-btn');
+if (_musicUploadBtn) {
+  _musicUploadBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    ipcRenderer.send('open-music-dialog');
+  });
+}
+
+const _musicStopBtn = document.getElementById('music-stop-btn');
+if (_musicStopBtn) {
+  _musicStopBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    stopMusicBeat();
+    if (animState === 'dance') {
+      animState = 'idle';
+      currentRenderKey = '';
+    }
+  });
+}
+
+ipcRenderer.on('music-file-selected', async (e, { filePath, fileName }) => {
   stopMusicBeat();
   const url = 'file://' + filePath;
   musicAudio = new Audio(url);
   musicAudio.loop = true;
 
-  if(!actx) actx = new (window.AudioContext||window.webkitAudioContext)();
-  try { await actx.resume(); } catch(_) {}
-  musicSource   = actx.createMediaElementSource(musicAudio);
-  musicAnalyser = actx.createAnalyser();
-  musicAnalyser.fftSize = 256;
-  musicSource.connect(musicAnalyser);
-  musicAnalyser.connect(actx.destination);
+  const ctx = getActx();
+  try { await ctx.resume(); } catch (_) {}
 
-  const stopClick = ev => { ev.stopPropagation(); stopMusicBeat(); if(animState==='dance') animState='idle'; };
-  try { await musicAudio.play(); } catch(err) {
+  try {
+    musicSource = ctx.createMediaElementSource(musicAudio);
+    musicAnalyser = ctx.createAnalyser();
+    musicAnalyser.fftSize = 256;
+    musicSource.connect(musicAnalyser);
+    musicAnalyser.connect(ctx.destination);
+  } catch (err) {
+    console.warn('Audio node connection error:', err.message);
+  }
+
+  const stopClick = (ev) => {
+    ev.stopPropagation();
+    stopMusicBeat();
+    if (animState === 'dance') { animState = 'idle'; currentRenderKey = ''; }
+  };
+
+  try {
+    await musicAudio.play();
+  } catch (err) {
     document.getElementById('music-status').textContent = '⚠ Click ▶ to start';
-    document.getElementById('music-stop-btn').style.display = 'inline-block';
-    document.getElementById('music-stop-btn').textContent = '▶ Play';
-    document.getElementById('music-stop-btn').onclick = async ev => {
+    const stopBtn = document.getElementById('music-stop-btn');
+    stopBtn.style.display = 'inline-block';
+    stopBtn.textContent = '▶ Play';
+    stopBtn.onclick = async (ev) => {
       ev.stopPropagation();
-      try { await actx.resume(); await musicAudio.play(); } catch(_) {}
-      document.getElementById('music-stop-btn').textContent = '■ Stop';
-      document.getElementById('music-stop-btn').onclick = stopClick;
+      try { await getActx().resume(); await musicAudio.play(); } catch (_) {}
+      stopBtn.textContent = '⏹';
+      stopBtn.onclick = stopClick;
     };
     return;
   }
-  document.getElementById('music-stop-btn').onclick = stopClick;
-  document.getElementById('music-status').textContent = '♪ ' + fileName.slice(0,26);
-  document.getElementById('music-stop-btn').style.display = 'inline-block';
 
-  if(animState !== 'dance') animState = 'dance';
-  document.getElementById('game-panel').classList.add('dancing');
-  document.getElementById('game-panel').classList.add('dancing-audio');
+  const stopBtn = document.getElementById('music-stop-btn');
+  stopBtn.onclick = stopClick;
+  stopBtn.textContent = '⏹';
+  stopBtn.style.display = 'inline-block';
+  document.getElementById('music-status').textContent = '♪ ' + fileName.slice(0, 26);
 
-  const beatBars   = document.querySelectorAll('#dance-beat .beat-bar');
-  const dataArray  = new Uint8Array(musicAnalyser.frequencyBinCount);
-  let   lastBeat   = 0, beatThreshold = 160, lastVibe = null;
-
-  function driveBeatBars(){
-    musicRAF = requestAnimationFrame(driveBeatBars);
-    musicAnalyser.getByteFrequencyData(dataArray);
-    const bands = 8, binsPerBand = Math.floor(dataArray.length / bands);
-    beatBars.forEach((bar, i)=>{
-      let sum = 0;
-      for(let j=i*binsPerBand; j<i*binsPerBand+binsPerBand; j++) sum += dataArray[j];
-      bar.style.height = Math.max(6, Math.round((sum/binsPerBand/255)*48)) + 'px';
-    });
-    const bass = dataArray.slice(0,8).reduce((a,b)=>a+b,0)/8;
-    const now = performance.now();
-    if(bass > beatThreshold && now - lastBeat > 200){ lastBeat = now; spawnParticles(3, CHARS[currentChar].accentSolid); }
-    if(!manualVibe){
-      const nextVibe = bass>200?'rave':bass>150?'rock':bass>80?'pop':'chill';
-      if(nextVibe !== lastVibe){ lastVibe = nextVibe; setDanceVibe(nextVibe); }
-    }
+  if (animState !== 'dance') {
+    animState = 'dance';
+    currentRenderKey = '';
   }
-  driveBeatBars();
+  document.getElementById('game-panel')?.classList.add('dancing');
+  document.getElementById('game-panel')?.classList.add('dancing-audio');
+
+  if (musicAnalyser) {
+    const beatBars = document.querySelectorAll('#dance-beat .beat-bar');
+    const dataArray = new Uint8Array(musicAnalyser.frequencyBinCount);
+    let lastBeat = 0;
+    const beatThreshold = 160;
+    let lastVibe = null;
+
+    function driveBeatBars() {
+      musicRAF = requestAnimationFrame(driveBeatBars);
+      if (!musicAnalyser) return;
+      musicAnalyser.getByteFrequencyData(dataArray);
+      const bands = 8;
+      const binsPerBand = Math.floor(dataArray.length / bands);
+      beatBars.forEach((bar, i) => {
+        let sum = 0;
+        for (let j = i * binsPerBand; j < i * binsPerBand + binsPerBand; j++) sum += dataArray[j];
+        bar.style.height = Math.max(6, Math.round((sum / binsPerBand / 255) * 48)) + 'px';
+      });
+      const bass = dataArray.slice(0, 8).reduce((a, b) => a + b, 0) / 8;
+      const now = performance.now();
+      if (bass > beatThreshold && now - lastBeat > 200) {
+        lastBeat = now;
+        spawnParticles(3, (CHARS[currentChar] || CHARS.cat).accentSolid);
+      }
+      if (!manualVibe) {
+        const nextVibe = bass > 200 ? 'rave' : bass > 150 ? 'rock' : bass > 80 ? 'pop' : 'chill';
+        if (nextVibe !== lastVibe) {
+          lastVibe = nextVibe;
+          setDanceVibe(nextVibe);
+        }
+      }
+    }
+    driveBeatBars();
+  }
   showBubble('🎧 Dancing to music!', 2000);
 });
 
-
-
-// ══════════════════════════════════════════════
-// DANCE PANEL — render loop with energy-aware dance
-// ══════════════════════════════════════════════
-const danceSvg = document.getElementById('dance-svg');
-const danceLights = document.getElementById('dance-lights');
-
-function renderFrameWithDance(ts){
-  animTime = ts/1000;
-  const c = CHARS[currentChar];
-  let content = '';
-  if     (animState==='thinking') content=c.thinking(animTime);
-  else if(animState==='sleep')    content=c.sleep(animTime);
-  else if(animState==='shock')    content=c.shock(animTime);
-  else if(animState==='dance')    content=c.dance(animTime);
-  else                            content=c.idle(animTime);
-  svg.innerHTML = content;
-  // Dance panel SVG — only render when dance tab is visible to avoid double avatar
-  const danceTabActive = document.getElementById('game-panel').classList.contains('active');
-  if(danceSvg && danceTabActive) {
-    danceSvg.innerHTML = c.dance ? c.dance(animTime) : c.idle(animTime);
-  }
-  rafId = requestAnimationFrame(renderFrameWithDance);
-}
-cancelAnimationFrame(rafId);
-rafId = requestAnimationFrame(renderFrameWithDance);
-
-// Spawn disco lights in dance panel
-setInterval(()=>{
-  if(!document.getElementById('game-panel').classList.contains('active')) return;
+// Disco lights
+setInterval(() => {
+  if (!document.getElementById('game-panel')?.classList.contains('active')) return;
   const dot = document.createElement('div');
-  const colors = ['#f59e0b','#10b981','#6366f1','#f43f5e','#06b6d4','#a78bfa'];
+  const colors = ['#f59e0b', '#10b981', '#6366f1', '#f43f5e', '#06b6d4', '#a78bfa'];
   const energy = window._danceEnergy || 7;
   const size = 6 + Math.random() * (energy + 6);
-  dot.style.cssText = `position:absolute;width:${size}px;height:${size}px;border-radius:50%;background:${colors[Math.floor(Math.random()*colors.length)]};opacity:0.75;left:${Math.random()*92}%;top:${Math.random()*92}%;transition:opacity 0.5s;pointer-events:none;`;
+  dot.style.cssText = `position:absolute;width:${size}px;height:${size}px;border-radius:50%;background:${colors[Math.floor(Math.random() * colors.length)]};opacity:0.75;left:${Math.random() * 92}%;top:${Math.random() * 92}%;transition:opacity 0.5s;pointer-events:none;`;
   danceLights.appendChild(dot);
-  const delay = Math.max(80, 300 - energy*12);
-  setTimeout(()=>{ dot.style.opacity='0'; setTimeout(()=>dot.remove(),500); }, delay);
+  const delay = Math.max(80, 300 - energy * 12);
+  setTimeout(() => { dot.style.opacity = '0'; setTimeout(() => dot.remove(), 500); }, delay);
 }, 150);
 
 // ══════════════════════════════════════════════
-// ALWAYS ON TOP — handled in main.js for Mac
+// VISIBILITY & ALWAYS ON TOP
 // ══════════════════════════════════════════════
 const aotBadge = document.getElementById('aot-badge');
 const isMac = navigator.platform.toUpperCase().includes('MAC');
-aotBadge.textContent = `📌 Always on Top — Press ${isMac ? 'Cmd+Shift+P' : 'Ctrl+Shift+P'} to hide`;
-aotBadge.classList.add('show');
-setTimeout(()=>aotBadge.classList.remove('show'), 3500);
+if (aotBadge) {
+  aotBadge.textContent = `📌 Always on Top — Press ${isMac ? 'Cmd+Shift+P' : 'Ctrl+Shift+P'} to hide`;
+  aotBadge.classList.add('show');
+  setTimeout(() => aotBadge.classList.remove('show'), 3500);
+}
 
-// ══════════════════════════════════════════════
-// VISIBILITY TOGGLE — triggered by globalShortcut in main.js
-// ══════════════════════════════════════════════
 ipcRenderer.on('pet-visibility', (e, visible) => {
-  const app = document.getElementById('app');
-  if(visible){
-    app.style.transition = 'opacity 0.2s';
-    app.style.opacity = '1';
-    app.style.pointerEvents = 'auto';
-    showBubble('👋 I\'m back!', 2000);
+  const appEl = document.getElementById('app');
+  if (!appEl) return;
+  if (visible) {
+    appEl.style.transition = 'opacity 0.2s';
+    appEl.style.opacity = '1';
+    appEl.style.pointerEvents = 'auto';
+    showBubble("👋 I'm back!", 2000);
   } else {
-    if(chatOpen){ chatbox.classList.remove('open'); chatOpen=false; ipcRenderer.send('set-size', { open: false });  }
-    app.style.transition = 'opacity 0.2s';
-    app.style.opacity = '0';
-    app.style.pointerEvents = 'none';
-  }
-});
-
-// ══════════════════════════════════════════════
-// POSITION MEMORY — save/restore window position
-// ══════════════════════════════════════════════
-function savePosition(x, y){
-  try{ localStorage.setItem('petPos', JSON.stringify({x, y})); }catch(e){}
-}
-function loadPosition(){
-  try{
-    const p = JSON.parse(localStorage.getItem('petPos'));
-    if(p && typeof p.x==='number') ipcRenderer.send('move-win', {x:p.x, y:p.y});
-  }catch(e){}
-}
-
-// Save position after every drag-drop
-function onDrop(){
-  dragging=false;
-  document.removeEventListener('mousemove', onDrag);
-  document.removeEventListener('mouseup', onDrop);
-  ipcRenderer.send('snap-corner');
-  // Ask main process for current position to persist it
-  ipcRenderer.send('get-position');
-}
-ipcRenderer.on('position-reply', (e, pos)=>{
-  if(pos) savePosition(pos.x, pos.y);
-});
-
-// ══════════════════════════════════════════════
-// SAVE / LOAD
-// ══════════════════════════════════════════════
-function saveData(){
-  ipcRenderer.send('save-data',{
-    currentChar, streak, lastChatDate, moodPoints, gameBest,
-    activeTab: document.querySelector('.tab-btn.active')?.dataset.tab || 'chat',
-    history:history.slice(-20),
-    reminders:reminders.map(r=>({id:r.id,text:r.text,due:r.due}))
-  });
-}
-
-ipcRenderer.send('load-data');
-ipcRenderer.on('data-loaded',(e,d)=>{
-  if(!d) return;
-  if(d.currentChar && CHARS[d.currentChar]){ currentChar=d.currentChar; applyTheme(currentChar); document.querySelector(`[data-char="${currentChar}"]`)?.classList.add('active'); }
-  streak=d.streak||0; lastChatDate=d.lastChatDate||'';
-  moodPoints=d.moodPoints||100; gameBest=d.gameBest||0;
-  streakBadge.textContent=`🔥 ${streak} day${streak!==1?'s':''}`;
-  if(d.history && d.history.length){
-    history=d.history;
-    // Re-render every saved message so chat is never blank on open
-    messages.innerHTML='';
-    history.forEach(m=>{
-      addMsg(m.content, m.role==='user' ? 'user' : 'bot');
-    });
-    addMsg('― session restored ―','system');
-  }
-  updateMood();
-  loadPosition();
-});
-
-// ══════════════════════════════════════════════
-// OLLAMA LIVE STATUS — checks every 5 seconds
-// ══════════════════════════════════════════════
-let ollamaOnline  = false;
-
-async function checkOllama(){
-  const ollamaDot   = document.getElementById('ollama-dot');
-  const ollamaLabel = document.getElementById('ollama-label');
-  if(!ollamaDot || !ollamaLabel) return;
-  ollamaDot.className = 'checking';
-  ollamaLabel.textContent = 'Ollama: checking…';
-  try{
-    const _ctrl = new AbortController();
-    const _timer = setTimeout(()=>_ctrl.abort(), 2500);
-    const r = await fetch('http://localhost:11434/api/tags', {signal: _ctrl.signal});
-    clearTimeout(_timer);
-    ollamaOnline = r.ok;
-  }catch(e){ ollamaOnline = false; }
-  if(ollamaOnline){
-    ollamaDot.className = '';
-    ollamaLabel.textContent = '🟢 Ollama connected';
-    statusdot.className = '';
-    // Update startup message if it's still showing "checking"
-    const sys = messages.querySelector('.msg.system');
-    if(sys && sys.textContent.includes('checking')) sys.textContent = 'session started — ollama connected ✓';
-  } else {
-    ollamaDot.className = 'offline';
-    ollamaLabel.textContent = '🔴 Ollama offline — run: ollama serve';
-    statusdot.className = 'offline';
-    const sys = messages.querySelector('.msg.system');
-    if(sys && sys.textContent.includes('checking')) sys.textContent = '⚠ Ollama offline — run: ollama serve';
-    setTimeout(()=>{ if(!isThinking) statusdot.className=''; }, 3000);
-  }
-}
-checkOllama();
-setInterval(checkOllama, 5000);
-const _ollamaRetryBtn = document.getElementById('ollama-retry-inline');
-if(_ollamaRetryBtn) _ollamaRetryBtn.addEventListener('click', e=>{
-  e.stopPropagation(); checkOllama();
-});
-
-// ══════════════════════════════════════════════
-// DANCE VIBE SYSTEM — controls beat speed & pet energy
-// ══════════════════════════════════════════════
-const VIBES = {
-  pop:   { dur:'0.55s', energy:7,  speed:6,  swing:10, label:'Pop 🎵' },
-  rock:  { dur:'0.28s', energy:14, speed:10, swing:16, label:'Rock 🤘' },
-  chill: { dur:'1.2s',  energy:3,  speed:3,  swing:6,  label:'Chill 😌' },
-  rave:  { dur:'0.18s', energy:18, speed:14, swing:20, label:'Rave ⚡' }
-};
-let currentDanceVibe = 'pop';
-let manualVibe = false;
-// These globals are read directly by all dance() SVG functions
-window._danceEnergy = 7;
-window._danceSpeed  = 6;
-window._danceSwing  = 10;
-
-function setDanceVibe(vibe){
-  currentDanceVibe = vibe;
-  const v = VIBES[vibe] || VIBES.pop;
-  const panel = document.getElementById('game-panel');
-  panel.style.setProperty('--beat-dur', v.dur);
-  window._danceEnergy = v.energy;
-  window._danceSpeed  = v.speed;
-  window._danceSwing  = v.swing;
-  showBubble(v.label, 1500);
-  const freqs = {pop:660, rock:220, chill:440, rave:880};
-  playTone(freqs[vibe]||600, 0.12, vibe==='rock'?'sawtooth':'sine', 0.08);
-}
-
-document.querySelectorAll('.mood-music-btn').forEach(btn=>{
-  btn.addEventListener('click', e=>{
-    e.stopPropagation();
-    document.querySelectorAll('.mood-music-btn').forEach(b=>b.classList.remove('active'));
-    btn.classList.add('active');
-    manualVibe = true;
-    setDanceVibe(btn.dataset.vibe);
-    // If not already dancing, make the main pet dance
-    if(animState !== 'dance'){
-      animState = 'dance';
-      setTimeout(()=>{ if(animState==='dance') animState='idle'; }, 5000);
+    if (chatOpen) {
+      chatbox.classList.remove('open');
+      chatOpen = false;
+      ipcRenderer.send('set-size', { open: false });
     }
-  });
+    appEl.style.transition = 'opacity 0.2s';
+    appEl.style.opacity = '0';
+    appEl.style.pointerEvents = 'none';
+  }
 });
 
 // ══════════════════════════════════════════════
-// MUSIC BEAT DETECTION — Web Audio API on uploaded file
-// ══════════════════════════════════════════════
-let musicAudio = null, musicAnalyser = null, musicSource = null, musicRAF = null;
-
-function stopMusicBeat(){
-  if(musicAudio){ musicAudio.pause(); musicAudio.src = ''; musicAudio = null; }
-  if(musicSource){ try{ musicSource.disconnect(); }catch(e){} musicSource = null; }
-  if(musicRAF){ cancelAnimationFrame(musicRAF); musicRAF = null; }
-  musicAnalyser = null;
-  if(actx){ try{ actx.close(); }catch(e){} actx = null; }
-  document.getElementById('music-stop-btn').style.display = 'none';
-  document.getElementById('music-status').textContent = '';
-  document.getElementById('game-panel').classList.remove('dancing-audio');
-  manualVibe = false;
-}
-
-const _musicStopBtn = document.getElementById('music-stop-btn');
-if(_musicStopBtn) _musicStopBtn.addEventListener('click', e=>{
-  e.stopPropagation(); stopMusicBeat();
-  if(animState==='dance') animState='idle';
-});
-
-// ══════════════════════════════════════════════
-// IDLE ANIMATIONS — blink, look, stretch, yawn
-// ══════════════════════════════════════════════
-const IDLE_ANIMATIONS = [
-  { trigger(){ return animState==='idle' && !chatOpen; },
-    run(){
-      // Blink: briefly force eyes-closed via a quick state + SVG tweak
-      const origState = animState;
-      showBubble('*blinks* 👁', 900);
-    }
-  },
-  { trigger(){ return animState==='idle' && !chatOpen; },
-    run(){
-      showBubble('*yawns* 😪', 1600);
-    }
-  },
-  { trigger(){ return animState==='idle' && !chatOpen; },
-    run(){
-      showBubble('*stretches* 🙆', 1400);
-    }
-  },
-  { trigger(){ return animState==='idle' && !chatOpen; },
-    run(){
-      const greetings = ['Looking good today 😊', 'Still here! 🌟', '*tail wag* 🐾', 'Just chilling 😎'];
-      showBubble(greetings[Math.floor(Math.random()*greetings.length)], 1800);
-    }
-  }
-];
-
-setInterval(()=>{
-  if(animState !== 'idle' || chatOpen || isThinking) return;
-  const eligible = IDLE_ANIMATIONS.filter(a=>a.trigger());
-  if(eligible.length && Math.random() < 0.4){
-    eligible[Math.floor(Math.random()*eligible.length)].run();
-  }
-}, 8000);
-
-// ══════════════════════════════════════════════
-// IDLE GREETINGS
-// ══════════════════════════════════════════════
-function timeGreeting(){
-  const h=new Date().getHours();
-  if(h<6) return 'Up late? 🌙';
-  if(h<12) return 'Good morning! ☀️';
-  if(h<18) return 'Good afternoon! 🌤';
-  return 'Good evening! 🌙';
-}
-setInterval(()=>{
-  if(!chatOpen&&!isThinking&&animState!=='sleep'&&animState!=='dance'&&Math.random()<0.3){
-    const msgs=[...CHARS[currentChar].greetings, timeGreeting()];
-    showBubble(msgs[Math.floor(Math.random()*msgs.length)],2200);
-  }
-},12000);
-
-// ══════════════════════════════════════════════
-// FEATURE 1: WEATHER CONTEXT IN OLLAMA PROMPT
-// ══════════════════════════════════════════════
-let weatherContext = '';
-// Updated when weather is fetched
-const _origFetchWeather = fetchWeather;
-// Patch weather to also update context string
-const _wxPatchInterval = setInterval(()=>{
-  if(typeof fetchWeather === 'function'){
-    clearInterval(_wxPatchInterval);
-    const origFetch = window.fetch;
-    // weatherContext is set inside fetchWeather's success block already — we piggyback on that
-  }
-}, 500);
-
-// We inject context into the system prompt on every send
-const _origSendMessage = sendMessage;
-window._buildSystemContext = function(){
-  const now = new Date();
-  const h = now.getHours();
-  const timeStr = now.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
-  const dayPart = h<6?'late night':h<12?'morning':h<18?'afternoon':'evening';
-  const season = (()=>{ const m=now.getMonth(); if(m<=1||m===11) return 'winter'; if(m<=4) return 'spring'; if(m<=7) return 'summer'; return 'autumn'; })();
-  const holiday = (()=>{
-    const md = `${now.getMonth()+1}-${now.getDate()}`;
-    const map = {'12-25':'Christmas 🎄','1-1':'New Year 🎉','10-31':'Halloween 🎃','2-14':'Valentine\'s Day 💝','12-31':'New Year\'s Eve 🥂'};
-    return map[md] || null;
-  })();
-  let ctx = `You are a cute desktop pet. It's ${timeStr} on a ${['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][now.getDay()]} ${dayPart} in ${season}.`;
-  if(holiday) ctx += ` Today is ${holiday}!`;
-  if(weatherContext) ctx += ` Outside: ${weatherContext}.`;
-  if(window._typingWpm > 80) ctx += ` The user seems to be typing very fast (${window._typingWpm} WPM) — they might be stressed.`;
-  if(window._systemIdleSecs > 1800) ctx += ` The user has been idle for ${Math.round(window._systemIdleSecs/60)} minutes.`;
-  if(window._batteryLevel !== undefined && window._batteryLevel < 20) ctx += ` Battery is critically low at ${window._batteryLevel}%.`;
-  ctx += ` Keep replies short and playful.`;
-  return ctx;
-};
-
-// ══════════════════════════════════════════════
-// FEATURE 2: TIME-AWARE BEHAVIOR (dawn/dusk/night skin)
-// ══════════════════════════════════════════════
-function applyTimeSkin(){
-  const h = new Date().getHours();
-  const skinEl = document.getElementById('stat-skin');
-  if(h>=6 && h<12)       { skinEl.textContent='Morning ☀️'; }
-  else if(h>=12 && h<18) { skinEl.textContent='Afternoon 🌤'; }
-  else if(h>=18 && h<21) { skinEl.textContent='Evening 🌆'; }
-  else                   { skinEl.textContent='Night 🌙'; }
-}
-applyTimeSkin();
-setInterval(applyTimeSkin, 60000);
-
-// ══════════════════════════════════════════════
-// FEATURE 3: IDLE TIME DETECTION
+// IDLE TIME DETECTION
 // ══════════════════════════════════════════════
 let _idleSecs = 0;
 window._systemIdleSecs = 0;
@@ -2395,180 +2746,100 @@ ipcRenderer.on('idle-update', (e, secs) => {
   _idleSecs = secs;
   window._systemIdleSecs = secs;
   const idleEl = document.getElementById('stat-idle');
-  if(secs < 60) idleEl.textContent = secs+'s';
-  else if(secs < 3600) idleEl.textContent = Math.floor(secs/60)+'m';
-  else idleEl.textContent = Math.floor(secs/3600)+'h '+Math.floor((secs%3600)/60)+'m';
-
-  // React to long idle
-  if(secs > 3600 && animState==='idle' && !chatOpen){
+  if (idleEl) {
+    if (secs < 60) idleEl.textContent = secs + 's';
+    else if (secs < 3600) idleEl.textContent = Math.floor(secs/60) + 'm';
+    else idleEl.textContent = Math.floor(secs/3600) + 'h ' + Math.floor((secs % 3600) / 60) + 'm';
+  }
+  if (secs > 3600 && animState === 'idle' && !chatOpen) {
     showBubble('Miss you… 🥺', 3000);
     moodPoints = Math.max(0, moodPoints - 3);
-  } else if(secs > 300 && secs < 310 && animState==='idle'){
-    showBubble('Still there? 👀', 2000);
   }
 });
 
 // ══════════════════════════════════════════════
-// FEATURE 4: BATTERY AWARENESS
+// BATTERY AWARENESS
 // ══════════════════════════════════════════════
 window._batteryLevel = undefined;
 let _lastBatteryLevel = undefined;
-let _batteryCharging = false;
 ipcRenderer.on('system-status', (e, s) => {
-  if(s.battery){
+  if (s && s.battery) {
     const lvl = s.battery.level;
     const charging = s.battery.charging;
     window._batteryLevel = lvl;
     const batEl = document.getElementById('stat-battery');
-    batEl.textContent = lvl+'% '+(charging?'⚡':'🔋');
-    batEl.style.color = lvl<20?'#ef4444':lvl<50?'#f59e0b':'#4ade80';
-
+    if (batEl) {
+      batEl.textContent = lvl + '% ' + (charging ? '⚡' : '🔋');
+      batEl.style.color = lvl < 20 ? '#ef4444' : lvl < 50 ? '#f59e0b' : '#4ade80';
+    }
     const badge = document.getElementById('battery-badge');
-    if(lvl<=15 && !charging){
-      badge.textContent = `🔋 ${lvl}% — Plug in!`;
-      badge.style.display='block';
-      if(_lastBatteryLevel > 15) { showBubble('Plug me in! 🔋', 3000); moodPoints=Math.max(0,moodPoints-10); updateMood(); }
-    } else {
-      badge.style.display='none';
-    }
-    if(charging && lvl===100 && _lastBatteryLevel !== 100){
-      showBubble('Fully charged! ⚡😄', 3000); spawnConfetti();
-      moodPoints=Math.min(100,moodPoints+20); updateMood();
-    }
-    if(!charging && lvl<20 && animState==='idle'){
-      mood='hungry'; updateMood();
+    if (badge) {
+      if (lvl <= 15 && !charging) {
+        badge.textContent = `🔋 ${lvl}% — Plug in!`;
+        badge.style.display = 'block';
+        if (_lastBatteryLevel > 15) {
+          showBubble('Plug me in! 🔋', 3000);
+          moodPoints = Math.max(0, moodPoints - 10);
+          updateMood();
+        }
+      } else {
+        badge.style.display = 'none';
+      }
     }
     _lastBatteryLevel = lvl;
-    _batteryCharging = charging;
   }
 });
-// Periodically refresh system status for battery
-setInterval(()=>{ ipcRenderer.send('get-system-status'); }, 30000);
+setInterval(() => { ipcRenderer.send('get-system-status'); }, 30000);
 
 // ══════════════════════════════════════════════
-// FEATURE 5: DARK / LIGHT THEME REACTION
+// DARK / LIGHT THEME REACTION
 // ══════════════════════════════════════════════
 ipcRenderer.on('theme-update', (e, theme) => {
   const el = document.getElementById('stat-theme');
-  if(el) el.textContent = theme==='dark'?'Dark 🌑':'Light ☀️';
-  if(theme==='light' && animState==='idle'){
-    showBubble('So bright! 😎', 1800);
-  } else if(theme==='dark' && animState==='idle'){
-    showBubble('Cozy dark mode 🌙', 1800);
-  }
+  if (el) el.textContent = theme === 'dark' ? 'Dark 🌑' : 'Light ☀️';
 });
 
 // ══════════════════════════════════════════════
-// FEATURE 6: TYPING SPEED DETECTION
+// TYPING SPEED
 // ══════════════════════════════════════════════
 window._typingWpm = 0;
 let _typeTimestamps = [];
-document.getElementById('userinput').addEventListener('input', ()=>{
+document.getElementById('userinput')?.addEventListener('input', () => {
   const now = Date.now();
   _typeTimestamps.push(now);
-  _typeTimestamps = _typeTimestamps.filter(t => now-t < 5000);
+  _typeTimestamps = _typeTimestamps.filter(t => now - t < 5000);
   const wpm = Math.round(_typeTimestamps.length * 12);
   window._typingWpm = wpm;
-  if(wpm > 120 && animState==='idle'){
-    showBubble('Whoa, you\'re fast! ⚡', 1500);
-  } else if(wpm > 80 && animState==='idle' && Math.random()<0.15){
-    showBubble('Typing storm! 💨', 1200);
-  }
 });
 
 // ══════════════════════════════════════════════
-// FEATURE 7: SEASON / HOLIDAY AWARENESS
-// ══════════════════════════════════════════════
-function getSeasonEmoji(){
-  const m = new Date().getMonth();
-  if(m<=1||m===11) return '❄️';
-  if(m<=4) return '🌸';
-  if(m<=7) return '☀️';
-  return '🍂';
-}
-function getTodayHoliday(){
-  const now = new Date();
-  const md = `${now.getMonth()+1}-${now.getDate()}`;
-  const holidays = {
-    '1-1':'Happy New Year! 🎉','2-14':'Happy Valentine\'s Day! 💝',
-    '4-1':'April Fools! 😜','10-31':'Happy Halloween! 🎃',
-    '12-24':'Christmas Eve! 🎄','12-25':'Merry Christmas! 🎅',
-    '12-31':'Happy New Year\'s Eve! 🥂'
-  };
-  return holidays[md] || null;
-}
-// Show holiday greeting once per day
-const _todayStr = new Date().toDateString();
-const _lastHolidayShown = localStorage.getItem('lastHolidayShown');
-const _todayHoliday = getTodayHoliday();
-if(_todayHoliday && _lastHolidayShown !== _todayStr){
-  setTimeout(()=>{ showBubble(_todayHoliday, 4000); spawnConfetti(); localStorage.setItem('lastHolidayShown', _todayStr); }, 3000);
-}
-
-// ══════════════════════════════════════════════
-// FEATURE 8: HUNGER / ENGAGEMENT SYSTEM
+// ENGAGEMENT / COMPANION MODE
 // ══════════════════════════════════════════════
 let _lastInteractionTime = Date.now();
-
-// Safety net: ANY mousedown on the chat panel re-enables mouse capture.
-// This makes every button (timer, weather, music, games, …) work
-// even if the companion-mode idle handler set set-ignore-mouse=true.
-// MUST be declared after _lastInteractionTime to avoid TDZ ReferenceError.
-document.body.addEventListener('mousedown', ()=>{
-  try{ ipcRenderer.send('set-ignore-mouse', false); }catch(_){}
+document.body.addEventListener('mousedown', () => {
+  try { ipcRenderer.send('set-ignore-mouse', false); } catch (_) {}
   _lastInteractionTime = Date.now();
 }, true);
-document.getElementById('pet-stage').addEventListener('click', ()=>{ _lastInteractionTime=Date.now(); });
-document.getElementById('sendbtn').addEventListener('click', ()=>{ _lastInteractionTime=Date.now(); });
-
-setInterval(()=>{
-  const minsAgo = (Date.now()-_lastInteractionTime)/60000;
-  if(minsAgo > 30 && animState==='idle' && !chatOpen && Math.random()<0.3){
-    const msgs=['Feed me attention! 🍪','I\'m lonely… 😿','Chat with me! 💬','*hunger growl* 🍽️'];
-    showBubble(msgs[Math.floor(Math.random()*msgs.length)], 2500);
-    mood='hungry'; updateMood();
-  }
-}, 5*60*1000);
 
 // ══════════════════════════════════════════════
-// FEATURE 9: DREAM BUBBLES (idle animation)
+// DREAM BUBBLES
 // ══════════════════════════════════════════════
 const dreamBubble = document.getElementById('dream-bubble');
-const DREAMS = ['🍕','🌈','⭐','🐟','🎮','🏖️','🚀','💤','🌙','🎵','🍦','🦋'];
-let dreamTimer = null;
-function showDream(){
-  if(animState!=='sleep' && animState!=='idle') return;
-  if(chatOpen) return;
-  const icons = Array.from({length:2+Math.floor(Math.random()*2)},()=>DREAMS[Math.floor(Math.random()*DREAMS.length)]);
+const DREAMS = ['🍕', '🌈', '⭐', '🐟', '🎮', '🏖️', '🚀', '💤', '🌙', '🎵', '🍦', '🦋'];
+function showDream() {
+  if (animState !== 'sleep' && animState !== 'idle') return;
+  if (chatOpen || !dreamBubble) return;
+  const icons = Array.from({ length: 2 + Math.floor(Math.random() * 2) }, () => DREAMS[Math.floor(Math.random() * DREAMS.length)]);
   dreamBubble.textContent = icons.join(' ');
   dreamBubble.classList.add('show');
-  setTimeout(()=>dreamBubble.classList.remove('show'), 3500);
+  setTimeout(() => dreamBubble.classList.remove('show'), 3500);
 }
-setInterval(()=>{
-  if((animState==='sleep'||animState==='idle') && !chatOpen && Math.random()<0.35) showDream();
+setInterval(() => {
+  if ((animState === 'sleep' || animState === 'idle') && !chatOpen && Math.random() < 0.35) showDream();
 }, 15000);
 
 // ══════════════════════════════════════════════
-// FEATURE 10: STREAK CELEBRATIONS
-// ══════════════════════════════════════════════
-// Patches onto existing updateStreak — wrap AFTER original is defined
-if(typeof updateStreak === 'function'){
-  const _origUpdateStreak = updateStreak;
-  updateStreak = function(){
-    const wasStreak = streak;
-    _origUpdateStreak();
-    if(streak > wasStreak && streak > 0 && streak % 5 === 0){
-      setTimeout(()=>{
-        showBubble(`${streak} day streak! 🔥🎉`, 4000);
-        spawnConfetti(); spawnParticles(16, '#f59e0b');
-        playTone(880,0.15,'sine',0.1);
-      }, 500);
-    }
-  };
-}
-
-// ══════════════════════════════════════════════
-// FEATURE 11: FUN FACT OF THE DAY
+// FUN FACT OF THE DAY
 // ══════════════════════════════════════════════
 const FACTS = [
   'Honey never spoils — edible honey was found in 3000-year-old Egyptian tombs! 🍯',
@@ -2582,421 +2853,296 @@ const FACTS = [
   'There are more possible chess games than atoms in the observable universe ♟️',
   'Cats can\'t taste sweetness 🐱',
   'A shrimp\'s heart is in its head 🦐',
-  'The Eiffel Tower grows about 6 inches taller in summer 🗼',
+  'The Eiffel Tower grows about 6 inches taller in summer 🗼'
 ];
-let _factIdx = parseInt(localStorage.getItem('factIdx')||'0') % FACTS.length;
+let _factIdx = 0;
+try { _factIdx = parseInt(localStorage.getItem('factIdx') || '0', 10) % FACTS.length; } catch (_) {}
 const factBar = document.getElementById('fact-bar');
-function showFact(){
-  factBar.textContent = '💡 '+FACTS[_factIdx];
-  _factIdx = (_factIdx+1)%FACTS.length;
-  try{ localStorage.setItem('factIdx',_factIdx); }catch(_){}
+function showFact() {
+  if (!factBar) return;
+  factBar.textContent = '💡 ' + FACTS[_factIdx];
+  _factIdx = (_factIdx + 1) % FACTS.length;
+  try { localStorage.setItem('factIdx', _factIdx); } catch (_) {}
 }
 showFact();
-factBar.addEventListener('click', e=>{ e.stopPropagation(); showFact(); showBubble('New fact! 🧠',1200); });
+factBar?.addEventListener('click', (e) => {
+  e.stopPropagation();
+  showFact();
+  showBubble('New fact! 🧠', 1200);
+});
 
 // ══════════════════════════════════════════════
-// FEATURE 12: ACTIVE APPS AWARENESS
+// ACTIVE APPS
 // ══════════════════════════════════════════════
-function loadActiveApps(){
+function loadActiveApps() {
   ipcRenderer.send('get-active-apps');
 }
 ipcRenderer.on('active-apps', (e, apps) => {
   const el = document.getElementById('apps-list');
-  if(!el) return;
-  const friendly = apps.slice(0,8).map(a=>{
-    const clean = a.replace(/\.(exe|app)$/i,'');
-    const emoji = {chrome:'🌐',firefox:'🦊',safari:'🧭',code:'💻',vscode:'💻',slack:'💬',discord:'🎮',spotify:'🎵',zoom:'📹',terminal:'⌨️',finder:'📁',explorer:'📁',node:'🟩',python:'🐍'}[clean.toLowerCase()] || '📋';
+  if (!el) return;
+  if (!Array.isArray(apps) || apps.length === 0) {
+    el.textContent = 'No foreground apps detected';
+    return;
+  }
+  const friendly = apps.slice(0, 8).map(a => {
+    const clean = a.replace(/\.(exe|app)$/i, '');
+    const emoji = { chrome: '🌐', firefox: '🦊', safari: '🧭', code: '💻', vscode: '💻', slack: '💬', discord: '🎮', spotify: '🎵', zoom: '📹', terminal: '⌨️', finder: '📁' }[clean.toLowerCase()] || '📋';
     return `${emoji} ${clean}`;
   });
   el.textContent = friendly.join('  ');
-  // React to interesting apps
-  if(apps.some(a=>/spotify|music|vlc/i.test(a)) && animState==='idle' && Math.random()<0.4){
-    showBubble('Music is playing! 🎵', 2000);
-    if(animState==='idle'){ animState='dance'; setTimeout(()=>animState='idle',4000); }
-  }
-  if(apps.some(a=>/zoom|meet|teams|facetime/i.test(a)) && Math.random()<0.3){
-    showBubble('On a call? Shhh 🤫', 2000);
-  }
-  if(apps.some(a=>/steam|epicgames|game/i.test(a)) && Math.random()<0.3){
-    showBubble('Gaming time! 🎮', 2000); mood='excited'; updateMood();
-  }
 });
-document.getElementById('apps-refresh')?.addEventListener('click', e=>{ e.stopPropagation(); loadActiveApps(); });
-// Auto-load when extras tab opens
-document.querySelectorAll('.tab-btn').forEach(btn=>{
-  if(btn.dataset.tab==='extras') btn.addEventListener('click', loadActiveApps, {capture:true});
+document.getElementById('apps-refresh')?.addEventListener('click', (e) => {
+  e.stopPropagation();
+  loadActiveApps();
+});
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  if (btn.dataset.tab === 'extras') btn.addEventListener('click', loadActiveApps, { capture: true });
 });
 
 // ══════════════════════════════════════════════
-// FEATURE 13: MOOD HISTORY GRAPH
+// MOOD HISTORY GRAPH
 // ══════════════════════════════════════════════
-let _moodHistory = JSON.parse(localStorage.getItem('moodHistory')||'[]');
-function recordMoodHistory(){
+let _moodHistory = [];
+try { _moodHistory = JSON.parse(localStorage.getItem('moodHistory') || '[]'); } catch (_) {}
+function recordMoodHistory() {
   _moodHistory.push(moodPoints);
-  if(_moodHistory.length>20) _moodHistory.shift();
-  try{ localStorage.setItem('moodHistory',JSON.stringify(_moodHistory)); }catch(_){}
+  if (_moodHistory.length > 20) _moodHistory.shift();
+  try { localStorage.setItem('moodHistory', JSON.stringify(_moodHistory)); } catch (_) {}
   renderMoodGraph();
 }
-function renderMoodGraph(){
+function renderMoodGraph() {
   const g = document.getElementById('mood-graph');
-  if(!g) return;
-  g.innerHTML='';
+  if (!g) return;
+  g.innerHTML = '';
   const max = Math.max(..._moodHistory, 1);
-  _moodHistory.slice(-12).forEach(v=>{
+  _moodHistory.slice(-12).forEach(v => {
     const bar = document.createElement('div');
-    bar.className='mood-bar-g';
-    const pct = Math.max(10, (v/max)*100);
-    bar.style.cssText=`height:${pct}%;background:${v>66?'#4ade80':v>33?'#f59e0b':'#ef4444'};`;
+    bar.className = 'mood-bar-g';
+    const pct = Math.max(10, (v / max) * 100);
+    bar.style.cssText = `height:${pct}%;background:${v > 66 ? '#4ade80' : v > 33 ? '#f59e0b' : '#ef4444'};`;
     g.appendChild(bar);
   });
 }
-setInterval(()=>{ recordMoodHistory(); }, 30000);
+setInterval(recordMoodHistory, 30000);
 renderMoodGraph();
 
 // ══════════════════════════════════════════════
-// FEATURE 14: POMODORO TIMER
+// POMODORO TIMER
 // ══════════════════════════════════════════════
-let _pomoSecs = 25*60, _pomoRunning = false, _pomoInterval = null, _pomoIsBreak = false;
-function renderPomo(){
-  const m=Math.floor(_pomoSecs/60), s=_pomoSecs%60;
-  document.getElementById('pomo-display').textContent = `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
-  document.getElementById('pomo-label').textContent = _pomoIsBreak ? 'Break time ☕' : 'Work session 💼';
+let _pomoSecs = 25 * 60, _pomoRunning = false, _pomoInterval = null, _pomoIsBreak = false;
+function renderPomo() {
+  const m = Math.floor(_pomoSecs / 60), s = _pomoSecs % 60;
+  const disp = document.getElementById('pomo-display');
+  const label = document.getElementById('pomo-label');
+  if (disp) disp.textContent = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  if (label) label.textContent = _pomoIsBreak ? 'Break time ☕' : 'Work session 💼';
 }
-function startPomo(){
-  if(_pomoRunning) return;
-  _pomoRunning=true;
-  document.getElementById('pomo-start').classList.add('active');
-  showBubble(_pomoIsBreak?'Break started! ☕':'Focus time! 💼', 2000);
-  _pomoInterval=setInterval(()=>{
+function startPomo() {
+  if (_pomoRunning) return;
+  _pomoRunning = true;
+  document.getElementById('pomo-start')?.classList.add('active');
+  showBubble(_pomoIsBreak ? 'Break started! ☕' : 'Focus time! 💼', 2000);
+  _pomoInterval = setInterval(() => {
     _pomoSecs--;
     renderPomo();
-    if(_pomoSecs<=0){
-      clearInterval(_pomoInterval); _pomoRunning=false;
-      document.getElementById('pomo-start').classList.remove('active');
-      if(_pomoIsBreak){
+    if (_pomoSecs <= 0) {
+      clearInterval(_pomoInterval);
+      _pomoRunning = false;
+      document.getElementById('pomo-start')?.classList.remove('active');
+      if (_pomoIsBreak) {
         showBubble('Break over! Back to work 💪', 4000);
-        _pomoSecs=25*60; _pomoIsBreak=false;
+        _pomoSecs = 25 * 60;
+        _pomoIsBreak = false;
       } else {
         showBubble('Great work! Take a break 🎉', 4000);
-        spawnConfetti(); _pomoSecs=5*60; _pomoIsBreak=true;
-        moodPoints=Math.min(100,moodPoints+15); updateMood();
+        spawnConfetti();
+        _pomoSecs = 5 * 60;
+        _pomoIsBreak = true;
+        moodPoints = Math.min(100, moodPoints + 15);
+        updateMood();
       }
       renderPomo();
-      ipcRenderer.send('notify',{title:'Pomodoro!',body:_pomoIsBreak?'Work session done! Take a break.':'Break over, back to work!'});
+      ipcRenderer.send('notify', {
+        title: 'Pomodoro!',
+        body: _pomoIsBreak ? 'Work session done! Take a break.' : 'Break over, back to work!'
+      });
     }
-  },1000);
+  }, 1000);
 }
-document.getElementById('pomo-start').addEventListener('click', e=>{
+document.getElementById('pomo-start')?.addEventListener('click', (e) => {
   e.stopPropagation();
-  // Re-enable mouse so this click can actually land even after the
-  // companion-mode idle handler set set-ignore-mouse=true.
-  try{ ipcRenderer.send('set-ignore-mouse', false); }catch(_){}
   _lastInteractionTime = Date.now();
   startPomo();
 });
-document.getElementById('pomo-reset').addEventListener('click', e=>{
+document.getElementById('pomo-reset')?.addEventListener('click', (e) => {
   e.stopPropagation();
-  try{ ipcRenderer.send('set-ignore-mouse', false); }catch(_){}
   _lastInteractionTime = Date.now();
-  clearInterval(_pomoInterval); _pomoRunning=false; _pomoIsBreak=false;
-  _pomoSecs=25*60; renderPomo();
-  document.getElementById('pomo-start').classList.remove('active');
+  clearInterval(_pomoInterval);
+  _pomoRunning = false;
+  _pomoIsBreak = false;
+  _pomoSecs = 25 * 60;
+  renderPomo();
+  document.getElementById('pomo-start')?.classList.remove('active');
 });
-document.getElementById('pomo-break').addEventListener('click', e=>{
+document.getElementById('pomo-break')?.addEventListener('click', (e) => {
   e.stopPropagation();
-  try{ ipcRenderer.send('set-ignore-mouse', false); }catch(_){}
   _lastInteractionTime = Date.now();
-  clearInterval(_pomoInterval); _pomoRunning=false; _pomoIsBreak=true;
-  _pomoSecs=5*60; renderPomo();
-  document.getElementById('pomo-start').classList.remove('active');
+  clearInterval(_pomoInterval);
+  _pomoRunning = false;
+  _pomoIsBreak = true;
+  _pomoSecs = 5 * 60;
+  renderPomo();
+  document.getElementById('pomo-start')?.classList.remove('active');
 });
+renderPomo();
 
 // ══════════════════════════════════════════════
-// FEATURE 15: REMINDERS
+// MINI GAMES: RPS & TRIVIA
 // ══════════════════════════════════════════════
-let _reminders = [];
-function renderReminders(){
-  const list = document.getElementById('remind-list');
-  if(!list) return;
-  _reminders.forEach(r=>{
-    const div=document.createElement('div');
-    div.className='reminder-item';
-    const minsLeft=Math.max(0,Math.round((r.due-Date.now())/60000));
-    div.innerHTML=`<span style="flex:1">${r.text}</span><span style="color:rgba(255,255,255,0.35);font-size:10px;">${minsLeft}m</span>`;
-    const del=document.createElement('button');
-    del.className='rem-del'; del.textContent='✕';
-    del.onclick=(e)=>{ e.stopPropagation(); clearTimeout(r.timer); _reminders=_reminders.filter(x=>x.id!==r.id); renderReminders(); };
-    div.appendChild(del);
-    list.appendChild(div);
-  });
-}
-document.getElementById('remind-add')?.addEventListener('click', e=>{
-  e.stopPropagation();
-  const txt=document.getElementById('remind-input')?.value.trim();
-  const mins=parseInt(document.getElementById('remind-time')?.value)||5;
-  if(!txt) return;
-  const id=Date.now();
-  const due=Date.now()+mins*60000;
-  const timer=setTimeout(()=>{
-    showBubble('⏰ '+txt, 5000);
-    ipcRenderer.send('notify',{title:'Reminder!',body:txt});
-    spawnParticles(8,'#f59e0b');
-    _reminders=_reminders.filter(r=>r.id!==id);
-    renderReminders();
-  },mins*60000);
-  _reminders.push({id,text:txt,due,timer});
-  const ri = document.getElementById('remind-input');
-  if(ri) ri.value='';
-  renderReminders();
-  showBubble(`I'll remind you in ${mins}m! ⏰`, 2000);
-});
-document.getElementById('remind-input')?.addEventListener('click',e=>e.stopPropagation());
-document.getElementById('remind-input')?.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.stopPropagation(); document.getElementById('remind-add')?.click(); }});
-
-// ══════════════════════════════════════════════
-// FEATURE 16: ROCK PAPER SCISSORS
-// ══════════════════════════════════════════════
-let _rpsScore=0;
-const _rpsChoices=['✊','✋','✌️'];
-function _rpsWinner(p,c){
-  if(p===c) return 'tie';
-  if((p==='✊'&&c==='✌️')||(p==='✋'&&c==='✊')||(p==='✌️'&&c==='✋')) return 'win';
+let _rpsScore = 0;
+const _rpsChoices = ['✊', '✋', '✌️'];
+function _rpsWinner(p, c) {
+  if (p === c) return 'tie';
+  if ((p === '✊' && c === '✌️') || (p === '✋' && c === '✊') || (p === '✌️' && c === '✋')) return 'win';
   return 'lose';
 }
-document.getElementById('game-rps-btn').addEventListener('click',e=>{
+document.getElementById('game-rps-btn')?.addEventListener('click', (e) => {
   e.stopPropagation();
-  const rpsArea=document.getElementById('rps-area');
-  const triviaBox=document.getElementById('trivia-box');
-  rpsArea.style.display=rpsArea.style.display==='none'?'flex':'none';
-  triviaBox.style.display='none';
-  if(rpsArea.style.display==='flex') document.getElementById('rps-result').textContent='';
+  const rpsArea = document.getElementById('rps-area');
+  const triviaBox = document.getElementById('trivia-box');
+  if (rpsArea) rpsArea.style.display = rpsArea.style.display === 'none' ? 'flex' : 'none';
+  if (triviaBox) triviaBox.style.display = 'none';
+  if (rpsArea?.style.display === 'flex') document.getElementById('rps-result').textContent = '';
 });
-document.querySelectorAll('.rps-btn').forEach(btn=>{
-  btn.addEventListener('click',e=>{
+document.querySelectorAll('.rps-btn').forEach(btn => {
+  btn.addEventListener('click', (e) => {
     e.stopPropagation();
-    const player=btn.dataset.pick;
-    const cpu=_rpsChoices[Math.floor(Math.random()*3)];
-    const result=_rpsWinner(player,cpu);
-    const resultEl=document.getElementById('rps-result');
-    if(result==='win'){
+    const player = btn.dataset.pick;
+    const cpu = _rpsChoices[Math.floor(Math.random() * 3)];
+    const result = _rpsWinner(player, cpu);
+    const resultEl = document.getElementById('rps-result');
+    if (result === 'win') {
       _rpsScore++;
-      resultEl.innerHTML=`<span style="color:#4ade80">You win! ${player} beats ${cpu} 🎉</span>`;
-      showBubble('You win! 🎉',1500); spawnParticles(6,'#4ade80');
-      moodPoints=Math.min(100,moodPoints+5); updateMood();
-    } else if(result==='lose'){
-      resultEl.innerHTML=`<span style="color:#f87171">You lose! ${cpu} beats ${player} 😅</span>`;
-      showBubble('I win! 😏',1500);
+      resultEl.innerHTML = `<span style="color:#4ade80">You win! ${player} beats ${cpu} 🎉</span>`;
+      showBubble('You win! 🎉', 1500);
+      spawnParticles(6, '#4ade80');
+      moodPoints = Math.min(100, moodPoints + 5);
+      updateMood();
+    } else if (result === 'lose') {
+      resultEl.innerHTML = `<span style="color:#f87171">You lose! ${cpu} beats ${player} 😅</span>`;
+      showBubble('I win! 😏', 1500);
     } else {
-      resultEl.innerHTML=`<span style="color:#f59e0b">Tie! ${player} vs ${cpu} 🤝</span>`;
-      showBubble('Tie!',1000);
+      resultEl.innerHTML = `<span style="color:#f59e0b">Tie! ${player} vs ${cpu} 🤝</span>`;
+      showBubble('Tie!', 1000);
     }
-    document.getElementById('rps-score').textContent=_rpsScore;
+    document.getElementById('rps-score').textContent = _rpsScore;
   });
 });
 
-// ══════════════════════════════════════════════
-// FEATURE 17: TRIVIA GAME
-// ══════════════════════════════════════════════
-let _triviaScore=0, _triviaAnswered=false;
-async function loadTrivia(){
-  const box=document.getElementById('trivia-box');
-  box.innerHTML='<span style="color:rgba(255,255,255,0.4)">Loading trivia…</span>';
-  try{
-    const res=await fetch('https://opentdb.com/api.php?amount=1&type=multiple&difficulty=easy');
-    const data=await res.json();
-    const q=data.results[0];
-    const allAnswers=[...q.incorrect_answers,q.correct_answer].sort(()=>Math.random()-0.5);
-    const text=q.question.replace(/&quot;/g,'"').replace(/&#039;/g,"'").replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>');
-    box.innerHTML=`<div style="margin-bottom:8px;color:rgba(255,255,255,0.8)">${text}</div><div style="font-size:10px;color:rgba(255,255,255,0.35);margin-bottom:2px">Score: ${_triviaScore}</div>`;
-    _triviaAnswered=false;
-    allAnswers.forEach(ans=>{
-      const btn=document.createElement('button');
-      btn.className='trivia-opt';
-      btn.textContent=ans.replace(/&quot;/g,'"').replace(/&#039;/g,"'").replace(/&amp;/g,'&');
-      btn.addEventListener('click',ev=>{
+let _triviaScore = 0;
+let _triviaAnswered = false;
+async function loadTrivia() {
+  const box = document.getElementById('trivia-box');
+  if (!box) return;
+  box.innerHTML = '<span style="color:rgba(255,255,255,0.4)">Loading trivia…</span>';
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 5000);
+    const res = await fetch('https://opentdb.com/api.php?amount=1&type=multiple&difficulty=easy', { signal: ctrl.signal });
+    clearTimeout(timer);
+    const data = await res.json();
+    const q = data.results[0];
+    const allAnswers = [...q.incorrect_answers, q.correct_answer].sort(() => Math.random() - 0.5);
+    const text = q.question.replace(/&quot;/g, '"').replace(/&#039;/g, "'").replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+    box.innerHTML = `<div style="margin-bottom:8px;color:rgba(255,255,255,0.8)">${text}</div><div style="font-size:10px;color:rgba(255,255,255,0.35);margin-bottom:2px">Score: ${_triviaScore}</div>`;
+    _triviaAnswered = false;
+    allAnswers.forEach(ans => {
+      const btn = document.createElement('button');
+      btn.className = 'trivia-opt';
+      btn.textContent = ans.replace(/&quot;/g, '"').replace(/&#039;/g, "'").replace(/&amp;/g, '&');
+      btn.addEventListener('click', (ev) => {
         ev.stopPropagation();
-        if(_triviaAnswered) return;
-        _triviaAnswered=true;
-        if(ans===q.correct_answer){ btn.classList.add('correct'); _triviaScore++; showBubble('Correct! 🧠',1500); spawnParticles(6,'#4ade80'); moodPoints=Math.min(100,moodPoints+5); }
-        else{ btn.classList.add('wrong'); showBubble('Wrong! 😅',1500); box.querySelectorAll('.trivia-opt').forEach(b=>{ if(b.textContent===q.correct_answer.replace(/&quot;/g,'"').replace(/&#039;/g,"'").replace(/&amp;/g,'&')) b.classList.add('correct'); }); }
-        setTimeout(()=>loadTrivia(),2500);
+        if (_triviaAnswered) return;
+        _triviaAnswered = true;
+        if (ans === q.correct_answer) {
+          btn.classList.add('correct');
+          _triviaScore++;
+          showBubble('Correct! 🧠', 1500);
+          spawnParticles(6, '#4ade80');
+          moodPoints = Math.min(100, moodPoints + 5);
+        } else {
+          btn.classList.add('wrong');
+          showBubble('Wrong! 😅', 1500);
+          box.querySelectorAll('.trivia-opt').forEach(b => {
+            if (b.textContent === q.correct_answer.replace(/&quot;/g, '"').replace(/&#039;/g, "'").replace(/&amp;/g, '&')) b.classList.add('correct');
+          });
+        }
+        setTimeout(() => loadTrivia(), 2500);
       });
       box.appendChild(btn);
     });
-  }catch(err){
-    box.innerHTML='<span style="color:rgba(255,255,255,0.35)">Could not load trivia (offline?)</span>';
+  } catch (_) {
+    box.innerHTML = '<span style="color:rgba(255,255,255,0.35)">Could not load trivia (offline?)</span>';
   }
 }
-document.getElementById('game-trivia-btn').addEventListener('click',e=>{
+document.getElementById('game-trivia-btn')?.addEventListener('click', (e) => {
   e.stopPropagation();
-  const triviaBox=document.getElementById('trivia-box');
-  const rpsArea=document.getElementById('rps-area');
-  rpsArea.style.display='none';
-  if(triviaBox.style.display==='none'||!triviaBox.style.display){ triviaBox.style.display='block'; loadTrivia(); }
-  else { triviaBox.style.display='none'; }
+  const triviaBox = document.getElementById('trivia-box');
+  const rpsArea = document.getElementById('rps-area');
+  if (rpsArea) rpsArea.style.display = 'none';
+  if (triviaBox) {
+    if (triviaBox.style.display === 'none' || !triviaBox.style.display) {
+      triviaBox.style.display = 'block';
+      loadTrivia();
+    } else {
+      triviaBox.style.display = 'none';
+    }
+  }
 });
 
 // ══════════════════════════════════════════════
-// FEATURE 18: WALLPAPER / COMPANION MODE
+// WALLPAPER / COMPANION MODE
 // ══════════════════════════════════════════════
-let _companionMode=false;
-let _companionIdleTimer=null;
-document.getElementById('wallpaper-toggle').addEventListener('click',e=>{
+let _companionMode = false;
+document.getElementById('wallpaper-toggle')?.addEventListener('click', (e) => {
   e.stopPropagation();
-  _companionMode=!_companionMode;
-  const btn=document.getElementById('wallpaper-toggle');
-  btn.textContent=_companionMode?'ON':'OFF';
-  btn.classList.toggle('on',_companionMode);
-  showBubble(_companionMode?'Companion mode on! 🖥':'Normal mode on!',2000);
-  if(!_companionMode) ipcRenderer.send('set-ignore-mouse',false);
+  _companionMode = !_companionMode;
+  const btn = document.getElementById('wallpaper-toggle');
+  btn.textContent = _companionMode ? 'ON' : 'OFF';
+  btn.classList.toggle('on', _companionMode);
+  showBubble(_companionMode ? 'Companion mode on! 🖥' : 'Normal mode on!', 2000);
+  if (!_companionMode) ipcRenderer.send('set-ignore-mouse', false);
 });
-// In companion mode: only go mouse-through if the chat is CLOSED and the
-// user has been idle. This prevents the timer / weather buttons from being
-// unclickable after a minute of inactivity.
-setInterval(()=>{
-  if(!_companionMode) return;
-  const idleMins=(Date.now()-_lastInteractionTime)/60000;
-  if(chatOpen){
+
+setInterval(() => {
+  if (!_companionMode) return;
+  const idleMins = (Date.now() - _lastInteractionTime) / 60000;
+  if (chatOpen) {
     ipcRenderer.send('set-ignore-mouse', false);
-  } else if(idleMins>1){
+  } else if (idleMins > 1) {
     ipcRenderer.send('set-ignore-mouse', true);
   } else {
     ipcRenderer.send('set-ignore-mouse', false);
   }
-},5000);
+}, 5000);
 
 // ══════════════════════════════════════════════
-// FEATURE 19: NEWS / DAILY HEADLINE (via Open Trivia as fallback, or real RSS)
-// ══════════════════════════════════════════════
-async function fetchMorningFact(){
-  const h=new Date().getHours();
-  if(h<7||h>10) return; // only show morning fact in morning
-  const lastFact=localStorage.getItem('morningFactDate');
-  const today=new Date().toDateString();
-  if(lastFact===today) return;
-  try{
-    const res=await fetch('https://uselessfacts.jsph.pl/random.json?language=en');
-    const data=await res.json();
-    if(data.text){
-      showBubble('☕ '+data.text.slice(0,60)+(data.text.length>60?'…':''), 6000);
-      localStorage.setItem('morningFactDate',today);
-    }
-  }catch(_){
-    // Fallback to local facts
-    if(FACTS.length){
-      showBubble('☕ '+FACTS[Math.floor(Math.random()*FACTS.length)].slice(0,60), 5000);
-      localStorage.setItem('morningFactDate',today);
-    }
-  }
-}
-setTimeout(fetchMorningFact, 5000);
-
-// ══════════════════════════════════════════════
-// FEATURE 20: SCREEN BRIGHTNESS REACTION
+// SCREEN BRIGHTNESS REACTION
 // ══════════════════════════════════════════════
 let _lastBrightness = -1;
-ipcRenderer.on('brightness-update',(e,pct)=>{
-  if(pct<0) return;
-  if(_lastBrightness>0){
-    if(pct<20 && _lastBrightness>=20){ showBubble('So dark! 🌙', 1800); }
-    else if(pct>80 && _lastBrightness<=80){ showBubble('Blinding me! ☀️', 1800); }
+ipcRenderer.on('brightness-update', (e, pct) => {
+  if (pct < 0) return;
+  if (_lastBrightness > 0) {
+    if (pct < 20 && _lastBrightness >= 20) { showBubble('So dark! 🌙', 1800); }
+    else if (pct > 80 && _lastBrightness <= 80) { showBubble('Blinding me! ☀️', 1800); }
   }
-  _lastBrightness=pct;
+  _lastBrightness = pct;
 });
-setInterval(()=>{ ipcRenderer.send('get-brightness'); }, 30000);
+setInterval(() => { ipcRenderer.send('get-brightness'); }, 30000);
 
-// ══════════════════════════════════════════════
-// INJECT CONTEXT INTO OLLAMA SYSTEM PROMPT
-// ══════════════════════════════════════════════
-// Override sendMessage to prepend system context
-const _realSendMessage = sendMessage;
-// We patch the history building inside the existing sendMessage.
-// Since history is shared, we inject a system message at the start each time.
-const _origSendMessageFn = sendMessage;
-window._sendWithContext = async function(){
-  // Build context and inject as first history item if not already there
-  const ctx = window._buildSystemContext ? window._buildSystemContext() : '';
-  const systemMsg = {role:'system', content: ctx};
-  // Always put system context at position 0
-  const sendPayload = [systemMsg, ...history.slice(-12)];
-  const text=input.value.trim();
-  if(!text||isThinking) return;
-  const sendBtn=document.getElementById('sendbtn');
-  sendBtn.disabled=true;
-  input.value='';
-  addMsg(text,'user');
-  playSend();
-  history.push({role:'user',content:text});
-  setThinking(true);
-  const thinking=addMsg('thinking...','bot thinking');
-  try{
-    const res=await fetch('http://localhost:11434/api/chat',{
-      method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({model:'llama3.2',messages:[systemMsg,...history.slice(-12)],stream:false})
-    });
-    if(!res.ok) throw new Error('http_'+res.status);
-    const rawText=await res.text();
-    let reply='';
-    try{
-      const data=JSON.parse(rawText);
-      reply=data.message?.content||data.response||'No response';
-    }catch{
-      rawText.trim().split('\n').forEach(line=>{ try{ const chunk=JSON.parse(line); if(chunk.message?.content) reply+=chunk.message.content; else if(chunk.response) reply+=chunk.response; }catch{} });
-      if(!reply) reply='No response';
-    }
-    thinking.remove();
-    addMsg(reply,'bot');
-    history.push({role:'assistant',content:reply});
-    playReceive(); spawnConfetti();
-    moodPoints=Math.min(100,moodPoints+12);
-    chatCount++;
-    document.getElementById('stat-chats').textContent=chatCount;
-    showBubble('✓',1000);
-    statusdot.className='';
-    ipcRenderer.send('notify',{title:CHARS[currentChar].name+' says:',body:reply.slice(0,80)+(reply.length>80?'…':'')});
-    saveData();
-    recordMoodHistory();
-  }catch(err){
-    thinking.remove();
-    animState='shock'; setTimeout(()=>animState='idle',2500);
-    const errDiv=document.createElement('div');
-    errDiv.className='msg bot';
-    errDiv.style.cssText='border-color:rgba(239,68,68,0.35);background:linear-gradient(135deg,rgba(239,68,68,0.12),rgba(220,38,38,0.06));';
-    errDiv.innerHTML=`<div style="font-weight:700;color:#f87171;margin-bottom:6px;">⚠ Ollama Offline</div><div style="color:rgba(255,255,255,0.6);font-size:11px;margin-bottom:8px;">Start Ollama to continue:</div><code style="display:block;background:rgba(0,0,0,0.4);border-radius:6px;padding:5px 8px;color:#4ade80;font-size:11px;margin-bottom:8px;">ollama serve</code>`;
-    const retryBtn=document.createElement('button');
-    retryBtn.textContent='↻ Retry';
-    retryBtn.style.cssText='background:rgba(239,68,68,0.2);border:1px solid rgba(239,68,68,0.4);border-radius:8px;color:#f87171;font-size:11px;padding:5px 14px;cursor:pointer;font-family:"Courier New",monospace;';
-    retryBtn.onclick=()=>{ errDiv.remove(); window._sendWithContext(); };
-    errDiv.appendChild(retryBtn);
-    messages.appendChild(errDiv);
-    messages.scrollTop=messages.scrollHeight;
-    showBubble('Offline! 😱',2500);
-    statusdot.className='offline';
-    setTimeout(()=>statusdot.className='',3000);
-  }
-  setThinking(false);
-  sendBtn.disabled=false;
-};
-
-// Replace the send button and input to use context-aware send
-document.getElementById('sendbtn').onclick = (e)=>{ window._sendWithContext(); };
-document.getElementById('userinput').onkeydown = (e)=>{ if(e.key==='Enter') window._sendWithContext(); e.stopPropagation(); };
-
-// ── Weather context update hook ──────────────
-const _fetchWeatherOrig = fetchWeather;
-window.fetchWeather = async function(city){
-  await _fetchWeatherOrig(city);
-  // Build context from weather card after update
-  const icon = document.getElementById('weather-icon')?.textContent||'';
-  const temp = document.getElementById('weather-temp')?.textContent||'';
-  const desc = document.getElementById('weather-desc')?.textContent||'';
-  const name = document.getElementById('weather-city-name')?.textContent||city;
-  if(temp&&temp!=='—') weatherContext = `${icon} ${desc}, ${temp}°C in ${name}`;
-};
-
-// ── Initial system status request ────────────
-setTimeout(()=>ipcRenderer.send('get-system-status'), 2000);
-renderPomo();
+// Request initial system status immediately (no long initial blank state)
+ipcRenderer.send('get-system-status');
+loadActiveApps();
 </script>
 </body>
 </html>

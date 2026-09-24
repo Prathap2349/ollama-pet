@@ -6,7 +6,7 @@
 * { margin:0; padding:0; box-sizing:border-box; }
 body { background:transparent; overflow:hidden; width:100vw; height:120px; }
 #walker {
-  position:absolute; bottom:10px; left:-100px;
+  position:absolute; bottom:10px; left:-120px;
   width:80px; height:80px;
   transition:none;
   filter:drop-shadow(0 4px 12px rgba(0,0,0,0.5));
@@ -18,35 +18,59 @@ body { background:transparent; overflow:hidden; width:100vw; height:120px; }
 <body>
 <div id="walker"><svg viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg" id="wsv"></svg></div>
 <script>
-const { ipcRenderer } = require('electron');
 const el = document.getElementById('walker');
 const sv = document.getElementById('wsv');
 let walking = false;
 
-ipcRenderer.on('start-walk', (e, svgContent) => {
-  if (walking) return;
-  walking = true;
-  sv.innerHTML = svgContent;
-  const screenW = window.screen.width;
+if (window.electronAPI && typeof window.electronAPI.onStartWalk === 'function') {
+  window.electronAPI.onStartWalk((svgContent) => {
+    if (walking) return;
+    walking = true;
+    sv.innerHTML = svgContent;
 
-  // Walk left to right
-  el.style.left = '-100px';
-  el.classList.remove('flipped');
-  el.style.transition = `left ${8 + Math.random()*4}s linear`;
-  setTimeout(() => { el.style.left = (screenW + 100) + 'px'; }, 50);
+    const screenW = window.innerWidth || window.screen.width;
+    const forwardDuration = 8 + Math.random() * 4;
 
-  setTimeout(() => {
-    // Walk right to left
-    el.classList.add('flipped');
+    // Phase 1: Walk left to right
+    el.classList.remove('flipped');
     el.style.transition = 'none';
-    el.style.left = (screenW + 100) + 'px';
-    setTimeout(() => {
-      el.style.transition = `left ${8 + Math.random()*4}s linear`;
-      el.style.left = '-100px';
-    }, 100);
-    setTimeout(() => { walking = false; el.style.left = '-100px'; el.style.transition='none'; }, 14000);
-  }, 9500);
-});
+    el.style.left = '-120px';
+
+    // Force layout flush before starting transition
+    void el.offsetWidth;
+
+    el.style.transition = `left ${forwardDuration}s linear`;
+    el.style.left = (screenW + 120) + 'px';
+
+    let phase = 'forward';
+
+    function onTransitionEnd(evt) {
+      if (evt.propertyName !== 'left') return;
+
+      if (phase === 'forward') {
+        phase = 'turning';
+        el.style.transition = 'none';
+        el.classList.add('flipped');
+        void el.offsetWidth;
+
+        // Controlled brief turnaround pause
+        setTimeout(() => {
+          phase = 'backward';
+          const backwardDuration = 8 + Math.random() * 4;
+          el.style.transition = `left ${backwardDuration}s linear`;
+          el.style.left = '-120px';
+        }, 200);
+      } else if (phase === 'backward') {
+        el.removeEventListener('transitionend', onTransitionEnd);
+        el.style.transition = 'none';
+        el.classList.remove('flipped');
+        walking = false;
+      }
+    }
+
+    el.addEventListener('transitionend', onTransitionEnd);
+  });
+}
 </script>
 </body>
 </html>

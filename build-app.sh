@@ -6,8 +6,8 @@
 # ─────────────────────────────────────────────
 
 set -e
-echo "📦 Installing electron-packager..."
-npm install --save-dev electron-packager
+echo "📦 Checking dependencies..."
+npm install
 
 echo "🔨 Building OllamaPet.app..."
 # Detect chip: arm64 = Apple Silicon (M1/M2/M3), x64 = Intel
@@ -25,6 +25,7 @@ npx electron-packager . OllamaPet \
   --overwrite \
   --app-bundle-id=com.prathap.ollamapet \
   --app-version=1.0.0 \
+  --icon=icon.icns \
   --ignore=dist \
   --ignore=.git \
   --ignore=build-app.sh

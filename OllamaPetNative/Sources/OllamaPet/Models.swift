@@ -203,6 +203,17 @@ public struct PetSavedData: Codable {
     public var reminders: [PetReminder]
     public var position: PetSavedPosition?
 
+    // Settings & Customization
+    public var featureVisibility: [String: Bool]?
+    public var randomCharMode: String?
+    public var themeMode: String?
+    public var accentColorChoice: String?
+    public var petScale: Double?
+    public var idleAnimationsEnabled: Bool?
+    public var speechBubblesEnabled: Bool?
+    public var soundEffectsEnabled: Bool?
+    public var launchAtLoginEnabled: Bool?
+
     public init(
         version: Int? = 1,
         currentChar: String = "cat",
@@ -214,7 +225,16 @@ public struct PetSavedData: Codable {
         selectedModel: String? = nil,
         history: [PetSavedMessage] = [],
         reminders: [PetReminder] = [],
-        position: PetSavedPosition? = nil
+        position: PetSavedPosition? = nil,
+        featureVisibility: [String: Bool]? = nil,
+        randomCharMode: String? = "fixed",
+        themeMode: String? = "system",
+        accentColorChoice: String? = nil,
+        petScale: Double? = 1.0,
+        idleAnimationsEnabled: Bool? = true,
+        speechBubblesEnabled: Bool? = true,
+        soundEffectsEnabled: Bool? = true,
+        launchAtLoginEnabled: Bool? = true
     ) {
         self.version = version
         self.currentChar = currentChar
@@ -227,6 +247,15 @@ public struct PetSavedData: Codable {
         self.history = history
         self.reminders = reminders
         self.position = position
+        self.featureVisibility = featureVisibility
+        self.randomCharMode = randomCharMode
+        self.themeMode = themeMode
+        self.accentColorChoice = accentColorChoice
+        self.petScale = petScale
+        self.idleAnimationsEnabled = idleAnimationsEnabled
+        self.speechBubblesEnabled = speechBubblesEnabled
+        self.soundEffectsEnabled = soundEffectsEnabled
+        self.launchAtLoginEnabled = launchAtLoginEnabled
     }
 }
 
@@ -238,4 +267,37 @@ public struct PetSavedMessage: Codable {
 public struct PetSavedPosition: Codable {
     public var x: Double
     public var y: Double
+}
+
+// MARK: - Accent Color & Panel Anchor
+
+public enum AccentColorChoice: String, CaseIterable, Codable, Identifiable {
+    case purple, blue, cyan, green, pink, orange
+
+    public var id: String { rawValue }
+
+    public var displayName: String {
+        rawValue.prefix(1).uppercased() + rawValue.dropFirst()
+    }
+
+    public var color: Color {
+        switch self {
+        case .purple: return Color(red: 139/255, green: 92/255, blue: 246/255)
+        case .blue: return Color(red: 59/255, green: 130/255, blue: 246/255)
+        case .cyan: return Color(red: 6/255, green: 182/255, blue: 212/255)
+        case .green: return Color(red: 34/255, green: 197/255, blue: 94/255)
+        case .pink: return Color(red: 244/255, green: 114/255, blue: 182/255)
+        case .orange: return Color(red: 249/255, green: 115/255, blue: 22/255)
+        }
+    }
+}
+
+public struct PanelAnchor: Equatable {
+    public var isLeft: Bool
+    public var isTop: Bool
+
+    public init(isLeft: Bool = false, isTop: Bool = false) {
+        self.isLeft = isLeft
+        self.isTop = isTop
+    }
 }

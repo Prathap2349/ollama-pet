@@ -7,8 +7,52 @@ struct PetStageView: View {
     @ObservedObject var sysMon = SystemMonitor.shared
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Main Pet Floating Stage
+        ZStack(alignment: petAlignment) {
+            // Main Window Content container
+            if petState.isChatOpen {
+                VStack(spacing: 0) {
+                    if petState.activeAnchor.isTop {
+                        // Pet is at top: Stage on top, Panel below
+                        petStageArea
+                        ChatView()
+                            .padding(.top, 4)
+                        Spacer(minLength: 0)
+                    } else {
+                        // Pet is at bottom: Panel on top, Stage at bottom
+                        Spacer(minLength: 0)
+                        ChatView()
+                            .padding(.bottom, 4)
+                        petStageArea
+                    }
+                }
+                .frame(width: 340, height: 620)
+            } else {
+                // Closed state: exactly 140x140
+                petStageArea
+                    .frame(width: 140, height: 140)
+            }
+        }
+        .frame(
+            width: petState.isChatOpen ? 340 : 140,
+            height: petState.isChatOpen ? 620 : 140
+        )
+    }
+
+    private var petAlignment: Alignment {
+        if !petState.isChatOpen {
+            return .center
+        }
+        let horizontal: HorizontalAlignment = petState.activeAnchor.isLeft ? .leading : .trailing
+        let vertical: VerticalAlignment = petState.activeAnchor.isTop ? .top : .bottom
+        return Alignment(horizontal: horizontal, vertical: vertical)
+    }
+
+    private var petStageArea: some View {
+        HStack(spacing: 0) {
+            if !petState.activeAnchor.isLeft && petState.isChatOpen {
+                Spacer(minLength: 0)
+            }
+
             ZStack(alignment: .center) {
                 // Background Glow Ring
                 Circle()
@@ -103,15 +147,12 @@ struct PetStageView: View {
                     .offset(y: 52)
                 }
             }
-            .frame(width: 120, height: 120)
+            .frame(width: 140, height: 140)
 
-            // Chat Flyout Window / Drawer
-            if petState.isChatOpen {
-                ChatView()
-                    .padding(.top, 6)
-                    .transition(.move(edge: .top).combined(with: .opacity))
+            if petState.activeAnchor.isLeft && petState.isChatOpen {
+                Spacer(minLength: 0)
             }
         }
-        .padding(8)
+        .frame(width: petState.isChatOpen ? 340 : 140, height: 140)
     }
 }

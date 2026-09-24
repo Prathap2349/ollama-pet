@@ -121,4 +121,56 @@ public class DataManager: ObservableObject {
             postNotification(title: "⏰ Reminder Overdue", body: item.text)
         }
     }
+
+    // MARK: - Feature Visibility & Settings Persistence
+
+    public func isFeatureVisible(_ id: String) -> Bool {
+        if let map = savedData.featureVisibility, let val = map[id] {
+            return val
+        }
+        return true
+    }
+
+    public func setFeatureVisible(_ id: String, visible: Bool) {
+        if savedData.featureVisibility == nil {
+            savedData.featureVisibility = [:]
+        }
+        savedData.featureVisibility?[id] = visible
+        saveData()
+    }
+
+    public func setRandomCharMode(_ mode: String) {
+        savedData.randomCharMode = mode
+        saveData()
+    }
+
+    public func setThemeMode(_ mode: String) {
+        savedData.themeMode = mode
+        saveData()
+    }
+
+    public func setAccentColorChoice(_ choice: String) {
+        savedData.accentColorChoice = choice
+        saveData()
+    }
+
+    public func setPetScale(_ scale: Double) {
+        savedData.petScale = scale
+        saveData()
+    }
+
+    public func setIdleAnimationsEnabled(_ enabled: Bool) {
+        savedData.idleAnimationsEnabled = enabled
+        saveData()
+    }
+
+    public func setSpeechBubblesEnabled(_ enabled: Bool) {
+        savedData.speechBubblesEnabled = enabled
+        saveData()
+    }
+
+    public func setSoundEffectsEnabled(_ enabled: Bool) {
+        savedData.soundEffectsEnabled = enabled
+        saveData()
+    }
 }

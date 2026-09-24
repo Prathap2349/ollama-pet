@@ -21,6 +21,7 @@ public class PetState: ObservableObject {
     @Published public var isChatOpen: Bool = false
     @Published public var isThinking: Bool = false
     @Published public var activeTab: String = "chat"
+    @Published public var activeAnchor: PanelAnchor = PanelAnchor(isLeft: false, isTop: false)
 
     @Published public var animTime: Double = 0.0
 
@@ -57,9 +58,27 @@ public class PetState: ObservableObject {
 
     private func loadFromPersistence() {
         let data = DataManager.shared.savedData
-        if let sp = PetSpecies(rawValue: data.currentChar) {
-            self.currentSpecies = sp
+
+        // Check Random Character Mode
+        let mode = data.randomCharMode ?? "fixed"
+        if mode == "launch" {
+            if let randomSp = PetSpecies.allCases.randomElement() {
+                self.currentSpecies = randomSp
+                DataManager.shared.savedData.currentChar = randomSp.rawValue
+            }
+        } else if mode == "daily" {
+            let calendar = Calendar.current
+            let dayOfYear = calendar.ordinality(of: .day, in: .year, for: Date()) ?? 0
+            let allCases = PetSpecies.allCases
+            let picked = allCases[dayOfYear % allCases.count]
+            self.currentSpecies = picked
+            DataManager.shared.savedData.currentChar = picked.rawValue
+        } else {
+            if let sp = PetSpecies(rawValue: data.currentChar) {
+                self.currentSpecies = sp
+            }
         }
+
         self.streak = data.streak
         self.moodPoints = data.moodPoints
         self.activeTab = data.activeTab ?? "chat"

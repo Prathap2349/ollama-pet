@@ -22,6 +22,10 @@ struct ChatView: View {
     @State private var reminderText: String = ""
     @State private var reminderMinutes: Int = 5
 
+    // Settings state
+    @State private var testingOllama: Bool = false
+    @State private var testOllamaResult: String? = nil
+
     var body: some View {
         VStack(spacing: 0) {
             // Header: Ollama Status + Tabs + Close
@@ -79,7 +83,7 @@ struct ChatView: View {
                 Spacer()
 
                 Button(action: {
-                    petState.isChatOpen = false
+                    PetWindowController.shared.closePanel()
                 }) {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundColor(Color.white.opacity(0.6))
@@ -93,11 +97,21 @@ struct ChatView: View {
             // Tabs Selector
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
-                    tabButton(title: "Chat", id: "chat", icon: "bubble.left")
-                    tabButton(title: "Remind", id: "remind", icon: "clock")
-                    tabButton(title: "Weather", id: "weather", icon: "cloud.sun")
-                    tabButton(title: "Music & Play", id: "game", icon: "music.note")
-                    tabButton(title: "System", id: "system", icon: "cpu")
+                    if dataManager.isFeatureVisible("chat") {
+                        tabButton(title: "Chat", id: "chat", icon: "bubble.left")
+                    }
+                    if dataManager.isFeatureVisible("remind") {
+                        tabButton(title: "Remind", id: "remind", icon: "clock")
+                    }
+                    if dataManager.isFeatureVisible("weather") {
+                        tabButton(title: "Weather", id: "weather", icon: "cloud.sun")
+                    }
+                    if dataManager.isFeatureVisible("game") {
+                        tabButton(title: "Music & Play", id: "game", icon: "music.note")
+                    }
+                    if dataManager.isFeatureVisible("system") {
+                        tabButton(title: "System", id: "system", icon: "cpu")
+                    }
                     tabButton(title: "Settings", id: "settings", icon: "gearshape")
                 }
                 .padding(.horizontal, 10)
@@ -658,60 +672,250 @@ struct ChatView: View {
 
     // MARK: - Settings Tab
     private var settingsTabContent: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Pet Characters")
-                .font(.system(size: 13, weight: .bold))
-                .foregroundColor(.white)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                // Section 1: Ollama Local AI Status & Model Selection
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("🤖 Ollama Local AI")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(.white)
+                        Spacer()
+                        Circle()
+                            .fill(ollamaClient.isOnline ? (ollamaClient.installedModels.isEmpty ? Color.orange : Color.green) : Color.red)
+                            .frame(width: 8, height: 8)
+                        Text(ollamaClient.isOnline ? "Online" : "Offline")
+                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                            .foregroundColor(ollamaClient.isOnline ? .green : .red)
+                    }
 
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 75))], spacing: 8) {
-                ForEach(PetSpecies.allCases) { sp in
-                    Button(action: {
-                        petState.setSpecies(sp)
-                    }) {
-                        VStack(spacing: 4) {
-                            Text(sp.icon)
-                                .font(.system(size: 24))
-                            Text(sp.displayName)
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundColor(.white)
+                    if ollamaClient.installedModels.isEmpty {
+                        Text(ollamaClient.isOnline ? "No models found. Run: ollama pull llama3" : "Ollama not running. Run: ollama serve")
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundColor(Color.white.opacity(0.6))
+                    } else {
+                        Picker("Model", selection: $ollamaClient.activeModel) {
+                            ForEach(ollamaClient.installedModels, id: \.self) { m in
+                                Text(m).tag(m)
+                            }
                         }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
-                        .background(
-                            petState.currentSpecies == sp
-                                ? sp.accentColor.opacity(0.4)
-                                : Color.white.opacity(0.06)
-                        )
-                        .cornerRadius(8)
+                        .pickerStyle(.menu)
+                        .onChange(of: ollamaClient.activeModel) { newModel in
+                            dataManager.savedData.selectedModel = newModel
+                            dataManager.saveData()
+                        }
                     }
-                    .buttonStyle(.plain)
-                }
-            }
 
-            Divider().background(Color.white.opacity(0.1))
+                    HStack(spacing: 8) {
+                        Button(action: {
+                            Task {
+                                await ollamaClient.checkHealth(preferredModel: dataManager.savedData.selectedModel)
+                            }
+                        }) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "arrow.clockwise")
+                                Text("Refresh Models")
+                            }
+                            .font(.system(size: 10, weight: .medium))
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
 
-            Text("Ollama Model")
-                .font(.system(size: 13, weight: .bold))
-                .foregroundColor(.white)
+                        Button(action: {
+                            runOllamaTest()
+                        }) {
+                            HStack(spacing: 4) {
+                                if testingOllama {
+                                    ProgressView().controlSize(.mini)
+                                } else {
+                                    Image(systemName: "bolt.fill")
+                                }
+                                Text("Test Connection")
+                            }
+                            .font(.system(size: 10, weight: .medium))
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(testingOllama || !ollamaClient.isOnline || ollamaClient.activeModel.isEmpty)
+                    }
 
-            Picker("Active Model", selection: $ollamaClient.activeModel) {
-                if ollamaClient.installedModels.isEmpty {
-                    Text("No models detected").tag("")
-                } else {
-                    ForEach(ollamaClient.installedModels, id: \.self) { m in
-                        Text(m).tag(m)
+                    if let res = testOllamaResult {
+                        Text(res)
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundColor(res.starts(with: "✓") ? .green : .red)
+                            .padding(.top, 2)
                     }
                 }
-            }
-            .pickerStyle(.menu)
-            .onChange(of: ollamaClient.activeModel) { newModel in
-                dataManager.savedData.selectedModel = newModel
-                dataManager.saveData()
-            }
+                .padding(10)
+                .background(Color.white.opacity(0.04))
+                .cornerRadius(10)
 
-            Spacer()
+                // Section 2: Character Selection
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("🐾 Character")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(.white)
+
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 80))], spacing: 8) {
+                        ForEach(PetSpecies.allCases) { sp in
+                            Button(action: {
+                                petState.setSpecies(sp)
+                            }) {
+                                VStack(spacing: 4) {
+                                    Text(sp.icon)
+                                        .font(.system(size: 20))
+                                    Text(sp.displayName)
+                                        .font(.system(size: 11, weight: .medium))
+                                        .foregroundColor(.white)
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 6)
+                                .background(
+                                    petState.currentSpecies == sp
+                                        ? sp.accentColor.opacity(0.4)
+                                        : Color.white.opacity(0.06)
+                                )
+                                .cornerRadius(8)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+
+                    // Random Character Setting
+                    HStack {
+                        Text("Switch Mode")
+                            .font(.system(size: 11))
+                            .foregroundColor(Color.white.opacity(0.8))
+                        Spacer()
+                        Picker("", selection: Binding(
+                            get: { dataManager.savedData.randomCharMode ?? "fixed" },
+                            set: { dataManager.setRandomCharMode($0) }
+                        )) {
+                            Text("Fixed").tag("fixed")
+                            Text("Launch").tag("launch")
+                            Text("Daily").tag("daily")
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(width: 160)
+                    }
+                    .padding(.top, 4)
+                }
+                .padding(10)
+                .background(Color.white.opacity(0.04))
+                .cornerRadius(10)
+
+                // Section 3: Feature Visibility
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("📱 Tab & Feature Visibility")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(.white)
+
+                    VStack(spacing: 6) {
+                        featureToggleRow(title: "💬 Chat with AI", id: "chat")
+                        featureToggleRow(title: "⏰ Reminders", id: "remind")
+                        featureToggleRow(title: "⛅ Weather", id: "weather")
+                        featureToggleRow(title: "🎵 Music & Mini Games", id: "game")
+                        featureToggleRow(title: "📊 System Monitor", id: "system")
+                    }
+                }
+                .padding(10)
+                .background(Color.white.opacity(0.04))
+                .cornerRadius(10)
+
+                // Section 4: Behavior & General
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("⚙️ Behavior")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(.white)
+
+                    Toggle("Idle Animations", isOn: Binding(
+                        get: { dataManager.savedData.idleAnimationsEnabled ?? true },
+                        set: { dataManager.setIdleAnimationsEnabled($0) }
+                    ))
+                    .toggleStyle(.switch)
+                    .font(.system(size: 11))
+
+                    Toggle("Speech Bubbles", isOn: Binding(
+                        get: { dataManager.savedData.speechBubblesEnabled ?? true },
+                        set: { dataManager.setSpeechBubblesEnabled($0) }
+                    ))
+                    .toggleStyle(.switch)
+                    .font(.system(size: 11))
+
+                    Toggle("Sound Effects", isOn: Binding(
+                        get: { dataManager.savedData.soundEffectsEnabled ?? true },
+                        set: { dataManager.setSoundEffectsEnabled($0) }
+                    ))
+                    .toggleStyle(.switch)
+                    .font(.system(size: 11))
+                }
+                .padding(10)
+                .background(Color.white.opacity(0.04))
+                .cornerRadius(10)
+
+                // Section 5: Reset Window Position
+                Button(action: {
+                    if let screen = NSScreen.main {
+                        let screenFrame = screen.visibleFrame
+                        let defaultX = screenFrame.maxX - 140 - 30
+                        let defaultY = screenFrame.minY + 40
+                        PetWindowController.shared.updatePetOriginFromDrag(NSPoint(x: defaultX, y: defaultY))
+                        DataManager.shared.updatePosition(x: Double(defaultX), y: Double(defaultY))
+                        petState.showBubble("Reset to bottom-right! 📍", duration: 2.0)
+                    }
+                }) {
+                    HStack {
+                        Image(systemName: "arrow.counterclockwise")
+                        Text("Reset Pet to Bottom-Right Corner")
+                    }
+                    .font(.system(size: 11, weight: .medium))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 6)
+                }
+                .buttonStyle(.bordered)
+            }
+            .padding(10)
         }
-        .padding(14)
+    }
+
+    private func featureToggleRow(title: String, id: String) -> some View {
+        HStack {
+            Text(title)
+                .font(.system(size: 11))
+                .foregroundColor(.white)
+            Spacer()
+            Toggle("", isOn: Binding(
+                get: { dataManager.isFeatureVisible(id) },
+                set: { isVis in
+                    dataManager.setFeatureVisible(id, visible: isVis)
+                    if !isVis && petState.activeTab == id {
+                        petState.activeTab = "settings"
+                    }
+                }
+            ))
+            .toggleStyle(.switch)
+            .controlSize(.mini)
+        }
+    }
+
+    private func runOllamaTest() {
+        testingOllama = true
+        testOllamaResult = "Testing prompt..."
+
+        Task {
+            do {
+                let testReply = try await ollamaClient.sendChat(
+                    systemPrompt: "Respond with exactly 'PONG'.",
+                    messages: [ChatMessage(role: "user", content: "PING")]
+                )
+                testOllamaResult = "✓ Ollama OK (\(ollamaClient.activeModel)): \(testReply.trimmingCharacters(in: .whitespacesAndNewlines).prefix(20))"
+                SoundEffect.wake.play()
+            } catch {
+                testOllamaResult = "✗ Failed: \(error.localizedDescription)"
+                SoundEffect.alert.play()
+            }
+            testingOllama = false
+        }
     }
 
     // MARK: - Actions

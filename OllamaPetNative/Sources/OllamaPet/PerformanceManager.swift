@@ -72,7 +72,7 @@ public class PerformanceManager: ObservableObject {
         self.particlesEnabled = data.particlesEnabled ?? false
         self.grayscaleTestMode = data.grayscaleTestMode ?? false
 
-        updateStatusNotice()
+        self.statusNotice = self.isSafeMode ? "Performance Safe Mode enabled to reduce system load." : nil
     }
 
     public func saveSettings() {
@@ -122,11 +122,9 @@ public class PerformanceManager: ObservableObject {
         saveSettings()
     }
 
-    private func updateStatusNotice() {
+    public func updateStatusNotice() {
         if isSafeMode {
             statusNotice = "Performance Safe Mode enabled to reduce system load."
-        } else if SystemMonitor.shared.isPowerSavingMode {
-            statusNotice = "Battery Saver active: throttling animations."
         } else {
             statusNotice = nil
         }

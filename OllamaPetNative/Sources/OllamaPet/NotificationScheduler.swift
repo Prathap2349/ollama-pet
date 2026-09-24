@@ -10,6 +10,11 @@ public class NotificationScheduler {
     private init() {}
 
     public func requestAuthorization(completion: ((Bool) -> Void)? = nil) {
+        guard Bundle.main.bundleIdentifier != nil else {
+            NSLog("[NotificationScheduler] Running outside an app bundle; notifications skipped.")
+            completion?(false)
+            return
+        }
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
             if let err = error {
                 NSLog("[NotificationScheduler] Authorization error: \(err.localizedDescription)")
@@ -19,6 +24,10 @@ public class NotificationScheduler {
     }
 
     public func checkAuthorization(completion: @escaping (UNAuthorizationStatus) -> Void) {
+        guard Bundle.main.bundleIdentifier != nil else {
+            completion(.notDetermined)
+            return
+        }
         UNUserNotificationCenter.current().getNotificationSettings { settings in
             completion(settings.authorizationStatus)
         }
@@ -27,6 +36,7 @@ public class NotificationScheduler {
     // MARK: - Scheduling Reminders
 
     public func scheduleReminder(id: Int64, text: String, inSeconds: Int, notificationId: String? = nil) {
+        guard Bundle.main.bundleIdentifier != nil else { return }
         let identifier = notificationId ?? "reminder-\(id)"
         let secs = max(1, inSeconds)
 
@@ -49,6 +59,7 @@ public class NotificationScheduler {
     }
 
     public func cancelReminder(notificationId: String) {
+        guard Bundle.main.bundleIdentifier != nil else { return }
         UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [notificationId])
         UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [notificationId])
         NSLog("[NotificationScheduler] Cancelled reminder notification '\(notificationId)'")
@@ -57,6 +68,7 @@ public class NotificationScheduler {
     // MARK: - Scheduling Timers
 
     public func scheduleTimer(timerId: String, title: String, body: String, inSeconds: Int) {
+        guard Bundle.main.bundleIdentifier != nil else { return }
         let identifier = "timer-\(timerId)"
         let secs = max(1, inSeconds)
 
@@ -79,6 +91,7 @@ public class NotificationScheduler {
     }
 
     public func cancelTimer(timerId: String) {
+        guard Bundle.main.bundleIdentifier != nil else { return }
         let identifier = "timer-\(timerId)"
         UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [identifier])
         UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [identifier])
@@ -88,6 +101,7 @@ public class NotificationScheduler {
     // MARK: - Immediate Notifications
 
     public func postImmediate(title: String, body: String) {
+        guard Bundle.main.bundleIdentifier != nil else { return }
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body

@@ -1,38 +1,43 @@
 #!/bin/bash
 set -e
 
-echo "=== Building Native macOS Ollama Pet ==="
-
 APP_NAME="OllamaPet"
-BUILD_DIR="dist-native"
+BUILD_DIR="${1:-${BUILD_DIR:-dist-native}}"
 APP_BUNDLE="${BUILD_DIR}/${APP_NAME}.app"
 MACOS_DIR="${APP_BUNDLE}/Contents/MacOS"
 RESOURCES_DIR="${APP_BUNDLE}/Contents/Resources"
+CACHE_DIR=".cache"
+
+echo "=== Building Native macOS Ollama Pet ==="
+echo "Target: ${APP_BUNDLE}"
 
 rm -rf "${APP_BUNDLE}"
 mkdir -p "${BUILD_DIR}"
-touch "${BUILD_DIR}/.metadata_never_index"
+touch "${BUILD_DIR}/.metadata_never_index" 2>/dev/null || true
 mkdir -p "${MACOS_DIR}"
 mkdir -p "${RESOURCES_DIR}"
-mkdir -p .cache
-touch .cache/.metadata_never_index
+mkdir -p "${CACHE_DIR}"
+touch "${CACHE_DIR}/.metadata_never_index" 2>/dev/null || true
 
 echo "1. Compiling Swift Release Binary (Apple Silicon / ARM64)..."
 swiftc \
   -O \
-  -module-cache-path .cache \
+  -module-cache-path "${CACHE_DIR}" \
   -target arm64-apple-macos13.0 \
   -parse-as-library \
   OllamaPetNative/Sources/OllamaPet/*.swift \
   -o "${MACOS_DIR}/${APP_NAME}"
 
-echo "2. Copying App Icon..."
+echo "2. Setting executable permissions..."
+chmod +x "${MACOS_DIR}/${APP_NAME}"
+
+echo "3. Copying App Icon..."
 if [ -f "icon.icns" ]; then
   cp "icon.icns" "${RESOURCES_DIR}/AppIcon.icns"
   echo "✓ icon.icns copied."
 fi
 
-echo "3. Creating Info.plist (LSUIElement = true)..."
+echo "4. Creating Info.plist..."
 cat << 'PLIST' > "${APP_BUNDLE}/Contents/Info.plist"
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -72,10 +77,16 @@ cat << 'PLIST' > "${APP_BUNDLE}/Contents/Info.plist"
 </plist>
 PLIST
 
-echo "4. Code Signing Bundle (Ad-hoc)..."
-dot_clean "${APP_BUNDLE}"
-xattr -cr "${APP_BUNDLE}"
+echo "5. Validating Info.plist..."
+plutil -lint "${APP_BUNDLE}/Contents/Info.plist"
+
+echo "6. Code Signing Bundle (Ad-hoc)..."
+dot_clean "${APP_BUNDLE}" 2>/dev/null || true
+xattr -cr "${APP_BUNDLE}" 2>/dev/null || true
 codesign --force --deep --sign - "${APP_BUNDLE}"
+
+echo "7. Validating Code Signature..."
+codesign --verify --deep --strict --verbose=4 "${APP_BUNDLE}"
 
 echo "=== Successfully Built: ${APP_BUNDLE} ==="
 ls -ld "${APP_BUNDLE}"

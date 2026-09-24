@@ -14,9 +14,11 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         // Hide dock icon (LSUIElement mode)
         NSApp.setActivationPolicy(.accessory)
 
-        // Setup UserNotifications delegate & request auth
-        UNUserNotificationCenter.current().delegate = self
-        NotificationScheduler.shared.requestAuthorization()
+        // Setup UserNotifications delegate & request auth (if running bundled)
+        if Bundle.main.bundleIdentifier != nil {
+            UNUserNotificationCenter.current().delegate = self
+            NotificationScheduler.shared.requestAuthorization()
+        }
 
         // Setup menu bar status item
         setupStatusItem()
@@ -31,16 +33,16 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
             NSLog("[Safety] App previously terminated while executing an action. Starting in Safe Mode for stability.")
         }
 
-        // Check if running from /Applications
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
-            self?.checkAndPromptToMoveToApplications()
-        }
-
         // Setup Pet Window
         PetWindowController.shared.showWindow()
 
         // Start periodic reminder timer
         startReminderTimer()
+
+        // Check if running from /Applications (only for user downloads, delayed)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            self?.checkAndPromptToMoveToApplications()
+        }
     }
 
     private var isInstalledInApplicationsFolder: Bool {
@@ -167,6 +169,11 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func checkAndPromptToMoveToApplications() {
         if isInstalledInApplicationsFolder { return }
+        let path = Bundle.main.bundleURL.standardized.path
+        // Skip prompt if running from dev repo, build artifacts, or tmp directories
+        if path.contains("/.build") || path.contains("/build") || path.contains("/dist-native") || path.contains("/tmp/") {
+            return
+        }
         if UserDefaults.standard.bool(forKey: "SuppressMoveToApplicationsPrompt") { return }
         showMoveToApplicationsAlert(force: false)
     }
@@ -221,7 +228,11 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
             NSWorkspace.shared.openApplication(at: targetURL, configuration: config) { _, error in
                 DispatchQueue.main.async {
                     if error == nil {
-                        // Successfully launched; terminate old instance
+                        // If source was in Downloads or Desktop, safely remove old duplicate
+                        let srcPath = sourceURL.path
+                        if srcPath.contains("/Downloads/") || srcPath.contains("/Desktop/") {
+                            try? FileManager.default.removeItem(at: sourceURL)
+                        }
                         exit(0)
                     } else {
                         let failAlert = NSAlert()

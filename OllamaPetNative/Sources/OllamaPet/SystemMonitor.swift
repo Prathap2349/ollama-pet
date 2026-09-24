@@ -50,7 +50,9 @@ public class SystemMonitor: ObservableObject {
 
     public init() {
         loadStaticSystemInfo()
-        startMonitoring()
+        DispatchQueue.main.async { [weak self] in
+            self?.startMonitoring()
+        }
     }
 
     // MARK: - Static System Info (Loaded Once)

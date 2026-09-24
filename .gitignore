@@ -1,10 +1,22 @@
-node_modules/
-*.mp3
+# macOS & Finder
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+
+# Native build artifacts
 dist/
 dist-native/
-.cache/
-.tmp/
-.DS_Store
 .build/
+.cache/
+DerivedData/
+
+# Temporary & Editor files
+*.tmp
+*.bak
 *.swp
 *~
+
+# Audio uploads & optional local media
+*.mp3
+*.wav

@@ -5,39 +5,24 @@
 <h1 align="center">🐾 Ollama Pet</h1>
 
 <p align="center">
-  <b>Your Local AI Desktop Companion — Now Available as a Lightweight Native macOS Application (Swift/SwiftUI) & Cross-Platform Companion</b>
+  <b>Lightweight, Native macOS Desktop AI Companion built with Swift, SwiftUI, and AppKit</b>
 </p>
 
-A local AI desktop companion that lives on your screen — powered entirely by [Ollama](https://ollama.ai) running on your own machine. No cloud, no external API keys, no subscriptions. Chat with your pet, watch it dance to your music, schedule reminders that survive restarts, check live weather, track focus with Pomodoro, and monitor real system vitals.
+A local AI desktop companion that lives on your screen — powered entirely by [Ollama](https://ollama.ai) running on your own machine. No cloud, no external API keys, no subscriptions, and zero web runtime overhead. Chat with your pet, watch it dance to your music, schedule reminders that survive restarts, check live weather, track focus with Pomodoro, and monitor real system vitals.
 
 ---
 
-## ⚡ What's New: Native macOS Edition (`Swift` + `SwiftUI` + `AppKit`)
+## ⚡ Native macOS Architecture
 
-Ollama Pet has been rebuilt natively for macOS using **Swift**, **SwiftUI**, and **AppKit** alongside the existing cross-platform edition!
+Ollama Pet is built natively for macOS using **Swift**, **SwiftUI**, and **AppKit**:
 
-- 🚀 **Blazing Fast & Lightweight**: Zero Chromium overhead, instantaneous startup, and minimal memory usage.
-- 🪟 **True Native Floating NSPanel**: Genuine transparent background with zero black or white flash on spawn.
-- 🎯 **Smooth Draggable Interface**: Exact mouse-offset dragging with a 5px threshold (click vs drag separation) and corner snapping.
-- 🖥 **Multi-Monitor Safe**: Clamped to visible screen areas with automatic layout recovery when external monitors disconnect or rearrange.
-- ⚡ **Apple Silicon Optimized**: Native ARM64 Mach-O binary compiled specifically for macOS 13+ (Ventura, Sonoma, Sequoia).
+- 🚀 **Blazing Fast & Lightweight**: Zero Chromium or Node.js overhead, instantaneous startup, and minimal memory usage.
+- 🪟 **True Floating NSPanel**: Borderless, transparent floating window with zero window flickering on spawn.
+- 🎯 **Anchor-Aware Dynamic Geometry**: Control drawer expands intelligently away from screen edges based on quadrant detection, preserving pet screen coordinates with 0px cumulative drift.
+- 🖐️ **Fluid Draggable Interface**: Mouse-offset dragging with a 5px threshold (click vs. drag separation) and corner snapping.
+- 🖥️ **Multi-Monitor Safe**: Window bounds are automatically constrained to active display `workArea` boundaries.
+- ⚡ **Apple Silicon Optimized**: Native ARM64 Mach-O binary compiled for macOS 13+ (Ventura, Sonoma, Sequoia).
 - 🐾 **Menu Bar & Global Hotkey**: Access via the status bar item (`🐾`) or toggle visibility globally anytime using <kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>P</kbd>.
-
----
-
-## ⚡ Highlights & Recent Architectural Improvements
-
-- 📐 **Anchor-Aware Geometry Engine**: Opening and closing the interactive panel dynamically calculates quadrant anchoring relative to the active display (`workArea`). The pet remains locked at its exact visual position without snapping to bottom-right or drifting over repeated open/close cycles (0px cumulative drift).
-- 🔒 **Unified Position Persistence**: Single authoritative position system that restores custom coordinates synchronously on launch. Smooth corner-snapping with a 90px threshold preserves intentional custom edge and center coordinates.
-- 🛡️ **Total Event Isolation**: Control panel inputs, tabs, scrolling, and action buttons are fully protected with `-webkit-app-region: no-drag;` and event propagation guards, eliminating accidental pet window moves or unintended closes.
-- 🎨 **Deep Visual Differentiation**: Each pet character features a bespoke silhouette, unique anatomy, distinct facial features, and dedicated animations:
-  - 🐱 **Mochi (Cat)**: Tapered feline body, pointed ears with pink tufts, crisp whiskers, lavender collar with golden bell, S-curved animated tail, feline `:3` mouth.
-  - 🐉 **Ember (Dragon)**: Horned head ridges, jagged bat wings spreading on sides, scaly belly scutes, flared nostrils puffing ember smoke, talons with sharp black claws, arrowhead spade tail.
-  - 🤖 **ARIA (Robot)**: Chamfered rectangular chassis, corner rivets, overhead antenna with glowing cyan diode, side audio cans, dark visor screen with digital LED matrix eyes & frequency waveform mouth, articulated servo arms, dual magnetic tread pads.
-  - 👻 **BOO (Ghost)**: Floating in mid-air (no feet!), undulating scalloped hem, wispy phantom hands, hollow glowing spooky eyes, orbiting spirit wisps.
-  - 🦊 **KITA (Fox)**: Pointed muzzle with black nose, tall sharp ears with black tips & white fluff, flaring cheek tufts, creamy chest ruff, dark paw stockings, and a massive bushy fluffy fox tail with white tip.
-  - 🐰 **POCHI (Bunny)**: Plump body, extra tall upright rabbit ears with one floppy folded tip, chubby cheeks, twitching pink Y-nose, buck teeth, round white cotton tail, long rabbit hind feet with pads.
-- 🎲 **Random Pet on Launch Toggle**: Choose to keep your favorite pet permanently across sessions or enable the optional "Random Pet on Launch" toggle in More settings.
 
 ---
 
@@ -45,13 +30,13 @@ Ollama Pet has been rebuilt natively for macOS using **Swift**, **SwiftUI**, and
 
 | Feature | What it does |
 |---|---|
-| 💬 **AI Chat** | Talk to your pet using Ollama local models (`gemma4`, `llama3.2`, `phi3`, etc.). Auto-detects installed models and supports exact-prompt retries. |
-| 🐾 **7 Unique Characters** | **Mochi** (Cat 🐱), **Ember** (Dragon 🐉), **ARIA** (Robot 🤖), **NEO** (RobotCat 🐱‍💻), **BOO** (Ghost 👻), **KITA** (Fox 🦊), and **POCHI** (Bunny 🐰) — each with custom anatomy, colors, and personalities. |
+| 💬 **AI Chat** | Talk to your pet using local Ollama models (`llama3.2`, `gemma2`, `phi3`, etc.). Auto-detects installed models and supports exact-prompt retries. |
+| 🐾 **7 Unique Characters** | **Mochi** (Cat 🐱), **Ember** (Dragon 🐉), **ARIA** (Robot 🤖), **NEO** (RobotCat 🐱‍💻), **BOO** (Ghost 👻), **KITA** (Fox 🦊), and **POCHI** (Bunny 🐰) — each with distinct anatomy, silhouettes, facial features, and animations. |
 | 🎭 **5 Animation States** | `Idle`, `Dance`, `Thinking`, `Sleep` (with Zzz bubbles), and `Shock`. |
-| 🎵 **Music & Dance** | Upload an audio file — the pet dances to an 8-band live beat visualizer with selectable vibes (Pop, Rock, Chill, Rave). |
-| ⏰ **Persistent Reminders** | Set reminders that survive restarts (`~/ollama-pet-data.json`). Immediate overdue alerts if due date passed while offline. |
-| 🌤 **Live Weather** | Search any city worldwide via Open-Meteo for real-time temperature, condition icons, and daily highs/lows. |
-| 🍅 **Pomodoro Timer** | Built-in 25-minute focus session and 5-minute break timers with desktop notifications. |
+| 🎵 **Music & Dance** | Upload an audio file — AVFoundation metering powers a live beat visualizer with selectable dance vibes. |
+| ⏰ **Persistent Reminders** | Set reminders that survive restarts (`~/ollama-pet-data.json`). Delivers system notifications via `UNUserNotificationCenter`. |
+| 🌤️ **Live Weather** | Search any city worldwide via Open-Meteo for real-time temperature, condition icons, and daily highs/lows. |
+| 🍅 **Pomodoro Timer** | Built-in 25-minute focus session and 5-minute break timers with desktop alerts. |
 | 📊 **System Vitals** | Real Mach kernel CPU load, IOKit battery percentage/charging status, system uptime, and active foreground apps. |
 | 🚶 **Walk Mode** | Pet hops into a borderless bottom panel and walks across your screen with natural turnarounds. |
 | 🎮 **Mini Games** | Play Rock Paper Scissors or test your knowledge with interactive trivia questions. |
@@ -61,7 +46,7 @@ Ollama Pet has been rebuilt natively for macOS using **Swift**, **SwiftUI**, and
 
 ## 🛠 Project Structure
 
-```
+```text
 ollama-pet/
 ├── OllamaPetNative/               # Native macOS Swift codebase
 │   ├── Package.swift              # SPM package definition
@@ -79,14 +64,15 @@ ollama-pet/
 │       ├── SoundEffects.swift     # AudioToolbox sound effects
 │       ├── SystemMonitor.swift    # Mach host processor stats, IOKit power & NSWorkspace
 │       ├── WalkerManager.swift    # Bottom-screen walk panel animation
+│       ├── WeatherService.swift   # URLSession weather service via Open-Meteo
 │       └── main.swift             # Native app entry point
 ├── build-native.sh                # Automated build & packaging script for Native macOS .app
-├── build-app.sh                   # Build script for Electron package
 ├── icon.icns                      # High-resolution macOS app icon bundle
 ├── icon.png                       # App icon asset
-├── index.html                     # Cross-platform Web UI reference
-├── main.js                        # Cross-platform Electron runtime reference
-└── package.json                   # Node.js project manifest
+├── banner.png                     # Project banner asset
+├── LICENSE                        # Project license
+├── .gitignore                     # Git ignore rules for native builds
+└── README.md                      # Documentation
 ```
 
 ---
@@ -99,42 +85,38 @@ ollama-pet/
 - **Xcode Command Line Tools**: `xcode-select --install`
 - **Ollama**: Download from [ollama.ai](https://ollama.ai) and pull any model:
   ```bash
-  ollama pull gemma4:12b
+  ollama pull llama3.2
   # or
   ollama pull phi3
   ```
 
 ---
 
-### 2. Option A — Build the Genuine Native macOS `.app` (Recommended)
+### 2. Build the Native macOS `.app`
 
-To compile and package the native Swift application bundle:
+To compile and package the native application bundle:
 
 ```bash
 git clone git@github.com:Prathap2349/ollama-pet.git
 cd ollama-pet
 
-# Compile and package OllamaPet.app into dist-native/
+chmod +x build-native.sh
 ./build-native.sh
 ```
 
-To run the native application:
-```bash
-open dist-native/OllamaPet.app
-```
-*You can also drag `dist-native/OllamaPet.app` directly into your `/Applications` folder!*
+The script compiles the Swift sources, packages the `.app` bundle into `dist-native/OllamaPet.app`, and applies ad-hoc codesigning.
 
 ---
 
-### 3. Option B — Run the Electron Version (Cross-Platform)
+### 3. Launching the App
+
+To run the application:
 
 ```bash
-git clone git@github.com:Prathap2349/ollama-pet.git
-cd ollama-pet
-
-npm install
-npm start
+open dist-native/OllamaPet.app
 ```
+
+*You can also drag `dist-native/OllamaPet.app` directly into your `/Applications` folder!*
 
 ---
 

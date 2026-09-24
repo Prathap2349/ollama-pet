@@ -284,6 +284,10 @@ public struct PetSavedData: Codable {
     public var particlesEnabled: Bool? = false
     public var grayscaleTestMode: Bool? = false
 
+    // Safe Mac Control & Action Assistant Settings
+    public var macControlSettings: MacControlSettings? = MacControlSettings()
+    public var actionHistory: [ActionHistoryItem]? = []
+
     public init(
         version: Int? = 1,
         currentChar: String = "cat",
@@ -324,7 +328,9 @@ public struct PetSavedData: Codable {
         weatherLocations: [SavedWeatherLocation] = [],
         activeWeatherLocationId: UUID? = nil,
         structuralModel: String? = nil,
-        walkGaitPreset: String? = nil
+        walkGaitPreset: String? = nil,
+        macControlSettings: MacControlSettings? = MacControlSettings(),
+        actionHistory: [ActionHistoryItem]? = []
     ) {
         self.version = version
         self.currentChar = currentChar
@@ -366,6 +372,8 @@ public struct PetSavedData: Codable {
         self.activeWeatherLocationId = activeWeatherLocationId
         self.structuralModel = structuralModel
         self.walkGaitPreset = walkGaitPreset
+        self.macControlSettings = macControlSettings
+        self.actionHistory = actionHistory
     }
 }
 

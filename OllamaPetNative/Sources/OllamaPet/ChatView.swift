@@ -33,27 +33,32 @@ struct ChatView: View {
     @State private var testOllamaResult: String? = nil
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Header: Ollama Status + Tabs + Close
-            headerBar
+        ZStack {
+            VStack(spacing: 0) {
+                // Header: Ollama Status + Tabs + Close
+                headerBar
 
-            // Tab Content
-            switch petState.activeTab {
-            case "chat":
-                chatTabContent
-            case "weather":
-                weatherTabContent
-            case "system":
-                systemTabContent
-            case "game":
-                gameTabContent
-            case "remind":
-                remindTabContent
-            case "settings":
-                settingsTabContent
-            default:
-                chatTabContent
+                // Tab Content
+                switch petState.activeTab {
+                case "chat":
+                    chatTabContent
+                case "weather":
+                    weatherTabContent
+                case "system":
+                    systemTabContent
+                case "game":
+                    gameTabContent
+                case "remind":
+                    remindTabContent
+                case "settings":
+                    settingsTabContent
+                default:
+                    chatTabContent
+                }
             }
+
+            // Native Action Confirmation Dialog
+            ActionConfirmationView()
         }
         .frame(width: 320, height: 460)
         .background(
@@ -1009,6 +1014,28 @@ struct ChatView: View {
                 }
                 .padding(10)
                 .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.05)))
+
+                // Mac Control Quick Summary
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Mac Control")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(.secondary)
+                        let isEnabled = dataManager.savedData.macControlSettings?.macControlEnabled ?? false
+                        Text(isEnabled ? "🟢 Enabled" : "⚪ Disabled")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(isEnabled ? .green : .white)
+                    }
+                    Spacer()
+                    Button("Configure") {
+                        SettingsWindowController.shared.showTab(.macControl)
+                    }
+                    .font(.system(size: 10, weight: .medium))
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+                .padding(10)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.05)))
             }
 
             Spacer(minLength: 0)
@@ -1042,6 +1069,30 @@ struct ChatView: View {
         messages.append(assistantPlaceholder)
 
         Task {
+            // 1. Check if Mac Control Action Assistant handles this request
+            let macSettings = dataManager.savedData.macControlSettings ?? MacControlSettings()
+            if macSettings.macControlEnabled {
+                if let action = await ActionIntentParser.shared.parseIntent(from: text) {
+                    let actionResult = await MacActionExecutor.shared.processAction(action, userText: text)
+                    if let index = messages.firstIndex(where: { $0.id == assistantMsgId }) {
+                        messages[index] = ChatMessage(
+                            id: assistantMsgId,
+                            role: "assistant",
+                            content: actionResult
+                        )
+                    }
+                    petState.isThinking = false
+                    petState.animState = .idle
+                    motion.transitionTo(.idle)
+                    saveMessages()
+
+                    if dataManager.savedData.speakAiResponses ?? false {
+                        voiceAssistant.speak(text: actionResult)
+                    }
+                    return
+                }
+            }
+
             do {
                 let systemCtx = "You are \(petState.currentSpecies.displayName), a cute friendly desktop companion. Keep answers concise, helpful, and in character."
                 let nonStreamingHistory = messages.filter { $0.id != assistantMsgId }

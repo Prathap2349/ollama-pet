@@ -94,7 +94,12 @@ public class DataManager: ObservableObject {
     }
 
     public func addReminder(text: String, minutes: Int) {
-        let due = Date().addingTimeInterval(Double(minutes * 60)).timeIntervalSince1970 * 1000
+        addReminder(text: text, seconds: minutes * 60)
+    }
+
+    public func addReminder(text: String, seconds: Int) {
+        let secs = max(1, seconds)
+        let due = Date().addingTimeInterval(Double(secs)).timeIntervalSince1970 * 1000
         let newReminder = PetReminder(text: text, due: due)
         savedData.reminders.append(newReminder)
         saveData()
@@ -251,6 +256,11 @@ public class DataManager: ObservableObject {
 
     public func setHydrationIntervalMinutes(_ mins: Int) {
         savedData.hydrationIntervalMinutes = mins
+        saveData()
+    }
+
+    public func updateMacControlSettings(_ settings: MacControlSettings) {
+        savedData.macControlSettings = settings
         saveData()
     }
 }

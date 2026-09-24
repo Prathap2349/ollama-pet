@@ -19,6 +19,13 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         // Setup global hotkey (Cmd+Shift+P)
         setupGlobalShortcut()
 
+        // Safety recovery: check if app crashed during action execution
+        if UserDefaults.standard.bool(forKey: "isExecutingMacAction") {
+            UserDefaults.standard.removeObject(forKey: "isExecutingMacAction")
+            PerformanceManager.shared.isSafeMode = true
+            NSLog("[Safety] App previously terminated while executing an action. Starting in Safe Mode for stability.")
+        }
+
         // Check if running from /Applications
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
             self?.checkAndPromptToMoveToApplications()

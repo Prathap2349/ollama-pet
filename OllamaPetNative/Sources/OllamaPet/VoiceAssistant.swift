@@ -221,6 +221,28 @@ public class VoiceAssistant: NSObject, ObservableObject, AVSpeechSynthesizerDele
         dataManager.savedData.history = history.suffix(20).map { PetSavedMessage(role: $0.role, content: $0.content) }
         dataManager.saveData()
 
+        // 1. Check if Mac Control Action Assistant handles this request
+        let macSettings = dataManager.savedData.macControlSettings ?? MacControlSettings()
+        if macSettings.macControlEnabled && macSettings.voiceControlEnabled {
+            if let action = await ActionIntentParser.shared.parseIntent(from: text) {
+                let actionResult = await MacActionExecutor.shared.processAction(action, userText: text)
+
+                history.append(ChatMessage(role: "assistant", content: actionResult))
+                dataManager.savedData.history = history.suffix(20).map { PetSavedMessage(role: $0.role, content: $0.content) }
+                dataManager.saveData()
+
+                petState.isThinking = false
+                petState.animState = .idle
+
+                if dataManager.savedData.speakAiResponses ?? true {
+                    speak(text: actionResult)
+                } else {
+                    state = .idle
+                }
+                return
+            }
+        }
+
         do {
             let systemCtx = "You are \(petState.currentSpecies.displayName), a cute friendly desktop companion. Keep answers short, conversational, and direct (1-3 sentences max)."
             let reply = try await ollama.sendChat(systemPrompt: systemCtx, messages: history)

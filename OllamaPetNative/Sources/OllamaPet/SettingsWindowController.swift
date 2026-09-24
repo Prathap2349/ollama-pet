@@ -6,9 +6,10 @@ import ServiceManagement
 // MARK: - Dedicated Settings Window Controller
 
 @MainActor
-public class SettingsWindowController: NSObject, NSWindowDelegate {
+public class SettingsWindowController: NSObject, ObservableObject, NSWindowDelegate {
     public static let shared = SettingsWindowController()
 
+    @Published public var activeTab: SettingsTab = .character
     private var window: NSWindow?
 
     public func showWindow() {
@@ -18,6 +19,11 @@ public class SettingsWindowController: NSObject, NSWindowDelegate {
         window?.level = NSWindow.Level(NSWindow.Level.floating.rawValue + 1)
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    public func showTab(_ tab: SettingsTab) {
+        self.activeTab = tab
+        showWindow()
     }
 
     private func setupWindow() {
@@ -60,6 +66,9 @@ public enum SettingsTab: String, CaseIterable, Identifiable {
     case general = "General"
     case appearance = "Appearance"
     case character = "Character & Silhouettes"
+    case macControl = "Mac Control"
+    case permissions = "Permissions & Privacy"
+    case actionHistory = "Action History"
     case animation = "Animation & Physics"
     case voice = "Voice Assistant"
     case shortcuts = "Keyboard Shortcuts"
@@ -77,6 +86,9 @@ public enum SettingsTab: String, CaseIterable, Identifiable {
         case .general: return "gearshape.fill"
         case .appearance: return "paintpalette.fill"
         case .character: return "pawprint.fill"
+        case .macControl: return "macmini.fill"
+        case .permissions: return "lock.shield.fill"
+        case .actionHistory: return "clock.arrow.circlepath"
         case .animation: return "figure.walk.motion"
         case .voice: return "mic.fill"
         case .shortcuts: return "command"
@@ -93,7 +105,7 @@ public enum SettingsTab: String, CaseIterable, Identifiable {
 // MARK: - Main Settings Container
 
 public struct SettingsContainerView: View {
-    @State private var selectedTab: SettingsTab = .character
+    @ObservedObject var windowController = SettingsWindowController.shared
     @ObservedObject var petState = PetState.shared
     @ObservedObject var perf = PerformanceManager.shared
 
@@ -123,23 +135,23 @@ public struct SettingsContainerView: View {
                     VStack(spacing: 3) {
                         ForEach(SettingsTab.allCases) { tab in
                             Button(action: {
-                                selectedTab = tab
+                                windowController.activeTab = tab
                             }) {
                                 HStack(spacing: 10) {
                                     Image(systemName: tab.icon)
                                         .frame(width: 18)
-                                        .foregroundColor(selectedTab == tab ? .white : .secondary)
+                                        .foregroundColor(windowController.activeTab == tab ? .white : .secondary)
                                     Text(tab.rawValue)
-                                        .font(.system(size: 12, weight: selectedTab == tab ? .semibold : .regular))
+                                        .font(.system(size: 12, weight: windowController.activeTab == tab ? .semibold : .regular))
                                     Spacer()
                                 }
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 7)
                                 .background(
                                     RoundedRectangle(cornerRadius: 8)
-                                        .fill(selectedTab == tab ? Color.accentColor : Color.clear)
+                                        .fill(windowController.activeTab == tab ? Color.accentColor : Color.clear)
                                 )
-                                .foregroundColor(selectedTab == tab ? .white : .primary)
+                                .foregroundColor(windowController.activeTab == tab ? .white : .primary)
                             }
                             .buttonStyle(.plain)
                         }
@@ -179,13 +191,19 @@ public struct SettingsContainerView: View {
             // Detail Content
             ScrollView(.vertical) {
                 VStack(alignment: .leading, spacing: 20) {
-                    switch selectedTab {
+                    switch windowController.activeTab {
                     case .general:
                         GeneralSettingsSection()
                     case .appearance:
                         AppearanceSettingsSection()
                     case .character:
                         CharacterSettingsSection()
+                    case .macControl:
+                        MacControlSettingsSection()
+                    case .permissions:
+                        PermissionsPrivacySettingsSection()
+                    case .actionHistory:
+                        ActionHistorySettingsSection()
                     case .animation:
                         AnimationSettingsSection()
                     case .voice:
@@ -1155,6 +1173,365 @@ struct PrivacySettingsSection: View {
                 Text("Clear All Local Chat History & Reminders")
             }
             .buttonStyle(.borderedProminent)
+        }
+    }
+}
+
+// MARK: - Mac Control Settings Section
+
+struct MacControlSettingsSection: View {
+    @ObservedObject var dataManager = DataManager.shared
+    @ObservedObject var perf = PerformanceManager.shared
+    @State private var newShortcutInput: String = ""
+
+    private var settingsBinding: Binding<MacControlSettings> {
+        Binding(
+            get: { dataManager.savedData.macControlSettings ?? MacControlSettings() },
+            set: { dataManager.updateMacControlSettings($0) }
+        )
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text("Mac Control & Action Assistant")
+                .font(.system(size: 18, weight: .bold))
+
+            // Master Toggle
+            VStack(alignment: .leading, spacing: 6) {
+                Toggle(isOn: settingsBinding.macControlEnabled) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Enable Mac Control Assistant")
+                            .font(.system(size: 13, weight: .bold))
+                        Text("Allows Ollama Pet to perform safe, approved actions on your Mac. OFF by default.")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                    }
+                }
+
+                if settingsBinding.wrappedValue.macControlEnabled {
+                    HStack(spacing: 6) {
+                        Image(systemName: "checkmark.shield.fill")
+                            .foregroundColor(.green)
+                            .font(.system(size: 11))
+                        Text("Zero Terminal execution. Only structured actions from the safe allowlist are permitted.")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.top, 4)
+                }
+            }
+            .padding(14)
+            .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
+
+            if settingsBinding.wrappedValue.macControlEnabled {
+                // Allowed Actions Group
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Allowed Actions")
+                        .font(.system(size: 13, weight: .bold))
+
+                    VStack(spacing: 8) {
+                        actionToggle(title: "Open Applications", desc: "Launch apps like Safari, Chrome, Slack, Notes, etc.", binding: settingsBinding.openAppsEnabled)
+                        Divider()
+                        actionToggle(title: "Open Websites", desc: "Open safe HTTPS/HTTP URLs in your default browser.", binding: settingsBinding.openURLsEnabled)
+                        Divider()
+                        actionToggle(title: "Web Search", desc: "Execute web searches on Google or YouTube.", binding: settingsBinding.webSearchEnabled)
+                        Divider()
+                        actionToggle(title: "Create Reminders", desc: "Add natural language reminders to your schedule.", binding: settingsBinding.remindersEnabled)
+                        Divider()
+                        actionToggle(title: "Open Calendar & Reminders", desc: "Open macOS Calendar and Reminders apps.", binding: settingsBinding.calendarEnabled)
+                        Divider()
+                        actionToggle(title: "Open WhatsApp & Messages", desc: "Open messaging apps and prepare drafts.", binding: settingsBinding.whatsappEnabled)
+                        Divider()
+                        actionToggle(title: "Run Approved Shortcuts", desc: "Trigger macOS Shortcuts explicitly added below.", binding: settingsBinding.shortcutsEnabled)
+                    }
+                }
+                .padding(14)
+                .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
+
+                // Confirmation & Safety
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Confirmation & Safety")
+                        .font(.system(size: 13, weight: .bold))
+
+                    Toggle(isOn: settingsBinding.alwaysConfirmExternalActions) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Always confirm external actions")
+                                .font(.system(size: 12, weight: .medium))
+                            Text("Show an interactive [Cancel] / [Confirm] dialog before sending messages or triggering automations.")
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
+                    Divider()
+
+                    Toggle(isOn: settingsBinding.showActionStatus) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Show action status in pet")
+                                .font(.system(size: 12, weight: .medium))
+                            Text("Pet displays short status bubbles (e.g. 'Opening Safari...', 'Reminder created.').")
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
+                    Divider()
+
+                    Toggle(isOn: settingsBinding.voiceControlEnabled) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Voice Mac Control")
+                                .font(.system(size: 12, weight: .medium))
+                            Text("Allow push-to-talk voice commands (⌘⇧Space) to trigger Mac actions.")
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+                .padding(14)
+                .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
+
+                // Approved Shortcuts
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Approved macOS Shortcuts")
+                        .font(.system(size: 13, weight: .bold))
+
+                    Text("Only shortcuts explicitly approved in this list can ever be executed. Ollama cannot invent shortcut names.")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+
+                    HStack(spacing: 8) {
+                        TextField("New approved shortcut name...", text: $newShortcutInput)
+                            .textFieldStyle(.roundedBorder)
+
+                        Button("Add") {
+                            let trimmed = newShortcutInput.trimmingCharacters(in: .whitespacesAndNewlines)
+                            if !trimmed.isEmpty {
+                                var s = settingsBinding.wrappedValue
+                                if !s.approvedShortcuts.contains(trimmed) {
+                                    s.approvedShortcuts.append(trimmed)
+                                    dataManager.updateMacControlSettings(s)
+                                }
+                                newShortcutInput = ""
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(newShortcutInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+
+                    VStack(spacing: 6) {
+                        ForEach(settingsBinding.wrappedValue.approvedShortcuts, id: \.self) { name in
+                            HStack {
+                                Image(systemName: "command.square.fill")
+                                    .foregroundColor(.accentColor)
+                                Text(name)
+                                    .font(.system(size: 12, weight: .medium, design: .monospaced))
+                                Spacer()
+                                Button(action: {
+                                    var s = settingsBinding.wrappedValue
+                                    s.approvedShortcuts.removeAll { $0 == name }
+                                    dataManager.updateMacControlSettings(s)
+                                }) {
+                                    Image(systemName: "trash")
+                                        .font(.system(size: 11))
+                                        .foregroundColor(.red.opacity(0.8))
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            .padding(8)
+                            .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.04)))
+                        }
+                    }
+                }
+                .padding(14)
+                .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
+            }
+        }
+    }
+
+    private func actionToggle(title: String, desc: String, binding: Binding<Bool>) -> some View {
+        Toggle(isOn: binding) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(.system(size: 12, weight: .semibold))
+                Text(desc)
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
+}
+
+// MARK: - Permissions & Privacy Center Section
+
+struct PermissionsPrivacySettingsSection: View {
+    @ObservedObject var perm = PermissionManager.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text("Permissions & Privacy Center")
+                .font(.system(size: 18, weight: .bold))
+
+            // Privacy Guarantee
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    Image(systemName: "lock.shield.fill")
+                        .foregroundColor(.green)
+                    Text("100% On-Device Privacy Architecture")
+                        .font(.system(size: 13, weight: .bold))
+                }
+                Text("• Voice is only captured while you actively hold Push-to-Talk.\n• Camera & Screen sensing are strictly disabled by default.\n• No continuous background surveillance, screen recording, or audio logging.\n• No audio recordings, private tokens, or passwords are ever stored.")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+                    .lineSpacing(3)
+            }
+            .padding(14)
+            .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
+
+            // Permissions Grid
+            VStack(alignment: .leading, spacing: 10) {
+                Text("System Permissions")
+                    .font(.system(size: 13, weight: .bold))
+
+                VStack(spacing: 8) {
+                    permissionRow(
+                        name: "Microphone",
+                        desc: "Required for Push-to-Talk voice assistant.",
+                        status: perm.microphoneStatus,
+                        pane: "Privacy_Microphone"
+                    )
+                    Divider()
+                    permissionRow(
+                        name: "Speech Recognition",
+                        desc: "Processes speech into text using native macOS APIs.",
+                        status: perm.speechStatus,
+                        pane: "Privacy_SpeechRecognition"
+                    )
+                    Divider()
+                    permissionRow(
+                        name: "Camera",
+                        desc: "Optional posture awareness (Off by default).",
+                        status: perm.cameraStatus,
+                        pane: "Privacy_Camera"
+                    )
+                    Divider()
+                    permissionRow(
+                        name: "Notifications",
+                        desc: "Required for reminder alerts and hydration prompts.",
+                        status: perm.notificationsStatus,
+                        pane: nil
+                    )
+                }
+            }
+            .padding(14)
+            .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
+        }
+        .onAppear {
+            perm.checkAllPermissions()
+        }
+    }
+
+    private func permissionRow(name: String, desc: String, status: SystemPermissionStatus, pane: String?) -> some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(name)
+                    .font(.system(size: 12, weight: .semibold))
+                Text(desc)
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+            }
+            Spacer()
+            Text(status.rawValue)
+                .font(.system(size: 11, weight: .bold))
+                .foregroundColor(status == .granted ? .green : (status == .denied ? .red : .secondary))
+
+            Button("Settings") {
+                PermissionManager.shared.openSystemSettings(pane: pane)
+            }
+            .font(.system(size: 10))
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+        }
+    }
+}
+
+// MARK: - Action History Section
+
+struct ActionHistorySettingsSection: View {
+    @ObservedObject var history = ActionHistoryManager.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack {
+                Text("Action History")
+                    .font(.system(size: 18, weight: .bold))
+                Spacer()
+                if !history.items.isEmpty {
+                    Button("Clear History") {
+                        history.clearHistory()
+                    }
+                    .font(.system(size: 11))
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+            }
+
+            Text("Minimal log of recent Mac actions. Zero audio recordings, passwords, or personal tokens are stored.")
+                .font(.system(size: 11))
+                .foregroundColor(.secondary)
+
+            if history.items.isEmpty {
+                VStack(spacing: 8) {
+                    Image(systemName: "clock.badge.checkmark")
+                        .font(.system(size: 32))
+                        .foregroundColor(.secondary)
+                    Text("No actions recorded yet.")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 40)
+            } else {
+                VStack(spacing: 8) {
+                    ForEach(history.items) { item in
+                        HStack(alignment: .top, spacing: 10) {
+                            Image(systemName: item.status.iconName)
+                                .foregroundColor(item.status.badgeColor)
+                                .font(.system(size: 14))
+                                .frame(width: 18)
+                                .padding(.top, 2)
+
+                            VStack(alignment: .leading, spacing: 3) {
+                                HStack {
+                                    Text(item.summary)
+                                        .font(.system(size: 12, weight: .bold))
+                                    Spacer()
+                                    Text(item.formattedTime)
+                                        .font(.system(size: 10, design: .monospaced))
+                                        .foregroundColor(.secondary)
+                                }
+
+                                HStack(spacing: 6) {
+                                    Text(item.status.rawValue)
+                                        .font(.system(size: 9, weight: .bold))
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2)
+                                        .background(RoundedRectangle(cornerRadius: 4).fill(item.status.badgeColor.opacity(0.2)))
+                                        .foregroundColor(item.status.badgeColor)
+
+                                    if let detail = item.detail, !detail.isEmpty {
+                                        Text(detail)
+                                            .font(.system(size: 10))
+                                            .foregroundColor(.secondary)
+                                            .lineLimit(2)
+                                    }
+                                }
+                            }
+                        }
+                        .padding(10)
+                        .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
+                    }
+                }
+            }
         }
     }
 }

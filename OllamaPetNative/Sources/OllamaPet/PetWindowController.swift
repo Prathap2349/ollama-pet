@@ -28,9 +28,36 @@ public class DraggableHostingView<Content: View>: NSHostingView<Content> {
     }
 
     override public func hitTest(_ point: NSPoint) -> NSView? {
-        let hit = super.hitTest(point)
-        // If chat is open and click is outside pet stage and outside panel content, ignore
-        return hit
+        if PetWindowController.shared.isCompanionClickThrough {
+            return nil
+        }
+
+        let petRect = PetWindowController.shared.currentPetRectInWindow()
+
+        if !PetState.shared.isChatOpen {
+            if petRect.contains(point) {
+                // Test if point is within non-transparent interaction radius of the pet stage
+                let center = NSPoint(x: petRect.midX, y: petRect.midY)
+                let dist = hypot(point.x - center.x, point.y - center.y)
+                if dist <= 68.0 {
+                    return self
+                }
+            }
+            return nil // Complete pass-through for transparent corners to underlying desktop
+        }
+
+        // Chat is open
+        if petRect.contains(point) {
+            return self
+        }
+
+        let chatRect = PetWindowController.shared.currentChatPanelRectInWindow()
+        if chatRect.contains(point) {
+            return super.hitTest(point)
+        }
+
+        // Point is in the transparent cutout area beside the pet stage — complete pass-through!
+        return nil
     }
 
     override public func mouseDown(with event: NSEvent) {
@@ -175,7 +202,7 @@ public class PetWindowController: NSObject, NSWindowDelegate {
     public static let shared = PetWindowController()
 
     public var window: CustomPetPanel?
-    private var isCompanionClickThrough = false
+    public var isCompanionClickThrough = false
 
     /// Authoritative screen coordinates of the 140x140 pet stage
     public private(set) var petOrigin: NSPoint = .zero
@@ -284,6 +311,16 @@ public class PetWindowController: NSObject, NSWindowDelegate {
         let localX: CGFloat = currentAnchor.isLeft ? 0 : (win.frame.width - petSize)
         let localY: CGFloat = currentAnchor.isTop ? (win.frame.height - petSize) : 0
         return NSRect(x: localX, y: localY, width: petSize, height: petSize)
+    }
+
+    /// Returns the local CGRect of the chat panel within the window's content view
+    public func currentChatPanelRectInWindow() -> NSRect {
+        guard let win = window, PetState.shared.isChatOpen else { return .zero }
+        let petSize: CGFloat = 140
+        let width: CGFloat = 340
+        let panelHeight: CGFloat = win.frame.height - petSize
+        let localY: CGFloat = currentAnchor.isTop ? 0 : petSize
+        return NSRect(x: 0, y: localY, width: width, height: panelHeight)
     }
 
     public func updatePetOriginFromDrag(_ newPetOrigin: NSPoint) {

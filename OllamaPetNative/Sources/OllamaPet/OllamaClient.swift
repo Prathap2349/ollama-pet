@@ -146,4 +146,80 @@ public class OllamaClient: ObservableObject {
 
         throw NSError(domain: "OllamaClient", code: 500, userInfo: [NSLocalizedDescriptionKey: "Empty reply from Ollama"])
     }
+
+    public func streamChat(
+        systemPrompt: String,
+        messages: [ChatMessage],
+        overrideModel: String? = nil,
+        onToken: @MainActor @escaping (String) -> Void
+    ) async throws -> String {
+        let modelToUse = overrideModel ?? activeModel
+        guard !modelToUse.isEmpty else {
+            throw NSError(domain: "OllamaClient", code: 400, userInfo: [NSLocalizedDescriptionKey: "No model selected or available"])
+        }
+
+        let chatURL = baseURL.appendingPathComponent("api/chat")
+        var request = URLRequest(url: chatURL)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        struct ChatPayloadMessage: Encodable {
+            let role: String
+            let content: String
+        }
+
+        struct ChatRequestPayload: Encodable {
+            let model: String
+            let messages: [ChatPayloadMessage]
+            let stream: Bool
+        }
+
+        var payloadMessages: [ChatPayloadMessage] = []
+        payloadMessages.append(ChatPayloadMessage(role: "system", content: systemPrompt))
+
+        let recentMessages = messages.suffix(12)
+        for msg in recentMessages {
+            let role = msg.role == "user" ? "user" : "assistant"
+            payloadMessages.append(ChatPayloadMessage(role: role, content: msg.content))
+        }
+
+        let payload = ChatRequestPayload(model: modelToUse, messages: payloadMessages, stream: true)
+        request.httpBody = try JSONEncoder().encode(payload)
+
+        let (asyncBytes, response) = try await session.bytes(for: request)
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            throw NSError(domain: "OllamaClient", code: 500, userInfo: [NSLocalizedDescriptionKey: "Invalid stream response from Ollama"])
+        }
+
+        struct StreamChunk: Decodable {
+            struct Message: Decodable {
+                let content: String?
+            }
+            let message: Message?
+            let response: String?
+            let done: Bool?
+        }
+
+        var fullAccumulation = ""
+
+        for try await line in asyncBytes.lines {
+            guard !line.isEmpty else { continue }
+            if let data = line.data(using: .utf8),
+               let chunk = try? JSONDecoder().decode(StreamChunk.self, from: data) {
+                let token = chunk.message?.content ?? chunk.response ?? ""
+                if !token.isEmpty {
+                    fullAccumulation += token
+                    await MainActor.run {
+                        onToken(token)
+                    }
+                }
+                if chunk.done == true {
+                    break
+                }
+            }
+        }
+
+        return fullAccumulation
+    }
 }
+

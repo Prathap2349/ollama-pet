@@ -12,6 +12,8 @@ public class SystemMonitor: ObservableObject {
     @Published public var uptimeString: String = "0h 0m"
     @Published public var foregroundApps: [String] = []
 
+    @Published public var isPowerSavingMode: Bool = false
+
     private var previousCpuInfo: processor_info_array_t?
     private var previousCpuInfoCount: mach_msg_type_number_t = 0
     private var timer: Timer?
@@ -22,8 +24,13 @@ public class SystemMonitor: ObservableObject {
 
     public func startMonitoring() {
         updateAllStats()
+        rescheduleTimer()
+    }
+
+    private func rescheduleTimer() {
         timer?.invalidate()
-        timer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+        let interval: TimeInterval = isPowerSavingMode ? 5.0 : 2.0
+        timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.updateAllStats()
             }
@@ -97,6 +104,12 @@ public class SystemMonitor: ObservableObject {
             if let state = desc[kIOPSPowerSourceStateKey] as? String {
                 self.isCharging = (state == kIOPSACPowerValue)
             }
+        }
+
+        let wasLowPower = self.isPowerSavingMode
+        self.isPowerSavingMode = (!self.isCharging && self.batteryPercent <= 25)
+        if wasLowPower != self.isPowerSavingMode {
+            self.rescheduleTimer()
         }
     }
 

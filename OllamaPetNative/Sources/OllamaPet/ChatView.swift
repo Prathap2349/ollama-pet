@@ -14,6 +14,7 @@ struct ChatView: View {
     @ObservedObject var visionGuardian = VisionGuardian.shared
     @ObservedObject var screenGuardian = ScreenGuardian.shared
     @ObservedObject var focusGuardian = FocusGuardian.shared
+    @ObservedObject var motion = CharacterMotionStateMachine.shared
 
     @State private var inputText: String = ""
     @State private var messages: [ChatMessage] = []
@@ -337,77 +338,172 @@ struct ChatView: View {
 
     // MARK: - Weather Tab
     private var weatherTabContent: some View {
-        VStack(spacing: 12) {
-            HStack {
-                TextField("Enter city (e.g. Tokyo)", text: $weatherCityInput)
+        VStack(spacing: 8) {
+            // City Search & Add Drawer Header
+            HStack(spacing: 6) {
+                TextField("Add city to vault (e.g. Kyoto, London)...", text: $weatherCityInput)
                     .textFieldStyle(.plain)
-                    .padding(6)
+                    .font(.system(size: 11))
+                    .padding(7)
                     .background(Color.white.opacity(0.08))
-                    .cornerRadius(6)
+                    .cornerRadius(8)
                     .foregroundColor(.white)
                     .onSubmit {
-                        Task { await wx.fetchWeather(for: weatherCityInput) }
+                        addWeatherCity()
                     }
 
-                Button("Fetch") {
-                    Task { await wx.fetchWeather(for: weatherCityInput) }
+                Button(action: {
+                    addWeatherCity()
+                }) {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.system(size: 18))
+                        .foregroundColor(weatherCityInput.trimmingCharacters(in: .whitespaces).isEmpty ? Color.white.opacity(0.3) : petState.currentSpecies.accentColor)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(petState.currentSpecies.accentColor)
-                .controlSize(.small)
+                .buttonStyle(.plain)
+                .disabled(weatherCityInput.trimmingCharacters(in: .whitespaces).isEmpty || wx.isLoading)
+
+                if wx.isLoading {
+                    ProgressView()
+                        .scaleEffect(0.6)
+                        .frame(width: 16, height: 16)
+                }
             }
             .padding(.horizontal, 12)
-            .padding(.top, 12)
+            .padding(.top, 8)
 
-            Text(wx.statusMessage)
-                .font(.system(size: 10, design: .monospaced))
-                .foregroundColor(Color.white.opacity(0.6))
-
+            // Active Weather Atmospheric Banner
             if let w = wx.weather {
-                VStack(spacing: 8) {
-                    Text(w.cityName)
-                        .font(.system(size: 15, weight: .bold))
-                        .foregroundColor(.white)
-
-                    HStack(spacing: 12) {
-                        Text(w.icon)
-                            .font(.system(size: 44))
-
-                        VStack(alignment: .leading) {
-                            Text("\(w.temp)°C")
-                                .font(.system(size: 28, weight: .bold))
+                VStack(spacing: 6) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(w.cityName)
+                                .font(.system(size: 13, weight: .bold))
                                 .foregroundColor(.white)
-                            Text("Feels like \(w.feelsLike)°C")
-                                .font(.system(size: 11))
-                                .foregroundColor(Color.white.opacity(0.7))
+                                .lineLimit(1)
+                            Text(w.description)
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundColor(petState.currentSpecies.accentColor)
                         }
+                        Spacer()
+                        Text(w.icon)
+                            .font(.system(size: 28))
+                        Text("\(w.temp)°C")
+                            .font(.system(size: 22, weight: .bold, design: .rounded))
+                            .foregroundColor(.white)
                     }
 
-                    Text(w.description)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(petState.currentSpecies.accentColor)
-
-                    HStack(spacing: 16) {
-                        Text("💧 Humidity: \(w.humidity)%")
-                        Text("💨 Wind: \(w.windSpeed) km/h")
+                    HStack(spacing: 10) {
+                        Text("Feels: \(w.feelsLike)°C")
+                        Text("💧 \(w.humidity)%")
+                        Text("💨 \(w.windSpeed)km/h")
+                        Spacer()
+                        Text(w.highLow)
                     }
-                    .font(.system(size: 11, design: .monospaced))
+                    .font(.system(size: 9, design: .monospaced))
                     .foregroundColor(Color.white.opacity(0.7))
-
-                    Text("High / Low: \(w.highLow)")
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundColor(Color.white.opacity(0.6))
                 }
-                .padding()
-                .background(Color.white.opacity(0.06))
-                .cornerRadius(12)
+                .padding(8)
+                .background(
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color.white.opacity(0.08))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10)
+                                .stroke(petState.currentSpecies.accentColor.opacity(0.4), lineWidth: 1)
+                        )
+                )
                 .padding(.horizontal, 12)
-            } else {
+            }
+
+            // Stored Cities Vault List Header
+            HStack {
+                Text("Saved Climate Vault (\(wx.savedLocations.count))")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(Color.white.opacity(0.8))
                 Spacer()
-                Text("Search any city for live weather and forecast.")
-                    .font(.system(size: 11))
+                Text("Tap to activate")
+                    .font(.system(size: 9))
                     .foregroundColor(Color.white.opacity(0.4))
-                Spacer()
+            }
+            .padding(.horizontal, 14)
+            .padding(.top, 2)
+
+            // Saved Cities List with Selection & Explicit Trash Delete Button
+            ScrollView {
+                LazyVStack(spacing: 5) {
+                    ForEach(wx.savedLocations) { loc in
+                        let isActive = loc.id == wx.activeLocationId
+                        HStack(spacing: 8) {
+                            Button(action: {
+                                wx.selectLocation(id: loc.id)
+                            }) {
+                                HStack(spacing: 6) {
+                                    Circle()
+                                        .fill(isActive ? petState.currentSpecies.accentColor : Color.white.opacity(0.2))
+                                        .frame(width: 7, height: 7)
+
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Text(loc.name)
+                                            .font(.system(size: 11, weight: isActive ? .bold : .medium))
+                                            .foregroundColor(.white)
+                                        if let country = loc.country {
+                                            Text(country)
+                                                .font(.system(size: 9))
+                                                .foregroundColor(Color.white.opacity(0.5))
+                                        }
+                                    }
+
+                                    Spacer()
+
+                                    if let temp = loc.lastTemp {
+                                        Text("\(temp)°")
+                                            .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                            .foregroundColor(.white)
+                                            .padding(.horizontal, 5)
+                                            .padding(.vertical, 1)
+                                            .background(Color.white.opacity(0.12))
+                                            .cornerRadius(4)
+                                    }
+                                }
+                            }
+                            .buttonStyle(.plain)
+
+                            // Explicit Trash Delete Button
+                            Button(action: {
+                                withAnimation {
+                                    wx.removeLocation(id: loc.id)
+                                }
+                            }) {
+                                Image(systemName: "trash")
+                                    .font(.system(size: 10))
+                                    .foregroundColor(Color.red.opacity(0.75))
+                                    .padding(4)
+                            }
+                            .buttonStyle(.plain)
+                            .help("Remove \(loc.name) from Climate Vault")
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 5)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(isActive ? petState.currentSpecies.accentColor.opacity(0.2) : Color.white.opacity(0.04))
+                        )
+                    }
+                }
+                .padding(.horizontal, 12)
+            }
+        }
+    }
+
+    private func addWeatherCity() {
+        let city = weatherCityInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !city.isEmpty else { return }
+        weatherCityInput = ""
+        Task {
+            do {
+                try await wx.addLocation(cityName: city)
+                petState.showBubble("Added \(city)! 🌤", duration: 2.0)
+            } catch {
+                petState.showBubble("City not found! ❌", duration: 2.0)
             }
         }
     }
@@ -861,6 +957,30 @@ struct ChatView: View {
                         .frame(width: 160)
                     }
                     .padding(.top, 4)
+
+                    Divider().background(Color.white.opacity(0.1))
+
+                    // Procedural Structural Model
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Structural Model (Procedural Physics)")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundColor(Color.white.opacity(0.8))
+
+                        Picker("", selection: Binding(
+                            get: { motion.structuralModel },
+                            set: { motion.setStructuralModel($0) }
+                        )) {
+                            ForEach(CharacterStructuralModel.allCases) { m in
+                                Text("\(m.icon) \(m.rawValue)").tag(m)
+                            }
+                        }
+                        .pickerStyle(.menu)
+
+                        Text(motion.structuralModel.subtitle)
+                            .font(.system(size: 9))
+                            .foregroundColor(Color.white.opacity(0.5))
+                    }
+                    .padding(.top, 2)
                 }
                 .padding(10)
                 .background(Color.white.opacity(0.04))
@@ -967,6 +1087,28 @@ struct ChatView: View {
                         Text(String(format: "%.1fx", dataManager.savedData.walkSpeed ?? 1.0))
                             .font(.system(size: 11, design: .monospaced))
                     }
+
+                    // Gait Kinematics Preset
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Gait Kinematics:")
+                            .font(.system(size: 11))
+                            .foregroundColor(.white)
+
+                        Picker("", selection: Binding(
+                            get: { motion.gaitPreset },
+                            set: { motion.setGaitPreset($0) }
+                        )) {
+                            ForEach(WalkGaitPreset.allCases) { g in
+                                Text("\(g.icon) \(g.rawValue)").tag(g)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+
+                        Text(motion.gaitPreset.description)
+                            .font(.system(size: 9))
+                            .foregroundColor(Color.white.opacity(0.5))
+                    }
+                    .padding(.vertical, 2)
 
                     HStack(spacing: 8) {
                         Button("Test Walk (Short)") {
@@ -1335,26 +1477,50 @@ struct ChatView: View {
         dataManager.updateStreak()
         petState.isThinking = true
         petState.animState = .thinking
+        motion.transitionTo(.thinking)
+
+        let assistantMsgId = UUID()
+        let assistantPlaceholder = ChatMessage(id: assistantMsgId, role: "assistant", content: "")
+        messages.append(assistantPlaceholder)
 
         Task {
             do {
                 let systemCtx = "You are \(petState.currentSpecies.displayName), a cute friendly desktop companion. Keep answers concise, helpful, and in character."
-                let reply = try await ollamaClient.sendChat(systemPrompt: systemCtx, messages: messages)
+                let nonStreamingHistory = messages.filter { $0.id != assistantMsgId }
 
-                messages.append(ChatMessage(role: "assistant", content: reply))
+                let fullReply = try await ollamaClient.streamChat(
+                    systemPrompt: systemCtx,
+                    messages: nonStreamingHistory
+                ) { token in
+                    if let index = messages.firstIndex(where: { $0.id == assistantMsgId }) {
+                        messages[index] = ChatMessage(
+                            id: assistantMsgId,
+                            role: "assistant",
+                            content: messages[index].content + token
+                        )
+                        motion.transitionTo(.streamingResponse)
+                    }
+                }
+
                 SoundEffect.receive.play()
                 petState.showBubble("✓", duration: 1.0)
                 petState.moodPoints = min(100.0, petState.moodPoints + 12.0)
                 saveMessages()
+
+                if dataManager.savedData.speakAiResponses ?? false {
+                    voiceAssistant.speak(text: fullReply)
+                }
             } catch {
                 errorMessage = error.localizedDescription
                 lastFailedPrompt = text
+                messages.removeAll { $0.id == assistantMsgId }
                 petState.animState = .shock
                 petState.showBubble("Error! 😱", duration: 2.5)
                 SoundEffect.alert.play()
             }
             petState.isThinking = false
             petState.animState = .idle
+            motion.transitionTo(.idle)
         }
     }
 

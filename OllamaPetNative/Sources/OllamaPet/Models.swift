@@ -242,6 +242,14 @@ public struct PetSavedData: Codable {
     public var hydrationReminderEnabled: Bool?
     public var hydrationIntervalMinutes: Int? // default 60
 
+    // Multi-City Climate Vault
+    public var weatherLocations: [SavedWeatherLocation] = []
+    public var activeWeatherLocationId: UUID? = nil
+
+    // Expressive Kinematics & Structural Model
+    public var structuralModel: String? = nil
+    public var walkGaitPreset: String? = nil
+
     public init(
         version: Int? = 1,
         currentChar: String = "cat",
@@ -278,7 +286,11 @@ public struct PetSavedData: Codable {
         screenMonitoringEnabled: Bool? = false,
         focusNotificationsEnabled: Bool? = true,
         hydrationReminderEnabled: Bool? = true,
-        hydrationIntervalMinutes: Int? = 60
+        hydrationIntervalMinutes: Int? = 60,
+        weatherLocations: [SavedWeatherLocation] = [],
+        activeWeatherLocationId: UUID? = nil,
+        structuralModel: String? = nil,
+        walkGaitPreset: String? = nil
     ) {
         self.version = version
         self.currentChar = currentChar
@@ -316,6 +328,56 @@ public struct PetSavedData: Codable {
         self.focusNotificationsEnabled = focusNotificationsEnabled
         self.hydrationReminderEnabled = hydrationReminderEnabled
         self.hydrationIntervalMinutes = hydrationIntervalMinutes
+        self.weatherLocations = weatherLocations
+        self.activeWeatherLocationId = activeWeatherLocationId
+        self.structuralModel = structuralModel
+        self.walkGaitPreset = walkGaitPreset
+    }
+}
+
+// MARK: - Multi-City Climate Vault Models
+
+public enum WeatherAtmosphere: String, Codable {
+    case clearDay
+    case goldenHour
+    case nightClear
+    case rain
+    case snow
+    case fog
+    case thunderstorm
+}
+
+public struct SavedWeatherLocation: Identifiable, Codable, Equatable {
+    public let id: UUID
+    public var name: String
+    public var country: String?
+    public var latitude: Double
+    public var longitude: Double
+    public var timezone: String?
+    public var lastTemp: Int?
+    public var lastConditionCode: Int?
+    public var lastUpdated: String?
+
+    public init(
+        id: UUID = UUID(),
+        name: String,
+        country: String? = nil,
+        latitude: Double,
+        longitude: Double,
+        timezone: String? = nil,
+        lastTemp: Int? = nil,
+        lastConditionCode: Int? = nil,
+        lastUpdated: String? = nil
+    ) {
+        self.id = id
+        self.name = name
+        self.country = country
+        self.latitude = latitude
+        self.longitude = longitude
+        self.timezone = timezone
+        self.lastTemp = lastTemp
+        self.lastConditionCode = lastConditionCode
+        self.lastUpdated = lastUpdated
     }
 }
 

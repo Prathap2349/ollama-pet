@@ -5,6 +5,8 @@ import AppKit
 struct PetStageView: View {
     @ObservedObject var petState = PetState.shared
     @ObservedObject var sysMon = SystemMonitor.shared
+    @ObservedObject var motion = CharacterMotionStateMachine.shared
+    @ObservedObject var weatherService = WeatherService.shared
 
     var body: some View {
         ZStack(alignment: petAlignment) {
@@ -54,19 +56,35 @@ struct PetStageView: View {
             }
 
             ZStack(alignment: .center) {
-                // Background Glow Ring
-                Circle()
-                    .fill(petState.currentSpecies.accentColor.opacity(petState.isThinking ? 0.35 : 0.15))
-                    .frame(width: 120, height: 120)
-                    .blur(radius: petState.isThinking ? 12 : 8)
+                // High-Framerate Procedural Physics Canvas with Adaptive Refresh Rate
+                let targetInterval = sysMon.isPowerSavingMode ? 1.0 / 30.0 : 1.0 / 60.0
 
-                // SVG Character Graphic
-                PetSVGView(
-                    species: petState.currentSpecies,
-                    state: petState.animState,
-                    animTime: petState.animTime
-                )
-                .frame(width: 100, height: 100)
+                TimelineView(.animation(minimumInterval: targetInterval)) { timeline in
+                    Canvas { context, size in
+                        let t = timeline.date.timeIntervalSinceReferenceDate
+                        motion.update(at: t, weatherAtmosphere: weatherService.activeAtmosphere)
+
+                        let lighting = ProceduralColorEngine.evaluate(
+                            species: petState.currentSpecies,
+                            model: motion.structuralModel,
+                            cpuPercent: sysMon.cpuPercent,
+                            atmosphere: weatherService.activeAtmosphere
+                        )
+
+                        PetCanvasRenderer.draw(
+                            context: &context,
+                            size: size,
+                            species: petState.currentSpecies,
+                            model: motion.structuralModel,
+                            animState: petState.animState,
+                            motion: motion,
+                            lighting: lighting,
+                            atmosphere: weatherService.activeAtmosphere,
+                            time: t
+                        )
+                    }
+                    .frame(width: 120, height: 120)
+                }
 
                 // Mood Indicator & Cycle Button
                 VStack {
@@ -75,23 +93,44 @@ struct PetStageView: View {
                             petState.cycleMood()
                         }) {
                             Text(petState.currentSpecies.moodEmoji(for: petState.currentMood))
-                                .font(.system(size: 16))
-                                .padding(3)
-                                .background(Color.black.opacity(0.4))
+                                .font(.system(size: 15))
+                                .padding(4)
+                                .background(Color.black.opacity(0.45))
                                 .clipShape(Circle())
                         }
                         .buttonStyle(.plain)
 
                         Spacer()
 
-                        // Status Dot
+                        // Status Dot with Glow (Online / Offline / Power Saving)
                         Circle()
-                            .fill(petState.isThinking ? Color.orange : (OllamaClient.shared.isOnline ? Color.green : Color.red))
-                            .frame(width: 7, height: 7)
+                            .fill(
+                                petState.isThinking ? Color.orange :
+                                (sysMon.isPowerSavingMode ? Color.yellow :
+                                (OllamaClient.shared.isOnline ? Color.green : Color.red))
+                            )
+                            .frame(width: 8, height: 8)
+                            .shadow(color: (OllamaClient.shared.isOnline ? Color.green : Color.orange).opacity(0.8), radius: 3)
                     }
                     Spacer()
                 }
-                .frame(width: 110, height: 110)
+                .frame(width: 116, height: 116)
+
+                // Atmospheric Indicator (if raining/snowing/golden hour)
+                if weatherService.activeAtmosphere != .clearDay {
+                    VStack {
+                        Spacer()
+                        HStack {
+                            Text(weatherAtmosphereIcon(weatherService.activeAtmosphere))
+                                .font(.system(size: 11))
+                                .padding(3)
+                                .background(Color.black.opacity(0.4))
+                                .clipShape(Circle())
+                            Spacer()
+                        }
+                    }
+                    .frame(width: 116, height: 116)
+                }
 
                 // Speech Bubble
                 if petState.isBubbleVisible {
@@ -131,7 +170,7 @@ struct PetStageView: View {
                     }
                 }
 
-                // CPU Load Mini Bar
+                // CPU Load Thermal Mini Bar
                 VStack {
                     Spacer()
                     GeometryReader { geo in
@@ -139,7 +178,10 @@ struct PetStageView: View {
                             Capsule()
                                 .fill(Color.black.opacity(0.4))
                             Capsule()
-                                .fill(sysMon.cpuPercent > 70 ? Color.red : (sysMon.cpuPercent > 40 ? Color.orange : Color.green))
+                                .fill(
+                                    sysMon.cpuPercent > 70 ? Color.red :
+                                    (sysMon.cpuPercent > 40 ? Color.orange : Color.green)
+                                )
                                 .frame(width: geo.size.width * CGFloat(min(1.0, sysMon.cpuPercent / 100.0)))
                         }
                     }
@@ -154,5 +196,17 @@ struct PetStageView: View {
             }
         }
         .frame(width: petState.isChatOpen ? 340 : 140, height: 140)
+    }
+
+    private func weatherAtmosphereIcon(_ atmo: WeatherAtmosphere) -> String {
+        switch atmo {
+        case .rain: return "🌧"
+        case .snow: return "❄️"
+        case .goldenHour: return "🌅"
+        case .nightClear: return "🌙"
+        case .thunderstorm: return "⛈"
+        case .fog: return "🌫"
+        case .clearDay: return "☀️"
+        }
     }
 }

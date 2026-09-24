@@ -101,31 +101,32 @@ ollama-pet/
 
 ---
 
-### 2. Build the Native macOS `.app`
+### 2. Install to Applications (Recommended)
 
-To compile and package the native application bundle:
+To build and automatically install directly into your macOS `/Applications` folder:
 
 ```bash
-git clone git@github.com:Prathap2349/ollama-pet.git
-cd ollama-pet
-
-chmod +x build-native.sh
-./build-native.sh
+chmod +x install.sh
+./install.sh
 ```
 
-The script compiles the Swift sources, packages the `.app` bundle into `dist-native/OllamaPet.app`, and applies ad-hoc codesigning.
+This compiles the release binary and copies `OllamaPet.app` directly into `/Applications`, making it instantly searchable in Spotlight and Launchpad.
 
 ---
 
-### 3. Launching the App
+### 3. Alternative: Build & Run Locally
 
-To run the application:
+To compile and run directly from the workspace folder:
 
 ```bash
+chmod +x build-native.sh
+./build-native.sh
 open dist-native/OllamaPet.app
 ```
 
-*You can also drag `dist-native/OllamaPet.app` directly into your `/Applications` folder!*
+> **Note**: Whenever you launch Ollama Pet outside your Applications folder (e.g. from Downloads or this repository), the app will automatically prompt:
+> *"Move to Applications Folder?"*
+> You can also click the status bar icon (`🐾`) at any time and choose **"📥 Move to Applications Folder..."**.
 
 ---
 

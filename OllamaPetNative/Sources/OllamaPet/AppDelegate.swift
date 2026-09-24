@@ -19,11 +19,23 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         // Setup global hotkey (Cmd+Shift+P)
         setupGlobalShortcut()
 
+        // Check if running from /Applications
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+            self?.checkAndPromptToMoveToApplications()
+        }
+
         // Setup Pet Window
         PetWindowController.shared.showWindow()
 
         // Start periodic reminder timer
         startReminderTimer()
+    }
+
+    private var isInstalledInApplicationsFolder: Bool {
+        let bundlePath = Bundle.main.bundleURL.standardized.path
+        let systemApps = URL(fileURLWithPath: "/Applications").standardized.path
+        let userApps = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications").standardized.path
+        return bundlePath.hasPrefix(systemApps) || bundlePath.hasPrefix(userApps)
     }
 
     private func setupStatusItem() {
@@ -36,6 +48,12 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
 
         let menu = NSMenu()
         menu.addItem(NSMenuItem(title: "Show / Hide Ollama Pet (⌘⇧P)", action: #selector(togglePetVisibility), keyEquivalent: "P"))
+        
+        if !isInstalledInApplicationsFolder {
+            let moveItem = NSMenuItem(title: "📥 Move to Applications Folder...", action: #selector(promptMoveToApplicationsManually), keyEquivalent: "")
+            menu.addItem(moveItem)
+        }
+        
         menu.addItem(NSMenuItem.separator())
 
         // Quick character switch menu
@@ -106,6 +124,86 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
                     SoundEffect.alert.play()
                 }
             }
+        }
+    }
+
+    // MARK: - Move to Applications Folder Support
+
+    @objc private func promptMoveToApplicationsManually() {
+        showMoveToApplicationsAlert(force: true)
+    }
+
+    private func checkAndPromptToMoveToApplications() {
+        if isInstalledInApplicationsFolder { return }
+        if UserDefaults.standard.bool(forKey: "SuppressMoveToApplicationsPrompt") { return }
+        showMoveToApplicationsAlert(force: false)
+    }
+
+    private func showMoveToApplicationsAlert(force: Bool) {
+        let alert = NSAlert()
+        alert.messageText = "Move to Applications Folder?"
+        alert.informativeText = "Ollama Pet can move itself to your Applications folder so it's easy to find in Spotlight and Launchpad."
+        alert.addButton(withTitle: "Move to Applications Folder")
+        alert.addButton(withTitle: "Do Not Move")
+        
+        if !force {
+            alert.showsSuppressionButton = true
+            alert.suppressionButton?.title = "Do not ask again"
+        }
+        alert.alertStyle = .informational
+
+        NSApp.activate(ignoringOtherApps: true)
+        let response = alert.runModal()
+
+        if !force && alert.suppressionButton?.state == .on {
+            UserDefaults.standard.set(true, forKey: "SuppressMoveToApplicationsPrompt")
+        }
+
+        if response == .alertFirstButtonReturn {
+            moveToApplicationsFolder(from: Bundle.main.bundleURL)
+        }
+    }
+
+    private func moveToApplicationsFolder(from sourceURL: URL) {
+        let fileManager = FileManager.default
+        let appName = sourceURL.lastPathComponent
+        let defaultAppsURL = URL(fileURLWithPath: "/Applications")
+        var targetURL = defaultAppsURL.appendingPathComponent(appName)
+
+        // Check if /Applications is writable, otherwise use user's ~/Applications
+        if !fileManager.isWritableFile(atPath: defaultAppsURL.path) {
+            let userAppsURL = fileManager.homeDirectoryForCurrentUser.appendingPathComponent("Applications")
+            try? fileManager.createDirectory(at: userAppsURL, withIntermediateDirectories: true)
+            targetURL = userAppsURL.appendingPathComponent(appName)
+        }
+
+        do {
+            if fileManager.fileExists(atPath: targetURL.path) {
+                try fileManager.removeItem(at: targetURL)
+            }
+            try fileManager.copyItem(at: sourceURL, to: targetURL)
+
+            // Relaunch from Applications folder
+            let config = NSWorkspace.OpenConfiguration()
+            config.activates = true
+            NSWorkspace.shared.openApplication(at: targetURL, configuration: config) { _, error in
+                DispatchQueue.main.async {
+                    if error == nil {
+                        // Successfully launched; terminate old instance
+                        exit(0)
+                    } else {
+                        let failAlert = NSAlert()
+                        failAlert.messageText = "Failed to Launch From Applications"
+                        failAlert.informativeText = error?.localizedDescription ?? "Could not launch application."
+                        failAlert.runModal()
+                    }
+                }
+            }
+        } catch {
+            let errAlert = NSAlert()
+            errAlert.messageText = "Could Not Move Automatically"
+            errAlert.informativeText = "\(error.localizedDescription)\n\nYou can manually drag OllamaPet.app into your Applications folder."
+            errAlert.runModal()
         }
     }
 

@@ -563,6 +563,175 @@ public struct PetCanvasRenderer {
 
     // MARK: - Layer 3: Facial Features & Expressive Eyes
 
+    public enum CharacterEyeStyle {
+        case standard     // Expressive glossy iris + specular shine
+        case led          // Digital glowing LED matrix on dark recessed socket
+        case spectral     // Ethereal ghostly gaze with inner spirit glow
+        case reptilian    // Dragon slit-pupil with golden amber iris
+    }
+
+    public struct CharacterFaceLayout {
+        public let eyeCenterY: CGFloat
+        public let eyeSpacing: CGFloat
+        public let eyeWidth: CGFloat
+        public let eyeHeight: CGFloat
+        public let eyeStyle: CharacterEyeStyle
+        public let noseOffsetY: CGFloat?
+        public let mouthOffsetY: CGFloat
+        public let mouthWidth: CGFloat
+        public let hasBlush: Bool
+        public let blushOffsetY: CGFloat
+        public let blushSpacing: CGFloat
+    }
+
+    public static func faceLayout(for species: PetSpecies, model: CharacterStructuralModel) -> CharacterFaceLayout {
+        // If structural model overrides anatomy
+        if model == .cyberSentry {
+            return CharacterFaceLayout(
+                eyeCenterY: -12,
+                eyeSpacing: 10,
+                eyeWidth: 7.5,
+                eyeHeight: 7.5,
+                eyeStyle: .led,
+                noseOffsetY: nil,
+                mouthOffsetY: -4,
+                mouthWidth: 10,
+                hasBlush: false,
+                blushOffsetY: 0,
+                blushSpacing: 0
+            )
+        } else if model == .kineticSlime {
+            return CharacterFaceLayout(
+                eyeCenterY: -6,
+                eyeSpacing: 10,
+                eyeWidth: 8,
+                eyeHeight: 9,
+                eyeStyle: .standard,
+                noseOffsetY: nil,
+                mouthOffsetY: 1,
+                mouthWidth: 8,
+                hasBlush: true,
+                blushOffsetY: -1,
+                blushSpacing: 16
+            )
+        }
+
+        // Species-specific calibrated layouts matched directly to head bounds
+        switch species {
+        case .cat:
+            // Head: [-34, 0], center -17
+            return CharacterFaceLayout(
+                eyeCenterY: -21,
+                eyeSpacing: 11,
+                eyeWidth: 8.0,
+                eyeHeight: 9.0,
+                eyeStyle: .standard,
+                noseOffsetY: -14,
+                mouthOffsetY: -9,
+                mouthWidth: 8.0,
+                hasBlush: true,
+                blushOffsetY: -15,
+                blushSpacing: 16
+            )
+
+        case .dragon:
+            // Head: [-36, -4], Snout: [-22, -6]
+            return CharacterFaceLayout(
+                eyeCenterY: -24,
+                eyeSpacing: 13,
+                eyeWidth: 7.5,
+                eyeHeight: 8.5,
+                eyeStyle: .reptilian,
+                noseOffsetY: -13,
+                mouthOffsetY: -8,
+                mouthWidth: 10.0,
+                hasBlush: false,
+                blushOffsetY: 0,
+                blushSpacing: 0
+            )
+
+        case .robot:
+            // Head: [-34, -8], center -21. Dark socket plate with glowing cyan LED eyes
+            return CharacterFaceLayout(
+                eyeCenterY: -21,
+                eyeSpacing: 10,
+                eyeWidth: 7.5,
+                eyeHeight: 7.5,
+                eyeStyle: .led,
+                noseOffsetY: nil,
+                mouthOffsetY: -12,
+                mouthWidth: 12.0,
+                hasBlush: false,
+                blushOffsetY: 0,
+                blushSpacing: 0
+            )
+
+        case .robotcat:
+            // Cyber Head: [-32, -2], center -17
+            return CharacterFaceLayout(
+                eyeCenterY: -20,
+                eyeSpacing: 10,
+                eyeWidth: 7.5,
+                eyeHeight: 7.5,
+                eyeStyle: .led,
+                noseOffsetY: -13,
+                mouthOffsetY: -8,
+                mouthWidth: 9.0,
+                hasBlush: false,
+                blushOffsetY: 0,
+                blushSpacing: 0
+            )
+
+        case .ghost:
+            // Dome: [-42, -6]. Face placed in upper-middle dome. NO LEGS AT ALL.
+            return CharacterFaceLayout(
+                eyeCenterY: -20,
+                eyeSpacing: 11,
+                eyeWidth: 7.5,
+                eyeHeight: 9.5,
+                eyeStyle: .spectral,
+                noseOffsetY: nil,
+                mouthOffsetY: -10,
+                mouthWidth: 8.0,
+                hasBlush: true,
+                blushOffsetY: -14,
+                blushSpacing: 17
+            )
+
+        case .fox:
+            // Head: [-34, -2], Muzzle: [-18, -6]
+            return CharacterFaceLayout(
+                eyeCenterY: -23,
+                eyeSpacing: 12,
+                eyeWidth: 8.0,
+                eyeHeight: 8.5,
+                eyeStyle: .standard,
+                noseOffsetY: -8,
+                mouthOffsetY: -4,
+                mouthWidth: 8.0,
+                hasBlush: true,
+                blushOffsetY: -17,
+                blushSpacing: 18
+            )
+
+        case .bunny:
+            // Ears: [-58, -22], Head: [-32, 0]. Eyes placed comfortably inside head.
+            return CharacterFaceLayout(
+                eyeCenterY: -21,
+                eyeSpacing: 11,
+                eyeWidth: 8.0,
+                eyeHeight: 9.0,
+                eyeStyle: .standard,
+                noseOffsetY: -14,
+                mouthOffsetY: -9,
+                mouthWidth: 8.0,
+                hasBlush: true,
+                blushOffsetY: -15,
+                blushSpacing: 16
+            )
+        }
+    }
+
     private static func drawFace(
         context: inout GraphicsContext,
         center: CGPoint,
@@ -572,69 +741,343 @@ public struct PetCanvasRenderer {
         snapshot: AnimationSnapshot,
         isGrayscale: Bool
     ) {
-        if model == .cyberSentry || species == .robot {
-            // High-Tech Cyber Visor
-            let visorRect = CGRect(x: center.x - 20, y: center.y - 12, width: 40, height: 12)
-            context.fill(RoundedRectangle(cornerRadius: 4).path(in: visorRect), with: .color(Color.black.opacity(0.85)))
-            let scanX = center.x - 16 + CGFloat(sin(snapshot.time * 6.0) * 12.0)
-            context.fill(Rectangle().path(in: CGRect(x: scanX, y: center.y - 10, width: 8, height: 8)), with: .color(isGrayscale ? Color.white : Color.cyan))
+        let layout = faceLayout(for: species, model: model)
+
+        // 1. Draw Eyes (handles LED sockets, spectral glows, reptilian slits, or standard gloss)
+        drawCharacterEyes(
+            context: &context,
+            center: center,
+            species: species,
+            layout: layout,
+            animState: animState,
+            snapshot: snapshot,
+            isGrayscale: isGrayscale
+        )
+
+        // 2. Draw Species-specific Nose
+        drawCharacterNose(
+            context: &context,
+            center: center,
+            species: species,
+            layout: layout,
+            isGrayscale: isGrayscale
+        )
+
+        // 3. Draw Mouth (LED smile for robots, kawaii W-mouth for bunny/cat, expressive curve)
+        drawCharacterMouth(
+            context: &context,
+            center: center,
+            species: species,
+            layout: layout,
+            animState: animState,
+            snapshot: snapshot,
+            isGrayscale: isGrayscale
+        )
+
+        // 4. Draw Soft Blush Cheeks
+        drawBlush(
+            context: &context,
+            center: center,
+            layout: layout,
+            isGrayscale: isGrayscale
+        )
+
+        // 5. Draw Whiskers for Cat
+        if species == .cat && !isGrayscale {
+            var whiskers = Path()
+            let wy = center.y - 12
+            whiskers.move(to: CGPoint(x: center.x - 22, y: wy - 2))
+            whiskers.addLine(to: CGPoint(x: center.x - 34, y: wy - 4))
+            whiskers.move(to: CGPoint(x: center.x - 22, y: wy + 3))
+            whiskers.addLine(to: CGPoint(x: center.x - 34, y: wy + 4))
+
+            whiskers.move(to: CGPoint(x: center.x + 22, y: wy - 2))
+            whiskers.addLine(to: CGPoint(x: center.x + 34, y: wy - 4))
+            whiskers.move(to: CGPoint(x: center.x + 22, y: wy + 3))
+            whiskers.addLine(to: CGPoint(x: center.x + 34, y: wy + 4))
+            context.stroke(whiskers, with: .color(Color.white.opacity(0.6)), lineWidth: 1.2)
+        }
+    }
+
+    private static func drawCharacterEyes(
+        context: inout GraphicsContext,
+        center: CGPoint,
+        species: PetSpecies,
+        layout: CharacterFaceLayout,
+        animState: PetAnimState,
+        snapshot: AnimationSnapshot,
+        isGrayscale: Bool
+    ) {
+        let eyeY = center.y + layout.eyeCenterY
+        let leftEyeX = center.x - layout.eyeSpacing + snapshot.eyeOffset.x
+        let rightEyeX = center.x + layout.eyeSpacing + snapshot.eyeOffset.x
+        let gazeY = eyeY + snapshot.eyeOffset.y
+
+        let isClosed = animState == .sleep || snapshot.blinkProgress >= 0.85
+
+        switch layout.eyeStyle {
+        case .led:
+            // Recessed Dark Socket Plate behind the eyes
+            let socketRect = CGRect(x: center.x - 18, y: eyeY - 7.5, width: 36, height: 15)
+            context.fill(RoundedRectangle(cornerRadius: 4).path(in: socketRect), with: .color(Color.black.opacity(0.88)))
+            context.stroke(RoundedRectangle(cornerRadius: 4).path(in: socketRect), with: .color(Color(white: 0.3)), lineWidth: 1.0)
+
+            // Subtle non-obscuring digital scan line
+            var scan = Path()
+            let scanY = (eyeY - 6) + CGFloat(fmod(snapshot.time * 8.0, 12.0))
+            scan.move(to: CGPoint(x: center.x - 15, y: scanY))
+            scan.addLine(to: CGPoint(x: center.x + 15, y: scanY))
+            let scanColor = (isGrayscale ? Color.white : (species == .robotcat ? Color.green : Color.cyan)).opacity(0.2)
+            context.stroke(scan, with: .color(scanColor), lineWidth: 1.0)
+
+            let ledColor = isGrayscale ? Color.white : (species == .robotcat ? Color.green : Color.cyan)
+
+            if isClosed {
+                // Dimmed horizontal LED slit during blink/sleep
+                let lSlit = Rectangle().path(in: CGRect(x: leftEyeX - 3.5, y: gazeY - 0.75, width: 7, height: 1.5))
+                let rSlit = Rectangle().path(in: CGRect(x: rightEyeX - 3.5, y: gazeY - 0.75, width: 7, height: 1.5))
+                context.fill(lSlit, with: .color(ledColor.opacity(0.4)))
+                context.fill(rSlit, with: .color(ledColor.opacity(0.4)))
+            } else {
+                // Two clearly visible glowing LED eyes: ●  ●
+                let openHeight = animState == .shock ? layout.eyeHeight * 1.25 : layout.eyeHeight
+                let h = max(2.0, openHeight * (1.0 - snapshot.blinkProgress))
+                let w = layout.eyeWidth
+
+                let lEye = RoundedRectangle(cornerRadius: 3).path(in: CGRect(x: leftEyeX - w/2, y: gazeY - h/2, width: w, height: h))
+                let rEye = RoundedRectangle(cornerRadius: 3).path(in: CGRect(x: rightEyeX - w/2, y: gazeY - h/2, width: w, height: h))
+
+                // Soft outer LED halo
+                context.fill(lEye, with: .color(ledColor.opacity(0.35)))
+                context.fill(rEye, with: .color(ledColor.opacity(0.35)))
+
+                // Crisp vibrant LED core
+                let lCore = RoundedRectangle(cornerRadius: 2).path(in: CGRect(x: leftEyeX - (w - 2)/2, y: gazeY - (h - 2)/2, width: w - 2, height: max(1.5, h - 2)))
+                let rCore = RoundedRectangle(cornerRadius: 2).path(in: CGRect(x: rightEyeX - (w - 2)/2, y: gazeY - (h - 2)/2, width: w - 2, height: max(1.5, h - 2)))
+                context.fill(lCore, with: .color(ledColor))
+                context.fill(rCore, with: .color(ledColor))
+
+                // Highlight pixel
+                if h > 3 {
+                    let lPixel = Rectangle().path(in: CGRect(x: leftEyeX - 1.5, y: gazeY - 2, width: 2, height: 2))
+                    let rPixel = Rectangle().path(in: CGRect(x: rightEyeX - 1.5, y: gazeY - 2, width: 2, height: 2))
+                    context.fill(lPixel, with: .color(Color.white))
+                    context.fill(rPixel, with: .color(Color.white))
+                }
+            }
+
+        case .spectral:
+            if isClosed {
+                var lArc = Path()
+                lArc.addArc(center: CGPoint(x: leftEyeX, y: eyeY), radius: 4.5, startAngle: .degrees(0), endAngle: .degrees(180), clockwise: false)
+                context.stroke(lArc, with: .color(Color(white: 0.15)), lineWidth: 2.0)
+
+                var rArc = Path()
+                rArc.addArc(center: CGPoint(x: rightEyeX, y: eyeY), radius: 4.5, startAngle: .degrees(0), endAngle: .degrees(180), clockwise: false)
+                context.stroke(rArc, with: .color(Color(white: 0.15)), lineWidth: 2.0)
+            } else {
+                let openHeight = animState == .shock ? layout.eyeHeight * 1.3 : layout.eyeHeight
+                let h = max(1.5, openHeight * (1.0 - snapshot.blinkProgress))
+                let w = layout.eyeWidth
+
+                let lEye = Ellipse().path(in: CGRect(x: leftEyeX - w/2, y: gazeY - h/2, width: w, height: h))
+                let rEye = Ellipse().path(in: CGRect(x: rightEyeX - w/2, y: gazeY - h/2, width: w, height: h))
+                context.fill(lEye, with: .color(Color(white: 0.12)))
+                context.fill(rEye, with: .color(Color(white: 0.12)))
+
+                // Inner spectral blue-cyan glow
+                if !isGrayscale && h > 4 {
+                    let lGlow = Ellipse().path(in: CGRect(x: leftEyeX - (w - 3)/2, y: gazeY - (h - 3)/2, width: w - 3, height: h - 3))
+                    let rGlow = Ellipse().path(in: CGRect(x: rightEyeX - (w - 3)/2, y: gazeY - (h - 3)/2, width: w - 3, height: h - 3))
+                    context.fill(lGlow, with: .color(Color.cyan.opacity(0.25)))
+                    context.fill(rGlow, with: .color(Color.cyan.opacity(0.25)))
+                }
+
+                if h > 3.5 {
+                    let lSpark = Circle().path(in: CGRect(x: leftEyeX - 1.5, y: gazeY - 2.5, width: 3, height: 3))
+                    let rSpark = Circle().path(in: CGRect(x: rightEyeX - 1.5, y: gazeY - 2.5, width: 3, height: 3))
+                    context.fill(lSpark, with: .color(Color.white))
+                    context.fill(rSpark, with: .color(Color.white))
+                }
+            }
+
+        case .reptilian:
+            if isClosed {
+                var lArc = Path()
+                lArc.addArc(center: CGPoint(x: leftEyeX, y: eyeY), radius: 4.5, startAngle: .degrees(0), endAngle: .degrees(180), clockwise: false)
+                context.stroke(lArc, with: .color(Color(white: 0.15)), lineWidth: 2.0)
+
+                var rArc = Path()
+                rArc.addArc(center: CGPoint(x: rightEyeX, y: eyeY), radius: 4.5, startAngle: .degrees(0), endAngle: .degrees(180), clockwise: false)
+                context.stroke(rArc, with: .color(Color(white: 0.15)), lineWidth: 2.0)
+            } else {
+                let openHeight = animState == .shock ? layout.eyeHeight * 1.25 : layout.eyeHeight
+                let h = max(1.5, openHeight * (1.0 - snapshot.blinkProgress))
+                let w = layout.eyeWidth
+
+                // Amber / Gold iris
+                let lIris = Ellipse().path(in: CGRect(x: leftEyeX - w/2, y: gazeY - h/2, width: w, height: h))
+                let rIris = Ellipse().path(in: CGRect(x: rightEyeX - w/2, y: gazeY - h/2, width: w, height: h))
+                context.fill(lIris, with: .color(isGrayscale ? Color.white : Color(red: 1.0, green: 0.72, blue: 0.18)))
+                context.stroke(lIris, with: .color(Color(white: 0.15)), lineWidth: 1.0)
+                context.stroke(rIris, with: .color(Color(white: 0.15)), lineWidth: 1.0)
+
+                // Vertical slit pupil
+                if h > 2.5 {
+                    let pupilW: CGFloat = animState == .shock ? 3.0 : 1.8
+                    let lPupil = Capsule().path(in: CGRect(x: leftEyeX - pupilW/2, y: gazeY - (h - 2)/2, width: pupilW, height: max(1.5, h - 2)))
+                    let rPupil = Capsule().path(in: CGRect(x: rightEyeX - pupilW/2, y: gazeY - (h - 2)/2, width: pupilW, height: max(1.5, h - 2)))
+                    context.fill(lPupil, with: .color(Color(white: 0.08)))
+                    context.fill(rPupil, with: .color(Color(white: 0.08)))
+
+                    let lGleam = Circle().path(in: CGRect(x: leftEyeX - 1.5, y: gazeY - 2.5, width: 2.5, height: 2.5))
+                    let rGleam = Circle().path(in: CGRect(x: rightEyeX - 1.5, y: gazeY - 2.5, width: 2.5, height: 2.5))
+                    context.fill(lGleam, with: .color(Color.white.opacity(0.85)))
+                    context.fill(rGleam, with: .color(Color.white.opacity(0.85)))
+                }
+            }
+
+        case .standard:
+            if isClosed {
+                var lArc = Path()
+                lArc.addArc(center: CGPoint(x: leftEyeX, y: eyeY), radius: 4.5, startAngle: .degrees(0), endAngle: .degrees(180), clockwise: false)
+                context.stroke(lArc, with: .color(Color(white: 0.15)), lineWidth: 2.2)
+
+                var rArc = Path()
+                rArc.addArc(center: CGPoint(x: rightEyeX, y: eyeY), radius: 4.5, startAngle: .degrees(0), endAngle: .degrees(180), clockwise: false)
+                context.stroke(rArc, with: .color(Color(white: 0.15)), lineWidth: 2.2)
+            } else {
+                let openHeight = animState == .shock ? layout.eyeHeight * 1.3 : layout.eyeHeight
+                let h = max(1.5, openHeight * (1.0 - snapshot.blinkProgress))
+                let w = layout.eyeWidth
+
+                let lEye = Ellipse().path(in: CGRect(x: leftEyeX - w/2, y: gazeY - h/2, width: w, height: h))
+                let rEye = Ellipse().path(in: CGRect(x: rightEyeX - w/2, y: gazeY - h/2, width: w, height: h))
+
+                context.fill(lEye, with: .color(Color(white: 0.12)))
+                context.fill(rEye, with: .color(Color(white: 0.12)))
+
+                // Specular gleams for expressive kawaii eyes
+                if h > 4 {
+                    let lSpark = Circle().path(in: CGRect(x: leftEyeX - 2, y: gazeY - 3, width: 3.2, height: 3.2))
+                    let rSpark = Circle().path(in: CGRect(x: rightEyeX - 2, y: gazeY - 3, width: 3.2, height: 3.2))
+                    context.fill(lSpark, with: .color(Color.white))
+                    context.fill(rSpark, with: .color(Color.white))
+
+                    let lSub = Circle().path(in: CGRect(x: leftEyeX + 1, y: gazeY + 1, width: 1.6, height: 1.6))
+                    let rSub = Circle().path(in: CGRect(x: rightEyeX + 1, y: gazeY + 1, width: 1.6, height: 1.6))
+                    context.fill(lSub, with: .color(Color.white.opacity(0.8)))
+                    context.fill(rSub, with: .color(Color.white.opacity(0.8)))
+                }
+            }
+        }
+    }
+
+    private static func drawCharacterNose(
+        context: inout GraphicsContext,
+        center: CGPoint,
+        species: PetSpecies,
+        layout: CharacterFaceLayout,
+        isGrayscale: Bool
+    ) {
+        guard let nY = layout.noseOffsetY else { return }
+        let noseY = center.y + nY
+
+        switch species {
+        case .bunny:
+            // Soft pink triangle nose
+            var nose = Path()
+            nose.move(to: CGPoint(x: center.x - 3, y: noseY - 1.5))
+            nose.addLine(to: CGPoint(x: center.x + 3, y: noseY - 1.5))
+            nose.addLine(to: CGPoint(x: center.x, y: noseY + 2))
+            nose.closeSubpath()
+            context.fill(nose, with: .color(isGrayscale ? Color(white: 0.25) : Color(red: 1.0, green: 0.55, blue: 0.65)))
+
+        case .cat:
+            // Tiny inverted pink/dark triangle nose
+            var nose = Path()
+            nose.move(to: CGPoint(x: center.x - 2.5, y: noseY - 1))
+            nose.addLine(to: CGPoint(x: center.x + 2.5, y: noseY - 1))
+            nose.addLine(to: CGPoint(x: center.x, y: noseY + 1.8))
+            nose.closeSubpath()
+            context.fill(nose, with: .color(isGrayscale ? Color(white: 0.2) : Color(red: 0.95, green: 0.5, blue: 0.6)))
+
+        case .dragon:
+            // Two dark nostril dots on snout
+            let lNostril = Circle().path(in: CGRect(x: center.x - 3.5, y: noseY - 1, width: 2, height: 2))
+            let rNostril = Circle().path(in: CGRect(x: center.x + 1.5, y: noseY - 1, width: 2, height: 2))
+            context.fill(lNostril, with: .color(Color(white: 0.15)))
+            context.fill(rNostril, with: .color(Color(white: 0.15)))
+
+        case .robotcat:
+            // Metallic sensor bar
+            let bar = RoundedRectangle(cornerRadius: 1).path(in: CGRect(x: center.x - 2.5, y: noseY - 1, width: 5, height: 2))
+            context.fill(bar, with: .color(isGrayscale ? Color.white : Color.green.opacity(0.8)))
+
+        case .fox:
+            // Black glossy nose on snout tip
+            let nose = Circle().path(in: CGRect(x: center.x - 2.5, y: noseY - 2.5, width: 5, height: 5))
+            context.fill(nose, with: .color(Color.black))
+
+        default:
+            break
+        }
+    }
+
+    private static func drawCharacterMouth(
+        context: inout GraphicsContext,
+        center: CGPoint,
+        species: PetSpecies,
+        layout: CharacterFaceLayout,
+        animState: PetAnimState,
+        snapshot: AnimationSnapshot,
+        isGrayscale: Bool
+    ) {
+        let mouthY = center.y + layout.mouthOffsetY
+        let halfW = layout.mouthWidth / 2
+
+        if layout.eyeStyle == .led {
+            // Digital LED smile or segmented line
+            var ledMouth = Path()
+            ledMouth.move(to: CGPoint(x: center.x - halfW, y: mouthY))
+            ledMouth.addQuadCurve(to: CGPoint(x: center.x + halfW, y: mouthY), control: CGPoint(x: center.x, y: mouthY + 2.5))
+            let mColor = isGrayscale ? Color.white : (species == .robotcat ? Color.green : Color.cyan)
+            context.stroke(ledMouth, with: .color(mColor), lineWidth: 1.6)
             return
         }
 
-        let eyeY = center.y - 8
-        let leftEyeX = center.x - 14 + snapshot.eyeOffset.x
-        let rightEyeX = center.x + 14 + snapshot.eyeOffset.x
-        let gazeY = eyeY + snapshot.eyeOffset.y
-
-        let openHeight: CGFloat = animState == .shock ? 14.0 : 10.0
-        let currentEyeHeight = max(1.5, openHeight * (1.0 - snapshot.blinkProgress))
-
-        if animState == .sleep || snapshot.blinkProgress >= 0.85 {
-            // Closed Sleeping / Blinking Eye Arcs
-            var lArc = Path()
-            lArc.addArc(center: CGPoint(x: leftEyeX, y: eyeY), radius: 5, startAngle: .degrees(0), endAngle: .degrees(180), clockwise: false)
-            context.stroke(lArc, with: .color(Color(white: 0.15)), lineWidth: 2.2)
-
-            var rArc = Path()
-            rArc.addArc(center: CGPoint(x: rightEyeX, y: eyeY), radius: 5, startAngle: .degrees(0), endAngle: .degrees(180), clockwise: false)
-            context.stroke(rArc, with: .color(Color(white: 0.15)), lineWidth: 2.2)
-        } else {
-            // Open Eyes with Highlights
-            let eyeWidth: CGFloat = 9.0
-            let lEye = Ellipse().path(in: CGRect(x: leftEyeX - eyeWidth/2, y: gazeY - currentEyeHeight/2, width: eyeWidth, height: currentEyeHeight))
-            let rEye = Ellipse().path(in: CGRect(x: rightEyeX - eyeWidth/2, y: gazeY - currentEyeHeight/2, width: eyeWidth, height: currentEyeHeight))
-
-            context.fill(lEye, with: .color(Color(white: 0.12)))
-            context.fill(rEye, with: .color(Color(white: 0.12)))
-
-            if currentEyeHeight > 4 {
-                let lSpark = Circle().path(in: CGRect(x: leftEyeX - 2, y: gazeY - 3, width: 3.5, height: 3.5))
-                let rSpark = Circle().path(in: CGRect(x: rightEyeX - 2, y: gazeY - 3, width: 3.5, height: 3.5))
-                context.fill(lSpark, with: .color(Color.white))
-                context.fill(rSpark, with: .color(Color.white))
-            }
+        if animState == .shock {
+            let oMouth = Ellipse().path(in: CGRect(x: center.x - 3.5, y: mouthY - 3, width: 7, height: 8))
+            context.fill(oMouth, with: .color(Color(white: 0.12)))
+            return
         }
 
-        // Whiskers for Cat
-        if species == .cat && !isGrayscale {
-            var whiskers = Path()
-            whiskers.move(to: CGPoint(x: center.x - 22, y: center.y - 2))
-            whiskers.addLine(to: CGPoint(x: center.x - 34, y: center.y - 4))
-            whiskers.move(to: CGPoint(x: center.x - 22, y: center.y + 3))
-            whiskers.addLine(to: CGPoint(x: center.x - 34, y: center.y + 4))
-
-            whiskers.move(to: CGPoint(x: center.x + 22, y: center.y - 2))
-            whiskers.addLine(to: CGPoint(x: center.x + 34, y: center.y - 4))
-            whiskers.move(to: CGPoint(x: center.x + 22, y: center.y + 3))
-            whiskers.addLine(to: CGPoint(x: center.x + 34, y: center.y + 4))
-            context.stroke(whiskers, with: .color(Color.white.opacity(0.6)), lineWidth: 1.2)
-        }
-
-        // Cute Mouth
         var mouth = Path()
-        mouth.move(to: CGPoint(x: center.x - 4, y: center.y + 5))
-        mouth.addQuadCurve(to: CGPoint(x: center.x + 4, y: center.y + 5), control: CGPoint(x: center.x, y: center.y + 8))
-        context.stroke(mouth, with: .color(Color(white: 0.2)), lineWidth: 1.8)
+        if species == .bunny || species == .cat {
+            // Kawaii W-mouth (3-shaped)
+            mouth.move(to: CGPoint(x: center.x - halfW, y: mouthY - 1))
+            mouth.addQuadCurve(to: CGPoint(x: center.x, y: mouthY), control: CGPoint(x: center.x - halfW/2, y: mouthY + 2.5))
+            mouth.addQuadCurve(to: CGPoint(x: center.x + halfW, y: mouthY - 1), control: CGPoint(x: center.x + halfW/2, y: mouthY + 2.5))
+        } else {
+            // Sweet smiling curve
+            mouth.move(to: CGPoint(x: center.x - halfW, y: mouthY))
+            mouth.addQuadCurve(to: CGPoint(x: center.x + halfW, y: mouthY), control: CGPoint(x: center.x, y: mouthY + 3.0))
+        }
+        context.stroke(mouth, with: .color(Color(white: 0.18)), lineWidth: 1.8)
+    }
+
+    private static func drawBlush(
+        context: inout GraphicsContext,
+        center: CGPoint,
+        layout: CharacterFaceLayout,
+        isGrayscale: Bool
+    ) {
+        guard layout.hasBlush && !isGrayscale else { return }
+        let blushY = center.y + layout.blushOffsetY
+        let lBlush = Ellipse().path(in: CGRect(x: center.x - layout.blushSpacing - 4, y: blushY - 2.5, width: 8, height: 5))
+        let rBlush = Ellipse().path(in: CGRect(x: center.x + layout.blushSpacing - 4, y: blushY - 2.5, width: 8, height: 5))
+        context.fill(lBlush, with: .color(Color.pink.opacity(0.35)))
+        context.fill(rBlush, with: .color(Color.pink.opacity(0.35)))
     }
 
     // MARK: - Layer 4 & 5: Optional Particles & Weather Overlay

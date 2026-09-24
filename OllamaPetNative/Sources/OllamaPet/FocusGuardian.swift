@@ -10,6 +10,23 @@ public class FocusGuardian: ObservableObject {
     @Published public var sessionTotalSeconds: Int = 25 * 60
     @Published public var userIsAway: Bool = false
 
+    // Custom configuration inputs
+    @Published public var customHours: Int = 0
+    @Published public var customMinutes: Int = 25
+    @Published public var customSeconds: Int = 0
+
+    public var hours: Int { remainingSeconds / 3600 }
+    public var minutes: Int { (remainingSeconds % 3600) / 60 }
+    public var seconds: Int { remainingSeconds % 60 }
+
+    public var formattedTime: String {
+        if hours > 0 {
+            return String(format: "%02d:%02d:%02d", hours, minutes, seconds)
+        } else {
+            return String(format: "%02d:%02d", minutes, seconds)
+        }
+    }
+
     private var sessionTimer: Timer?
     private var hydrationTimer: Timer?
     private var lastAwayNotificationDate: Date? = nil
@@ -19,13 +36,29 @@ public class FocusGuardian: ObservableObject {
         startHydrationTimerIfNeeded()
     }
 
-    public func startFocusSession(minutes: Int = 25) {
-        remainingSeconds = minutes * 60
-        sessionTotalSeconds = minutes * 60
+    // MARK: - Focus Session Lifecycle
+
+    public func startFocusSession(totalSeconds: Int? = nil) {
+        let secs: Int
+        if let s = totalSeconds {
+            secs = max(1, s)
+            sessionTotalSeconds = secs
+            remainingSeconds = secs
+            customHours = secs / 3600
+            customMinutes = (secs % 3600) / 60
+            customSeconds = secs % 60
+        } else if !isSessionActive && (remainingSeconds == 0 || remainingSeconds == sessionTotalSeconds) {
+            secs = max(1, (customHours * 3600) + (customMinutes * 60) + customSeconds)
+            sessionTotalSeconds = secs
+            remainingSeconds = secs
+        } else {
+            secs = remainingSeconds
+        }
+
         isSessionActive = true
         userIsAway = false
 
-        // Start session countdown
+        // Start 1-second countdown timer
         sessionTimer?.invalidate()
         sessionTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             Task { @MainActor in
@@ -47,6 +80,11 @@ public class FocusGuardian: ObservableObject {
         SoundEffect.wake.play()
     }
 
+    // Convenience method for minutes
+    public func startFocusSession(minutes: Int) {
+        startFocusSession(totalSeconds: minutes * 60)
+    }
+
     public func pauseFocusSession() {
         isSessionActive = false
         sessionTimer?.invalidate()
@@ -57,19 +95,42 @@ public class FocusGuardian: ObservableObject {
         ScreenGuardian.shared.stopMonitoring()
     }
 
-    public func resetFocusSession(minutes: Int = 25) {
+    public func resetFocusSession(totalSeconds: Int? = nil) {
         pauseFocusSession()
-        remainingSeconds = minutes * 60
-        sessionTotalSeconds = minutes * 60
+        let secs: Int
+        if let s = totalSeconds {
+            secs = max(1, s)
+            customHours = secs / 3600
+            customMinutes = (secs % 3600) / 60
+            customSeconds = secs % 60
+        } else {
+            secs = max(1, (customHours * 3600) + (customMinutes * 60) + customSeconds)
+        }
+        sessionTotalSeconds = secs
+        remainingSeconds = secs
         userIsAway = false
+    }
+
+    public func resetFocusSession(minutes: Int) {
+        resetFocusSession(totalSeconds: minutes * 60)
+    }
+
+    public func applyPreset(seconds: Int) {
+        pauseFocusSession()
+        customHours = seconds / 3600
+        customMinutes = (seconds % 3600) / 60
+        customSeconds = seconds % 60
+        sessionTotalSeconds = seconds
+        remainingSeconds = seconds
     }
 
     private func tick() {
         guard isSessionActive else { return }
 
-        if remainingSeconds > 0 {
+        if remainingSeconds > 1 {
             remainingSeconds -= 1
         } else {
+            remainingSeconds = 0
             completeSession()
         }
     }

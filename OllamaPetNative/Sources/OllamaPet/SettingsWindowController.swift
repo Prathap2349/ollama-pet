@@ -15,6 +15,7 @@ public class SettingsWindowController: NSObject, NSWindowDelegate {
         if window == nil {
             setupWindow()
         }
+        window?.level = NSWindow.Level(NSWindow.Level.floating.rawValue + 1)
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
@@ -36,6 +37,16 @@ public class SettingsWindowController: NSObject, NSWindowDelegate {
         let settingsView = SettingsContainerView()
         win.contentView = NSHostingView(rootView: settingsView)
         self.window = win
+    }
+
+    public func windowDidBecomeKey(_ notification: Notification) {
+        // Keep settings above floating pet panel while focused
+        window?.level = NSWindow.Level(NSWindow.Level.floating.rawValue + 1)
+    }
+
+    public func windowDidResignKey(_ notification: Notification) {
+        // Return to normal level when another app is focused
+        window?.level = .normal
     }
 
     public func windowWillClose(_ notification: Notification) {
@@ -298,38 +309,19 @@ struct CharacterSettingsSection: View {
             .padding(14)
             .background(RoundedRectangle(cornerRadius: 12).fill(Color.primary.opacity(0.03)))
 
-            // Species Grid (All 7 species)
+            // Species Grid (All 7 species with live native Canvas preview cards)
             Text("Select Companion")
                 .font(.system(size: 14, weight: .semibold))
 
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 10)], spacing: 10) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 10)], spacing: 10) {
                 ForEach(PetSpecies.allCases) { species in
-                    let isSelected = petState.currentSpecies == species
-                    Button(action: {
-                        petState.setSpecies(species)
-                    }) {
-                        VStack(spacing: 6) {
-                            Text(species.icon)
-                                .font(.system(size: 28))
-                            Text(species.displayName)
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundColor(isSelected ? .white : .primary)
-                            Text(species.speciesName)
-                                .font(.system(size: 10))
-                                .foregroundColor(isSelected ? .white.opacity(0.8) : .secondary)
+                    SpeciesPreviewCard(
+                        species: species,
+                        isSelected: petState.currentSpecies == species,
+                        action: {
+                            petState.setSpecies(species)
                         }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .background(
-                            RoundedRectangle(cornerRadius: 10)
-                                .fill(isSelected ? Color.accentColor : Color.primary.opacity(0.05))
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 10)
-                                .stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 1.5)
-                        )
-                    }
-                    .buttonStyle(.plain)
+                    )
                 }
             }
 
@@ -364,6 +356,76 @@ struct CharacterSettingsSection: View {
         case .fox: return "Large angled ears with dark rims, elongated muzzle, giant bushy white-tipped tail."
         case .bunny: return "Long upright ears, spherical body, hopping hind limbs, round cotton puff tail."
         }
+    }
+}
+
+// MARK: - Native Character Preview Card
+
+struct SpeciesPreviewCard: View {
+    let species: PetSpecies
+    let isSelected: Bool
+    @ObservedObject var perf = PerformanceManager.shared
+    @ObservedObject var motion = CharacterMotionStateMachine.shared
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 8) {
+                // Live Canvas Preview
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(perf.grayscaleTestMode ? Color(white: 0.15) : Color.black.opacity(0.85))
+
+                    TimelineView(.animation(minimumInterval: perf.minimumRenderInterval)) { (timeline: TimelineViewDefaultContext) in
+                        Canvas { context, size in
+                            let t = timeline.date.timeIntervalSinceReferenceDate
+                            let snapshot = motion.evaluateSnapshot(
+                                at: t,
+                                animState: .idle,
+                                atmosphere: .clearDay,
+                                isSafeMode: perf.isSafeMode
+                            )
+                            let model = CharacterStructuralModel.model(for: species)
+                            PetCanvasRenderer.draw(
+                                context: &context,
+                                size: size,
+                                species: species,
+                                model: model,
+                                animState: .idle,
+                                snapshot: snapshot,
+                                perf: perf
+                            )
+                        }
+                    }
+                }
+                .frame(height: 76)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                VStack(spacing: 2) {
+                    HStack(spacing: 4) {
+                        Text(species.icon)
+                            .font(.system(size: 13))
+                        Text(species.displayName)
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(isSelected ? .accentColor : .primary)
+                    }
+                    Text(species.speciesName)
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                }
+            }
+            .padding(8)
+            .frame(maxWidth: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(isSelected ? Color.accentColor.opacity(0.12) : Color.primary.opacity(0.04))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(isSelected ? Color.accentColor : Color.primary.opacity(0.08), lineWidth: isSelected ? 2 : 1)
+            )
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -885,32 +947,180 @@ struct ScreenSettingsSection: View {
 
 struct FocusSettingsSection: View {
     @ObservedObject var focus = FocusGuardian.shared
+    @ObservedObject var dataManager = DataManager.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Text("Focus & Ergonomics")
+            Text("Focus Guardian & Health Ergonomics")
                 .font(.system(size: 18, weight: .bold))
 
-            Toggle(isOn: Binding(
-                get: { focus.isSessionActive },
-                set: { active in
-                    if active {
-                        focus.startFocusSession()
-                    } else {
-                        focus.pauseFocusSession()
+            // 1. Default Session Duration
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Default Focus Duration")
+                    .font(.system(size: 13, weight: .semibold))
+
+                Text("Configure your standard timer length for new focus sessions.")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+
+                HStack(spacing: 16) {
+                    HStack(spacing: 4) {
+                        Picker("H", selection: Binding(
+                            get: { focus.customHours },
+                            set: {
+                                focus.customHours = $0
+                                focus.applyPreset(seconds: ($0 * 3600) + (focus.customMinutes * 60) + focus.customSeconds)
+                            }
+                        )) {
+                            ForEach(0...12, id: \.self) { h in
+                                Text("\(h)").tag(h)
+                            }
+                        }
+                        .frame(width: 60)
+                        Text("hr")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
                     }
-                }
-            )) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Enable Pomodoro / Focus Reminders")
-                        .font(.system(size: 13, weight: .semibold))
-                    Text("Encourages periodic eye breaks and hydration.")
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
+
+                    HStack(spacing: 4) {
+                        Picker("M", selection: Binding(
+                            get: { focus.customMinutes },
+                            set: {
+                                focus.customMinutes = $0
+                                focus.applyPreset(seconds: (focus.customHours * 3600) + ($0 * 60) + focus.customSeconds)
+                            }
+                        )) {
+                            ForEach(0...59, id: \.self) { m in
+                                Text("\(m)").tag(m)
+                            }
+                        }
+                        .frame(width: 60)
+                        Text("min")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                    }
+
+                    HStack(spacing: 4) {
+                        Picker("S", selection: Binding(
+                            get: { focus.customSeconds },
+                            set: {
+                                focus.customSeconds = $0
+                                focus.applyPreset(seconds: (focus.customHours * 3600) + (focus.customMinutes * 60) + $0)
+                            }
+                        )) {
+                            ForEach(0...59, id: \.self) { s in
+                                Text("\(s)").tag(s)
+                            }
+                        }
+                        .frame(width: 60)
+                        Text("sec")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                    }
+
+                    Spacer()
+
+                    Text("Preset: \(focus.formattedTime)")
+                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.06)))
                 }
             }
             .padding(14)
             .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
+
+            // 2. Step-Away Alerts Toggle
+            VStack(alignment: .leading, spacing: 8) {
+                Toggle(isOn: Binding(
+                    get: { dataManager.savedData.focusNotificationsEnabled ?? true },
+                    set: {
+                        dataManager.savedData.focusNotificationsEnabled = $0
+                        dataManager.saveData()
+                    }
+                )) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Step-Away & Absence Alerts")
+                            .font(.system(size: 13, weight: .semibold))
+                        Text("Pet notifies you when you step away during an active focus block.")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+            .padding(14)
+            .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
+
+            // 3. Hydration Reminders & Interval
+            VStack(alignment: .leading, spacing: 10) {
+                Toggle(isOn: Binding(
+                    get: { dataManager.savedData.hydrationReminderEnabled ?? true },
+                    set: {
+                        dataManager.savedData.hydrationReminderEnabled = $0
+                        dataManager.saveData()
+                        focus.startHydrationTimerIfNeeded()
+                    }
+                )) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Hydration & Eye Break Reminders")
+                            .font(.system(size: 13, weight: .semibold))
+                        Text("Pet periodically reminds you to drink water and look away from the screen.")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                    }
+                }
+
+                if dataManager.savedData.hydrationReminderEnabled ?? true {
+                    Divider()
+                        .padding(.vertical, 2)
+
+                    HStack {
+                        Text("Reminder Interval")
+                            .font(.system(size: 12, weight: .medium))
+                        Spacer()
+                        Picker("", selection: Binding(
+                            get: { dataManager.savedData.hydrationIntervalMinutes ?? 60 },
+                            set: {
+                                dataManager.savedData.hydrationIntervalMinutes = $0
+                                dataManager.saveData()
+                                focus.startHydrationTimerIfNeeded()
+                            }
+                        )) {
+                            Text("Every 20 minutes (20-20-20 rule)").tag(20)
+                            Text("Every 30 minutes").tag(30)
+                            Text("Every 45 minutes").tag(45)
+                            Text("Every 60 minutes (Default)").tag(60)
+                            Text("Every 90 minutes").tag(90)
+                        }
+                        .labelsHidden()
+                        .frame(width: 240)
+                    }
+                }
+            }
+            .padding(14)
+            .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
+
+            // 4. Quick Action to Start/Stop Session
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(focus.isSessionActive ? "Focus Session Running: \(focus.formattedTime)" : "Focus Session Inactive")
+                        .font(.system(size: 13, weight: .semibold))
+                    Text(focus.isSessionActive ? "Click Pause or switch to Chat panel to manage." : "Start now using configured duration.")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                }
+                Spacer()
+                Button(focus.isSessionActive ? "Pause Session" : "Start Focus Session") {
+                    if focus.isSessionActive {
+                        focus.pauseFocusSession()
+                    } else {
+                        focus.startFocusSession()
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+            }
+            .padding(14)
+            .background(RoundedRectangle(cornerRadius: 10).fill(Color.accentColor.opacity(0.08)))
         }
     }
 }

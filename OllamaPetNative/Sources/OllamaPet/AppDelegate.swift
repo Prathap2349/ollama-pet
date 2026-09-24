@@ -94,25 +94,8 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func setupGlobalShortcut() {
-        // Global monitor for Cmd+Shift+P
-        NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { event in
-            if event.modifierFlags.contains([.command, .shift]) && event.keyCode == 35 { // 35 is Key code for 'p'
-                Task { @MainActor in
-                    PetWindowController.shared.toggleVisibility()
-                }
-            }
-        }
-
-        // Local monitor when key in app
-        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            if event.modifierFlags.contains([.command, .shift]) && event.keyCode == 35 {
-                Task { @MainActor in
-                    PetWindowController.shared.toggleVisibility()
-                }
-                return nil
-            }
-            return event
-        }
+        // Initialize centralized ShortcutManager
+        _ = ShortcutManager.shared
     }
 
     private func startReminderTimer() {

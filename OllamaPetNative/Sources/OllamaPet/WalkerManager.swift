@@ -11,7 +11,7 @@ public class WalkerManager: ObservableObject {
 
     public init() {}
 
-    public func startWalk(species: PetSpecies) {
+    public func startWalk(species: PetSpecies, isTest: Bool = false) {
         guard !isWalking else { return }
         isWalking = true
 
@@ -21,11 +21,14 @@ public class WalkerManager: ObservableObject {
         }
 
         let screenFrame = screen.visibleFrame
-        let panelHeight: CGFloat = 100
+        let panelHeight: CGFloat = 110
+        let panelWidth = isTest ? min(480, screenFrame.width) : screenFrame.width
+        let panelX = isTest ? (screenFrame.midX - panelWidth / 2) : screenFrame.minX
+
         let panelFrame = NSRect(
-            x: screenFrame.minX,
-            y: screenFrame.minY + 10,
-            width: screenFrame.width,
+            x: panelX,
+            y: screenFrame.minY + 15,
+            width: panelWidth,
             height: panelHeight
         )
 
@@ -43,10 +46,13 @@ public class WalkerManager: ObservableObject {
         panel.ignoresMouseEvents = true
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
 
-        let walkSvg = PetSVGProvider.walkSvg(for: species)
+        let speedMultiplier = DataManager.shared.savedData.walkSpeed ?? 1.0
+
         let walkView = WalkerAnimationView(
-            svgString: walkSvg,
-            screenWidth: screenFrame.width,
+            species: species,
+            screenWidth: panelWidth,
+            speedMultiplier: speedMultiplier,
+            isTest: isTest,
             onComplete: { [weak self] in
                 Task { @MainActor in
                     self?.walkerPanel?.close()
@@ -63,51 +69,72 @@ public class WalkerManager: ObservableObject {
 }
 
 struct WalkerAnimationView: View {
-    let svgString: String
+    let species: PetSpecies
     let screenWidth: CGFloat
+    let speedMultiplier: Double
+    let isTest: Bool
     let onComplete: () -> Void
 
-    @State private var xOffset: CGFloat = -100
+    @State private var xOffset: CGFloat = -80
     @State private var isFlipped: Bool = false
+    @State private var animTime: Double = 0.0
+    @State private var timer: Timer?
 
     var body: some View {
         ZStack(alignment: .bottomLeading) {
             Color.clear
 
-            if let data = svgString.data(using: .utf8), let nsImg = NSImage(data: data) {
+            let svgStr = PetSVGProvider.walkSvg(for: species, t: animTime)
+            if let data = svgStr.data(using: .utf8), let nsImg = NSImage(data: data) {
                 Image(nsImage: nsImg)
                     .resizable()
-                    .frame(width: 60, height: 60)
+                    .frame(width: 70, height: 70)
                     .scaleEffect(x: isFlipped ? -1 : 1, y: 1)
                     .offset(x: xOffset, y: -10)
             }
         }
         .frame(width: screenWidth, height: 100)
         .onAppear {
+            startAnimationLoop()
             runWalkSequence()
+        }
+        .onDisappear {
+            timer?.invalidate()
+            timer = nil
+        }
+    }
+
+    private func startAnimationLoop() {
+        timer?.invalidate()
+        timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { _ in
+            Task { @MainActor in
+                self.animTime += 1.0 / 30.0
+            }
         }
     }
 
     private func runWalkSequence() {
-        let forwardDuration = Double.random(in: 6.0...8.0)
-        let backwardDuration = Double.random(in: 6.0...8.0)
+        let baseDuration: Double = isTest ? 3.5 : 7.0
+        let effectiveDuration = max(1.5, baseDuration / max(0.5, speedMultiplier))
 
         // Phase 1: Forward walk (left to right)
-        withAnimation(.linear(duration: forwardDuration)) {
-            xOffset = screenWidth + 50
+        withAnimation(.linear(duration: effectiveDuration)) {
+            xOffset = screenWidth + 20
         }
 
-        // Phase 2: Pause 200ms, flip, then walk backward (right to left)
         Task {
-            try? await Task.sleep(nanoseconds: UInt64(forwardDuration * 1_000_000_000))
+            try? await Task.sleep(nanoseconds: UInt64(effectiveDuration * 1_000_000_000))
             isFlipped = true
             try? await Task.sleep(nanoseconds: 200_000_000)
 
-            withAnimation(.linear(duration: backwardDuration)) {
-                xOffset = -100
+            // Phase 2: Walk backward (right to left)
+            withAnimation(.linear(duration: effectiveDuration)) {
+                xOffset = -80
             }
 
-            try? await Task.sleep(nanoseconds: UInt64(backwardDuration * 1_000_000_000))
+            try? await Task.sleep(nanoseconds: UInt64(effectiveDuration * 1_000_000_000))
+            timer?.invalidate()
+            timer = nil
             onComplete()
         }
     }

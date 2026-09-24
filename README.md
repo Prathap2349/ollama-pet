@@ -30,15 +30,19 @@ Ollama Pet is built natively for macOS using **Swift**, **SwiftUI**, and **AppKi
 
 | Feature | What it does |
 |---|---|
-| 💬 **AI Chat** | Talk to your pet using local Ollama models (`llama3.2`, `gemma2`, `phi3`, etc.). Auto-detects installed models and supports exact-prompt retries. |
+| 💬 **AI Chat & Voice Assistant** | Talk to your pet using local Ollama models (`llama3.2`, `gemma2`, `phi3`, etc.). Includes full Push-to-Talk speech recognition (`SFSpeechRecognizer`), voice responses (`AVSpeechSynthesizer`), and voice speed/volume controls. |
 | 🐾 **7 Unique Characters** | **Mochi** (Cat 🐱), **Ember** (Dragon 🐉), **ARIA** (Robot 🤖), **NEO** (RobotCat 🐱‍💻), **BOO** (Ghost 👻), **KITA** (Fox 🦊), and **POCHI** (Bunny 🐰) — each with distinct anatomy, silhouettes, facial features, and animations. |
 | 🎭 **5 Animation States** | `Idle`, `Dance`, `Thinking`, `Sleep` (with Zzz bubbles), and `Shock`. |
+| 🚶 **Realistic Gaits & Walk Mode** | Species-tailored walking physics: Cat quad-stride, Fox trot, Bunny hops, Dragon wing-beats, Robot mechanical walk, and Ghost floating waves. Includes speed controls ($0.5\times - 2.0\times$) and preview test walk. |
+| 👁️ **Optional Vision Guardian** | Privacy-first Apple Vision human detection. Periodically scans ($640\times 480$, 5s/10s/30s) to detect presence, prevent prolonged stillness, and welcome you back when returning to your desk. Off by default. |
+| 🖥️ **Optional Screen Context** | Lightweight activity awareness checking active app context (Coding, Terminal, Browser, Documents) without continuous screen recording. Off by default. |
+| 🍅 **Focus Guardian & Hydration** | Built-in 25-minute focus session with Vision break alerts and periodic hydration reminders (30/60/90 mins). |
 | 🎵 **Music & Dance** | Upload an audio file — AVFoundation metering powers a live beat visualizer with selectable dance vibes. |
 | ⏰ **Persistent Reminders** | Set reminders that survive restarts (`~/ollama-pet-data.json`). Delivers system notifications via `UNUserNotificationCenter`. |
 | 🌤️ **Live Weather** | Search any city worldwide via Open-Meteo for real-time temperature, condition icons, and daily highs/lows. |
-| 🍅 **Pomodoro Timer** | Built-in 25-minute focus session and 5-minute break timers with desktop alerts. |
 | 📊 **System Vitals** | Real Mach kernel CPU load, IOKit battery percentage/charging status, system uptime, and active foreground apps. |
-| 🚶 **Walk Mode** | Pet hops into a borderless bottom panel and walks across your screen with natural turnarounds. |
+| ⌨️ **Customizable Shortcuts** | Assign custom global hotkeys for Pet Toggle, Voice Assistant Push-to-Talk, and Focus Timer with instant duplicate/conflict detection. |
+| 🔐 **Privacy Center** | Explicit status monitors and toggle controls for Microphone, Speech Recognition, Camera, and Screen Recording permissions. |
 | 🎮 **Mini Games** | Play Rock Paper Scissors or test your knowledge with interactive trivia questions. |
 | 📌 **Always-on-Top & Companion Mode** | Floats on top of all spaces and fullscreen apps; optional click-through companion mode. |
 
@@ -52,18 +56,23 @@ ollama-pet/
 │   ├── Package.swift              # SPM package definition
 │   └── Sources/OllamaPet/
 │       ├── AppDelegate.swift      # Menu bar status item, hotkey & app lifecycle
-│       ├── ChatView.swift         # Multi-tab SwiftUI drawer (Chat, Weather, Reminders, etc.)
+│       ├── ChatView.swift         # Multi-tab SwiftUI drawer (Chat, Focus, Settings, etc.)
 │       ├── DataManager.swift      # Persistent storage & UNUserNotificationCenter alerts
-│       ├── Models.swift           # Characters, moods, chat and reminder data types
+│       ├── FocusGuardian.swift    # Pomodoro session coordinator & hydration alerts
+│       ├── Models.swift           # Characters, moods, chat, preferences & shortcut data types
 │       ├── MusicManager.swift     # AVFoundation audio player & audio metering
 │       ├── OllamaClient.swift     # URLSession client for localhost:11434 (tags, chat, retry)
-│       ├── PetArtwork.swift       # SVG vector rendering for all 7 species & animations
+│       ├── PetArtwork.swift       # SVG vector rendering & gait kinematics for all 7 species
 │       ├── PetStageView.swift     # Transparent interactive pet stage & status bubbles
 │       ├── PetState.swift         # Animation, mood, Pomodoro, and game state machine
 │       ├── PetWindowController.swift # NSPanel with exact-offset dragging & snapping
+│       ├── ScreenGuardian.swift   # Privacy-first frontmost app context analyzer
+│       ├── ShortcutManager.swift  # Global keyboard event monitors & conflict resolver
 │       ├── SoundEffects.swift     # AudioToolbox sound effects
 │       ├── SystemMonitor.swift    # Mach host processor stats, IOKit power & NSWorkspace
-│       ├── WalkerManager.swift    # Bottom-screen walk panel animation
+│       ├── VisionGuardian.swift   # Camera awareness & Apple Vision human detection
+│       ├── VoiceAssistant.swift   # Push-to-talk STT & TTS speech synthesizer
+│       ├── WalkerManager.swift    # Dynamic bottom-screen walk panel animation
 │       ├── WeatherService.swift   # URLSession weather service via Open-Meteo
 │       └── main.swift             # Native app entry point
 ├── build-native.sh                # Automated build & packaging script for Native macOS .app

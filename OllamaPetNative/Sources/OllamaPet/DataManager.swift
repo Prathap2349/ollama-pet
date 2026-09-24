@@ -173,4 +173,84 @@ public class DataManager: ObservableObject {
         savedData.soundEffectsEnabled = enabled
         saveData()
     }
+
+    public func setVoiceAssistantEnabled(_ enabled: Bool) {
+        savedData.voiceAssistantEnabled = enabled
+        saveData()
+    }
+
+    public func setSelectedVoiceId(_ voiceId: String) {
+        savedData.selectedVoiceId = voiceId
+        saveData()
+    }
+
+    public func setSpeechSpeed(_ speed: Double) {
+        savedData.speechSpeed = speed
+        saveData()
+    }
+
+    public func setSpeechVolume(_ volume: Double) {
+        savedData.speechVolume = volume
+        saveData()
+    }
+
+    public func setSpeakAiResponses(_ enabled: Bool) {
+        savedData.speakAiResponses = enabled
+        saveData()
+    }
+
+    public func setWalkSpeed(_ speed: Double) {
+        savedData.walkSpeed = speed
+        saveData()
+    }
+
+    public func setShortcutVoice(_ shortcut: String) {
+        savedData.shortcutVoice = shortcut
+        saveData()
+    }
+
+    public func setShortcutTogglePet(_ shortcut: String) {
+        savedData.shortcutTogglePet = shortcut
+        saveData()
+    }
+
+    public func setShortcutSettings(_ shortcut: String) {
+        savedData.shortcutSettings = shortcut
+        saveData()
+    }
+
+    public func setCameraAwarenessEnabled(_ enabled: Bool) {
+        savedData.cameraAwarenessEnabled = enabled
+        saveData()
+    }
+
+    public func setCameraIntervalSeconds(_ sec: Int) {
+        savedData.cameraIntervalSeconds = sec
+        saveData()
+    }
+
+    public func setStillnessAlertEnabled(_ enabled: Bool) {
+        savedData.stillnessAlertEnabled = enabled
+        saveData()
+    }
+
+    public func setScreenMonitoringEnabled(_ enabled: Bool) {
+        savedData.screenMonitoringEnabled = enabled
+        saveData()
+    }
+
+    public func setFocusNotificationsEnabled(_ enabled: Bool) {
+        savedData.focusNotificationsEnabled = enabled
+        saveData()
+    }
+
+    public func setHydrationReminderEnabled(_ enabled: Bool) {
+        savedData.hydrationReminderEnabled = enabled
+        saveData()
+    }
+
+    public func setHydrationIntervalMinutes(_ mins: Int) {
+        savedData.hydrationIntervalMinutes = mins
+        saveData()
+    }
 }

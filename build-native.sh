@@ -59,12 +59,20 @@ cat << 'PLIST' > "${APP_BUNDLE}/Contents/Info.plist"
     <true/>
     <key>NSSupportsAutomaticGraphicsSwitching</key>
     <true/>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Ollama Pet uses the microphone for optional Push-to-Talk voice conversations with your AI companion.</string>
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>Ollama Pet uses speech recognition to convert your voice to text for Ollama.</string>
+    <key>NSCameraUsageDescription</key>
+    <string>Ollama Pet uses the camera for optional Focus Guardian presence detection. Video is processed locally on device and never stored.</string>
 </dict>
 </plist>
 PLIST
 
 echo "4. Code Signing Bundle (Ad-hoc)..."
-xattr -cr "${APP_BUNDLE}" && codesign --force --deep --sign - "${APP_BUNDLE}"
+dot_clean "${APP_BUNDLE}"
+xattr -cr "${APP_BUNDLE}"
+codesign --force --deep --sign - "${APP_BUNDLE}"
 
 echo "=== Successfully Built: ${APP_BUNDLE} ==="
 ls -ld "${APP_BUNDLE}"

@@ -9,6 +9,11 @@ struct ChatView: View {
     @ObservedObject var sysMon = SystemMonitor.shared
     @ObservedObject var wx = WeatherService.shared
     @ObservedObject var music = MusicManager.shared
+    @ObservedObject var voiceAssistant = VoiceAssistant.shared
+    @ObservedObject var shortcutManager = ShortcutManager.shared
+    @ObservedObject var visionGuardian = VisionGuardian.shared
+    @ObservedObject var screenGuardian = ScreenGuardian.shared
+    @ObservedObject var focusGuardian = FocusGuardian.shared
 
     @State private var inputText: String = ""
     @State private var messages: [ChatMessage] = []
@@ -217,13 +222,37 @@ struct ChatView: View {
 
             // Input Bar
             HStack(spacing: 8) {
-                TextField("Message \(petState.currentSpecies.displayName)...", text: $inputText)
+                // Voice Assistant Push-to-Talk button
+                Button(action: {
+                    voiceAssistant.togglePushToTalk()
+                }) {
+                    Image(systemName: voiceAssistant.state == .listening ? "waveform.circle.fill" : (voiceAssistant.isSpeaking ? "speaker.wave.3.fill" : "mic.circle.fill"))
+                        .font(.system(size: 20))
+                        .foregroundColor(voiceAssistant.state == .listening ? Color.red : (voiceAssistant.isSpeaking ? petState.currentSpecies.accentColor : Color.white.opacity(0.7)))
+                }
+                .buttonStyle(.plain)
+                .help("Push-to-Talk Voice Assistant (⌘⇧Space)")
+
+                TextField(voiceAssistant.state == .listening ? "Listening to your voice..." : "Message \(petState.currentSpecies.displayName)...", text: $inputText)
                     .textFieldStyle(.plain)
                     .font(.system(size: 12))
                     .foregroundColor(.white)
                     .onSubmit {
                         sendMessage()
                     }
+
+                // Stop speaking button if currently reading out loud
+                if voiceAssistant.isSpeaking {
+                    Button(action: {
+                        voiceAssistant.stopSpeaking()
+                    }) {
+                        Image(systemName: "stop.circle.fill")
+                            .font(.system(size: 18))
+                            .foregroundColor(.orange)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Stop Speaking")
+                }
 
                 Button(action: {
                     sendMessage()
@@ -539,31 +568,64 @@ struct ChatView: View {
     private var gameTabContent: some View {
         ScrollView {
             VStack(spacing: 12) {
-                // Pomodoro Section
+                // Focus Guardian Section
                 VStack(spacing: 6) {
-                    Text(petState.pomoIsBreak ? "☕ Break Session" : "💼 Focus Session")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundColor(petState.currentSpecies.accentColor)
+                    HStack {
+                        Text(focusGuardian.isSessionActive ? "🎯 Active Focus Session" : "🎯 Focus Guardian")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(petState.currentSpecies.accentColor)
+                        Spacer()
+                        if focusGuardian.isSessionActive {
+                            HStack(spacing: 4) {
+                                Circle()
+                                    .fill(focusGuardian.userIsAway ? Color.red : Color.green)
+                                    .frame(width: 6, height: 6)
+                                Text(focusGuardian.userIsAway ? "User Away" : "Focused")
+                                    .font(.system(size: 10, design: .monospaced))
+                                    .foregroundColor(focusGuardian.userIsAway ? .red : .green)
+                            }
+                        }
+                    }
 
-                    let mins = petState.pomoSeconds / 60
-                    let secs = petState.pomoSeconds % 60
+                    let mins = focusGuardian.remainingSeconds / 60
+                    let secs = focusGuardian.remainingSeconds % 60
                     Text(String(format: "%02d:%02d", mins, secs))
                         .font(.system(size: 28, weight: .bold, design: .monospaced))
                         .foregroundColor(.white)
 
                     HStack(spacing: 12) {
-                        Button(petState.pomoRunning ? "Pause" : "Start") {
-                            petState.togglePomo()
+                        Button(focusGuardian.isSessionActive ? "Pause" : "Start 25m Focus") {
+                            if focusGuardian.isSessionActive {
+                                focusGuardian.pauseFocusSession()
+                            } else {
+                                focusGuardian.startFocusSession(minutes: 25)
+                            }
                         }
                         .buttonStyle(.borderedProminent)
                         .tint(petState.currentSpecies.accentColor)
                         .controlSize(.small)
 
                         Button("Reset") {
-                            petState.resetPomo()
+                            focusGuardian.resetFocusSession(minutes: 25)
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
+                    }
+
+                    if visionGuardian.isRunning || screenGuardian.isMonitoring {
+                        HStack(spacing: 10) {
+                            if visionGuardian.isRunning {
+                                Label(visionGuardian.presenceState.rawValue, systemImage: "video.fill")
+                                    .font(.system(size: 9))
+                                    .foregroundColor(Color.white.opacity(0.7))
+                            }
+                            if screenGuardian.isMonitoring {
+                                Label(screenGuardian.currentCategory.rawValue, systemImage: "display")
+                                    .font(.system(size: 9))
+                                    .foregroundColor(Color.white.opacity(0.7))
+                            }
+                        }
+                        .padding(.top, 2)
                     }
                 }
                 .padding(10)
@@ -804,9 +866,291 @@ struct ChatView: View {
                 .background(Color.white.opacity(0.04))
                 .cornerRadius(10)
 
-                // Section 3: Feature Visibility
+                // Section 3: Voice Assistant & Speech
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("📱 Tab & Feature Visibility")
+                    HStack {
+                        Text("🎙 Voice Assistant")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(.white)
+                        Spacer()
+                        Text(voiceAssistant.state.rawValue)
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundColor(voiceAssistant.state == .listening ? .red : (voiceAssistant.isSpeaking ? .green : .white.opacity(0.6)))
+                    }
+
+                    Toggle("Speak AI Responses (TTS)", isOn: Binding(
+                        get: { dataManager.savedData.speakAiResponses ?? true },
+                        set: { dataManager.setSpeakAiResponses($0) }
+                    ))
+                    .toggleStyle(.switch)
+                    .font(.system(size: 11))
+
+                    if !voiceAssistant.availableVoices.isEmpty {
+                        Picker("Voice", selection: Binding(
+                            get: { dataManager.savedData.selectedVoiceId ?? voiceAssistant.availableVoices.first?.id ?? "" },
+                            set: { dataManager.setSelectedVoiceId($0) }
+                        )) {
+                            ForEach(voiceAssistant.availableVoices) { v in
+                                Text(v.name).tag(v.id)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                    }
+
+                    HStack {
+                        Text("Speed:")
+                            .font(.system(size: 10))
+                            .foregroundColor(Color.white.opacity(0.7))
+                        Slider(value: Binding(
+                            get: { dataManager.savedData.speechSpeed ?? 1.0 },
+                            set: { dataManager.setSpeechSpeed($0) }
+                        ), in: 0.5...1.8, step: 0.1)
+                        Text(String(format: "%.1fx", dataManager.savedData.speechSpeed ?? 1.0))
+                            .font(.system(size: 10, design: .monospaced))
+                    }
+
+                    HStack(spacing: 8) {
+                        Button("Test Voice") {
+                            voiceAssistant.speak(text: "Hello! I am \(petState.currentSpecies.displayName), your desktop companion.")
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+
+                        if voiceAssistant.isSpeaking {
+                            Button("Stop Speaking") {
+                                voiceAssistant.stopSpeaking()
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        }
+                    }
+                }
+                .padding(10)
+                .background(Color.white.opacity(0.04))
+                .cornerRadius(10)
+
+                // Section 4: Keyboard Shortcuts
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("⌨️ Keyboard Shortcuts")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(.white)
+
+                    shortcutRow(title: "Voice Assistant", action: "voice", combo: shortcutManager.voiceShortcut)
+                    shortcutRow(title: "Show / Hide Pet", action: "togglePet", combo: shortcutManager.togglePetShortcut)
+                    shortcutRow(title: "Open Settings", action: "settings", combo: shortcutManager.settingsShortcut)
+
+                    if let conflict = shortcutManager.conflictMessage {
+                        Text(conflict)
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundColor(.orange)
+                            .padding(.top, 2)
+                    }
+                }
+                .padding(10)
+                .background(Color.white.opacity(0.04))
+                .cornerRadius(10)
+
+                // Section 5: Realistic Walk Mode
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("🚶 Walk Mode")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(.white)
+
+                    HStack {
+                        Text("Walk Speed:")
+                            .font(.system(size: 11))
+                            .foregroundColor(.white)
+                        Slider(value: Binding(
+                            get: { dataManager.savedData.walkSpeed ?? 1.0 },
+                            set: { dataManager.setWalkSpeed($0) }
+                        ), in: 0.5...2.0, step: 0.1)
+                        Text(String(format: "%.1fx", dataManager.savedData.walkSpeed ?? 1.0))
+                            .font(.system(size: 11, design: .monospaced))
+                    }
+
+                    HStack(spacing: 8) {
+                        Button("Test Walk (Short)") {
+                            WalkerManager.shared.startWalk(species: petState.currentSpecies, isTest: true)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+
+                        Button("Full Screen Walk") {
+                            WalkerManager.shared.startWalk(species: petState.currentSpecies, isTest: false)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+                }
+                .padding(10)
+                .background(Color.white.opacity(0.04))
+                .cornerRadius(10)
+
+                // Section 6: Camera Awareness & Vision
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("👁 Camera Awareness (Vision)")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(.white)
+                        Spacer()
+                        Circle()
+                            .fill(visionGuardian.isRunning ? Color.green : Color.gray.opacity(0.5))
+                            .frame(width: 7, height: 7)
+                        Text(visionGuardian.isRunning ? "Active" : "Off")
+                            .font(.system(size: 10, design: .monospaced))
+                    }
+
+                    Toggle("Enable Camera Awareness", isOn: Binding(
+                        get: { dataManager.savedData.cameraAwarenessEnabled ?? false },
+                        set: { isEnabled in
+                            dataManager.setCameraAwarenessEnabled(isEnabled)
+                            if isEnabled {
+                                visionGuardian.startSession()
+                            } else {
+                                visionGuardian.stopSession()
+                            }
+                        }
+                    ))
+                    .toggleStyle(.switch)
+                    .font(.system(size: 11))
+
+                    if dataManager.savedData.cameraAwarenessEnabled ?? false {
+                        HStack {
+                            Text("Check Interval:")
+                                .font(.system(size: 11))
+                            Spacer()
+                            Picker("", selection: Binding(
+                                get: { dataManager.savedData.cameraIntervalSeconds ?? 10 },
+                                set: { dataManager.setCameraIntervalSeconds($0) }
+                            )) {
+                                Text("5s").tag(5)
+                                Text("10s").tag(10)
+                                Text("30s").tag(30)
+                            }
+                            .pickerStyle(.segmented)
+                            .frame(width: 140)
+                        }
+
+                        Toggle("Gentle Stillness Check", isOn: Binding(
+                            get: { dataManager.savedData.stillnessAlertEnabled ?? true },
+                            set: { dataManager.setStillnessAlertEnabled($0) }
+                        ))
+                        .toggleStyle(.switch)
+                        .font(.system(size: 10))
+
+                        Text("Status: \(visionGuardian.presenceState.rawValue)")
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundColor(Color.white.opacity(0.7))
+                    }
+                }
+                .padding(10)
+                .background(Color.white.opacity(0.04))
+                .cornerRadius(10)
+
+                // Section 7: Screen Awareness
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("🖥 Screen Awareness")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(.white)
+                        Spacer()
+                        Circle()
+                            .fill(screenGuardian.isMonitoring ? Color.green : Color.gray.opacity(0.5))
+                            .frame(width: 7, height: 7)
+                        Text(screenGuardian.isMonitoring ? "Active" : "Off")
+                            .font(.system(size: 10, design: .monospaced))
+                    }
+
+                    Toggle("Enable Screen Awareness", isOn: Binding(
+                        get: { dataManager.savedData.screenMonitoringEnabled ?? false },
+                        set: { isEnabled in
+                            dataManager.setScreenMonitoringEnabled(isEnabled)
+                            if isEnabled {
+                                screenGuardian.startMonitoring()
+                            } else {
+                                screenGuardian.stopMonitoring()
+                            }
+                        }
+                    ))
+                    .toggleStyle(.switch)
+                    .font(.system(size: 11))
+
+                    if dataManager.savedData.screenMonitoringEnabled ?? false {
+                        Text("Context: \(screenGuardian.currentCategory.rawValue) (\(screenGuardian.activeAppName))")
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundColor(Color.white.opacity(0.7))
+                    }
+                }
+                .padding(10)
+                .background(Color.white.opacity(0.04))
+                .cornerRadius(10)
+
+                // Section 8: Focus Guardian & Hydration
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("🎯 Focus & Wellness")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(.white)
+
+                    Toggle("Focus Step-away Alerts", isOn: Binding(
+                        get: { dataManager.savedData.focusNotificationsEnabled ?? true },
+                        set: { dataManager.setFocusNotificationsEnabled($0) }
+                    ))
+                    .toggleStyle(.switch)
+                    .font(.system(size: 11))
+
+                    Toggle("Hydration Reminders", isOn: Binding(
+                        get: { dataManager.savedData.hydrationReminderEnabled ?? true },
+                        set: { isEnabled in
+                            dataManager.setHydrationReminderEnabled(isEnabled)
+                            focusGuardian.startHydrationTimerIfNeeded()
+                        }
+                    ))
+                    .toggleStyle(.switch)
+                    .font(.system(size: 11))
+
+                    if dataManager.savedData.hydrationReminderEnabled ?? true {
+                        HStack {
+                            Text("Interval:")
+                                .font(.system(size: 11))
+                            Spacer()
+                            Picker("", selection: Binding(
+                                get: { dataManager.savedData.hydrationIntervalMinutes ?? 60 },
+                                set: {
+                                    dataManager.setHydrationIntervalMinutes($0)
+                                    focusGuardian.startHydrationTimerIfNeeded()
+                                }
+                            )) {
+                                Text("30m").tag(30)
+                                Text("60m").tag(60)
+                                Text("90m").tag(90)
+                            }
+                            .pickerStyle(.segmented)
+                            .frame(width: 140)
+                        }
+                    }
+                }
+                .padding(10)
+                .background(Color.white.opacity(0.04))
+                .cornerRadius(10)
+
+                // Section 9: Privacy Center
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("🔐 Privacy Center")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(.white)
+
+                    privacyStatusRow(icon: "mic.fill", name: "Microphone", isLive: voiceAssistant.state == .listening, isPermitted: voiceAssistant.micPermissionGranted)
+                    privacyStatusRow(icon: "video.fill", name: "Camera", isLive: visionGuardian.isRunning, isPermitted: visionGuardian.permissionGranted)
+                    privacyStatusRow(icon: "display", name: "Screen Awareness", isLive: screenGuardian.isMonitoring, isPermitted: screenGuardian.permissionGranted)
+                    privacyStatusRow(icon: "cpu", name: "AI Processing", isLive: ollamaClient.isOnline, isPermitted: true, note: "Local Ollama (100% Private)")
+                }
+                .padding(10)
+                .background(Color.white.opacity(0.04))
+                .cornerRadius(10)
+
+                // Section 10: Tab & Feature Visibility
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("📱 Tab Visibility")
                         .font(.system(size: 12, weight: .bold))
                         .foregroundColor(.white)
 
@@ -814,7 +1158,7 @@ struct ChatView: View {
                         featureToggleRow(title: "💬 Chat with AI", id: "chat")
                         featureToggleRow(title: "⏰ Reminders", id: "remind")
                         featureToggleRow(title: "⛅ Weather", id: "weather")
-                        featureToggleRow(title: "🎵 Music & Mini Games", id: "game")
+                        featureToggleRow(title: "🎵 Music & Focus", id: "game")
                         featureToggleRow(title: "📊 System Monitor", id: "system")
                     }
                 }
@@ -822,9 +1166,9 @@ struct ChatView: View {
                 .background(Color.white.opacity(0.04))
                 .cornerRadius(10)
 
-                // Section 4: Behavior & General
+                // Section 11: Behavior & Reset
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("⚙️ Behavior")
+                    Text("⚙️ General")
                         .font(.system(size: 12, weight: .bold))
                         .foregroundColor(.white)
 
@@ -853,7 +1197,7 @@ struct ChatView: View {
                 .background(Color.white.opacity(0.04))
                 .cornerRadius(10)
 
-                // Section 5: Reset Window Position
+                // Section 12: Reset Window Position
                 Button(action: {
                     if let screen = NSScreen.main {
                         let screenFrame = screen.visibleFrame
@@ -875,6 +1219,61 @@ struct ChatView: View {
                 .buttonStyle(.bordered)
             }
             .padding(10)
+        }
+    }
+
+    private func shortcutRow(title: String, action: String, combo: KeyCombo) -> some View {
+        HStack {
+            Text(title)
+                .font(.system(size: 11))
+                .foregroundColor(.white)
+            Spacer()
+            if shortcutManager.recordingAction == action {
+                Text("Press keys...")
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .foregroundColor(.orange)
+            } else {
+                Text(combo.displayString)
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .foregroundColor(petState.currentSpecies.accentColor)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.white.opacity(0.08))
+                    .cornerRadius(4)
+
+                Button("Change") {
+                    shortcutManager.startRecording(action: action)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.mini)
+            }
+        }
+    }
+
+    private func privacyStatusRow(icon: String, name: String, isLive: Bool, isPermitted: Bool, note: String? = nil) -> some View {
+        HStack {
+            Image(systemName: icon)
+                .font(.system(size: 12))
+                .foregroundColor(isLive ? .green : Color.white.opacity(0.6))
+                .frame(width: 16)
+            Text(name)
+                .font(.system(size: 11))
+                .foregroundColor(.white)
+            Spacer()
+            if let n = note {
+                Text(n)
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundColor(.green)
+            } else {
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(isLive ? Color.green : (isPermitted ? Color.orange : Color.gray.opacity(0.5)))
+                        .frame(width: 6, height: 6)
+                    Text(isLive ? "Active" : (isPermitted ? "Granted / Off" : "Not Granted"))
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundColor(isLive ? .green : (isPermitted ? Color.white.opacity(0.8) : Color.white.opacity(0.4)))
+                }
+            }
         }
     }
 

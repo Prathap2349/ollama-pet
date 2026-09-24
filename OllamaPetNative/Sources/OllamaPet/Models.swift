@@ -214,6 +214,34 @@ public struct PetSavedData: Codable {
     public var soundEffectsEnabled: Bool?
     public var launchAtLoginEnabled: Bool?
 
+    // Voice Assistant Settings
+    public var voiceAssistantEnabled: Bool?
+    public var selectedVoiceId: String?
+    public var speechSpeed: Double? // 0.5 to 2.0 (default 1.0)
+    public var speechVolume: Double? // 0.0 to 1.0 (default 1.0)
+    public var speakAiResponses: Bool?
+
+    // Walk Mode Settings
+    public var walkSpeed: Double? // 0.5 to 2.0 (default 1.0)
+
+    // Keyboard Shortcuts
+    public var shortcutVoice: String? // e.g. "cmd+shift+space"
+    public var shortcutTogglePet: String? // e.g. "cmd+shift+p"
+    public var shortcutSettings: String? // e.g. "cmd+shift+,"
+
+    // Camera & Vision Settings
+    public var cameraAwarenessEnabled: Bool?
+    public var cameraIntervalSeconds: Int? // 5, 10, 30 (default 10)
+    public var stillnessAlertEnabled: Bool?
+
+    // Screen Awareness Settings
+    public var screenMonitoringEnabled: Bool?
+
+    // Focus Guardian Settings
+    public var focusNotificationsEnabled: Bool?
+    public var hydrationReminderEnabled: Bool?
+    public var hydrationIntervalMinutes: Int? // default 60
+
     public init(
         version: Int? = 1,
         currentChar: String = "cat",
@@ -234,7 +262,23 @@ public struct PetSavedData: Codable {
         idleAnimationsEnabled: Bool? = true,
         speechBubblesEnabled: Bool? = true,
         soundEffectsEnabled: Bool? = true,
-        launchAtLoginEnabled: Bool? = true
+        launchAtLoginEnabled: Bool? = true,
+        voiceAssistantEnabled: Bool? = false,
+        selectedVoiceId: String? = nil,
+        speechSpeed: Double? = 1.0,
+        speechVolume: Double? = 1.0,
+        speakAiResponses: Bool? = true,
+        walkSpeed: Double? = 1.0,
+        shortcutVoice: String? = "⌘⇧Space",
+        shortcutTogglePet: String? = "⌘⇧P",
+        shortcutSettings: String? = "⌘⇧,",
+        cameraAwarenessEnabled: Bool? = false,
+        cameraIntervalSeconds: Int? = 10,
+        stillnessAlertEnabled: Bool? = true,
+        screenMonitoringEnabled: Bool? = false,
+        focusNotificationsEnabled: Bool? = true,
+        hydrationReminderEnabled: Bool? = true,
+        hydrationIntervalMinutes: Int? = 60
     ) {
         self.version = version
         self.currentChar = currentChar
@@ -256,6 +300,22 @@ public struct PetSavedData: Codable {
         self.speechBubblesEnabled = speechBubblesEnabled
         self.soundEffectsEnabled = soundEffectsEnabled
         self.launchAtLoginEnabled = launchAtLoginEnabled
+        self.voiceAssistantEnabled = voiceAssistantEnabled
+        self.selectedVoiceId = selectedVoiceId
+        self.speechSpeed = speechSpeed
+        self.speechVolume = speechVolume
+        self.speakAiResponses = speakAiResponses
+        self.walkSpeed = walkSpeed
+        self.shortcutVoice = shortcutVoice
+        self.shortcutTogglePet = shortcutTogglePet
+        self.shortcutSettings = shortcutSettings
+        self.cameraAwarenessEnabled = cameraAwarenessEnabled
+        self.cameraIntervalSeconds = cameraIntervalSeconds
+        self.stillnessAlertEnabled = stillnessAlertEnabled
+        self.screenMonitoringEnabled = screenMonitoringEnabled
+        self.focusNotificationsEnabled = focusNotificationsEnabled
+        self.hydrationReminderEnabled = hydrationReminderEnabled
+        self.hydrationIntervalMinutes = hydrationIntervalMinutes
     }
 }
 

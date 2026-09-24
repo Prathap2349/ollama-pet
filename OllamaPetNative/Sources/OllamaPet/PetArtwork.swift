@@ -22,113 +22,192 @@ public struct PetSVGProvider {
         }
     }
 
-    public static func walkSvg(for species: PetSpecies) -> String {
+    public static func walkSvg(for species: PetSpecies, t: Double = 0.0) -> String {
         let inner: String
         switch species {
         case .cat:
+            // 4-legged walk cycle: front legs alternating with rear legs, subtle body bob & tail sway
+            let bob = abs(sin(t * 8.0)) * 3.0
+            let fLegL = sin(t * 8.0) * 12.0
+            let fLegR = -sin(t * 8.0) * 12.0
+            let rLegL = -sin(t * 8.0) * 10.0
+            let rLegR = sin(t * 8.0) * 10.0
+            let tailWag = sin(t * 6.0) * 8.0
             inner = """
-            <circle cx="30" cy="30" r="28" fill="rgba(139,92,246,0.15)"/>
-            <ellipse cx="30" cy="38" rx="14" ry="12" fill="#c4b5fd"/>
-            <circle cx="30" cy="24" r="13" fill="#ddd6fe"/>
-            <polygon points="18,14 13,4 23,13" fill="#c4b5fd"/>
-            <polygon points="42,14 47,4 37,13" fill="#c4b5fd"/>
-            <ellipse cx="24" cy="23" rx="4" ry="5" fill="#1e1b4b"/>
-            <ellipse cx="36" cy="23" rx="4" ry="5" fill="#1e1b4b"/>
-            <circle cx="25" cy="22" r="1.5" fill="white"/>
-            <circle cx="37" cy="22" r="1.5" fill="white"/>
-            <ellipse cx="30" cy="29" rx="2.5" ry="2" fill="#f9a8d4"/>
-            <path d="M27,31 Q30,34 33,31" stroke="#9333ea" stroke-width="1.2" fill="none"/>
-            <ellipse cx="30" cy="47" rx="10" ry="8" fill="#c4b5fd"/>
+            <circle cx="30" cy="30" r="28" fill="rgba(139,92,246,0.12)"/>
+            <!-- Rear Legs -->
+            <line x1="20" y1="42" x2="\(20.0 + rLegL)" y2="55" stroke="#a78bfa" stroke-width="4" stroke-linecap="round"/>
+            <line x1="26" y1="42" x2="\(26.0 + rLegR)" y2="55" stroke="#8b5cf6" stroke-width="4" stroke-linecap="round"/>
+            <!-- Body -->
+            <ellipse cx="30" cy="\(36.0 + bob)" rx="15" ry="11" fill="#c4b5fd"/>
+            <!-- Tail -->
+            <path d="M16,\(38.0 + bob) Q\(8.0 + tailWag),\(28.0 + bob) \(10.0 + tailWag),\(18.0 + bob)" stroke="#c4b5fd" stroke-width="3.5" fill="none" stroke-linecap="round"/>
+            <!-- Front Legs -->
+            <line x1="36" y1="42" x2="\(36.0 + fLegL)" y2="55" stroke="#a78bfa" stroke-width="4" stroke-linecap="round"/>
+            <line x1="42" y1="42" x2="\(42.0 + fLegR)" y2="55" stroke="#8b5cf6" stroke-width="4" stroke-linecap="round"/>
+            <!-- Head -->
+            <circle cx="38" cy="\(25.0 + bob * 0.5)" r="12" fill="#ddd6fe"/>
+            <polygon points="32,\(18.0 + bob * 0.5) 28,\(8.0 + bob * 0.5) 36,\(17.0 + bob * 0.5)" fill="#c4b5fd"/>
+            <polygon points="42,\(18.0 + bob * 0.5) 46,\(8.0 + bob * 0.5) 38,\(17.0 + bob * 0.5)" fill="#c4b5fd"/>
+            <ellipse cx="36" cy="\(24.0 + bob * 0.5)" rx="3" ry="4" fill="#1e1b4b"/>
+            <ellipse cx="44" cy="\(24.0 + bob * 0.5)" rx="3" ry="4" fill="#1e1b4b"/>
+            <circle cx="37" cy="\(23.0 + bob * 0.5)" r="1" fill="white"/>
+            <circle cx="45" cy="\(23.0 + bob * 0.5)" r="1" fill="white"/>
+            <ellipse cx="40" cy="\(28.0 + bob * 0.5)" rx="2" ry="1.5" fill="#f9a8d4"/>
             """
         case .dragon:
+            // Dragon: walking leg steps, heavy tail sway, flapping wings
+            let bob = sin(t * 6.0) * 3.0
+            let legL = sin(t * 6.0) * 10.0
+            let legR = -sin(t * 6.0) * 10.0
+            let wingSpan = 18.0 + sin(t * 10.0) * 8.0
             inner = """
             <circle cx="30" cy="30" r="28" fill="rgba(249,115,22,0.15)"/>
-            <path d="M10,28 Q6,20 12,30 Q8,22 14,28" fill="#b45309" opacity="0.8"/>
-            <path d="M50,28 Q54,20 48,30 Q52,22 46,28" fill="#b45309" opacity="0.8"/>
-            <ellipse cx="30" cy="36" rx="14" ry="11" fill="#f97316"/>
-            <ellipse cx="30" cy="36" rx="9" ry="7" fill="#fed7aa"/>
-            <circle cx="30" cy="24" r="13" fill="#f97316"/>
-            <ellipse cx="30" cy="30" rx="6" ry="4" fill="#ea580c"/>
-            <ellipse cx="22" cy="21" rx="5" ry="6" fill="#1c1917"/>
-            <ellipse cx="38" cy="21" rx="5" ry="6" fill="#1c1917"/>
-            <ellipse cx="22" cy="21" rx="3" ry="4" fill="#fbbf24"/>
-            <ellipse cx="38" cy="21" rx="3" ry="4" fill="#fbbf24"/>
-            <path d="M23,14 Q20,8 22,4" stroke="#b45309" stroke-width="3" fill="none" stroke-linecap="round"/>
-            <path d="M37,14 Q40,8 38,4" stroke="#b45309" stroke-width="3" fill="none" stroke-linecap="round"/>
+            <!-- Wings Flapping -->
+            <path d="M25,28 Q10,\(wingSpan) 18,34" fill="#ea580c" opacity="0.8"/>
+            <path d="M35,28 Q50,\(wingSpan) 42,34" fill="#ea580c" opacity="0.8"/>
+            <!-- Legs -->
+            <line x1="22" y1="42" x2="\(22.0 + legL)" y2="55" stroke="#b45309" stroke-width="4.5" stroke-linecap="round"/>
+            <line x1="38" y1="42" x2="\(38.0 + legR)" y2="55" stroke="#b45309" stroke-width="4.5" stroke-linecap="round"/>
+            <!-- Body -->
+            <ellipse cx="30" cy="\(36.0 + bob)" rx="14" ry="12" fill="#f97316"/>
+            <ellipse cx="30" cy="\(37.0 + bob)" rx="8" ry="7" fill="#fed7aa"/>
+            <!-- Tail -->
+            <path d="M16,\(38.0 + bob) Q8,\(46.0 + bob) 6,\(34.0 + bob)" stroke="#f97316" stroke-width="5" fill="none" stroke-linecap="round"/>
+            <!-- Head & Horns -->
+            <circle cx="36" cy="\(24.0 + bob * 0.5)" r="12" fill="#f97316"/>
+            <path d="M34,14 Q31,6 33,2" stroke="#b45309" stroke-width="3" fill="none" stroke-linecap="round"/>
+            <path d="M42,14 Q45,6 43,2" stroke="#b45309" stroke-width="3" fill="none" stroke-linecap="round"/>
+            <ellipse cx="34" cy="23" rx="3.5" ry="4.5" fill="#1c1917"/>
+            <ellipse cx="44" cy="23" rx="3.5" ry="4.5" fill="#1c1917"/>
+            <ellipse cx="34" cy="23" rx="2" ry="3" fill="#fbbf24"/>
+            <ellipse cx="44" cy="23" rx="2" ry="3" fill="#fbbf24"/>
             """
         case .robot:
+            // Mechanical stiff walk cycle, rotating arms, antenna pulse
+            let legL = sin(t * 8.0) * 10.0
+            let legR = -sin(t * 8.0) * 10.0
+            let armL = -sin(t * 8.0) * 8.0
+            let armR = sin(t * 8.0) * 8.0
             inner = """
             <circle cx="30" cy="30" r="28" fill="rgba(6,182,212,0.15)"/>
-            <line x1="30" y1="6" x2="30" y2="14" stroke="#94a3b8" stroke-width="2"/>
-            <circle cx="30" cy="4" r="4" fill="#06b6d4"/>
-            <rect x="14" y="14" width="32" height="22" rx="5" fill="#1e293b"/>
-            <rect x="16" y="16" width="28" height="18" rx="4" fill="#0f172a"/>
-            <rect x="19" y="20" width="10" height="8" rx="2" fill="#06b6d4"/>
-            <rect x="31" y="20" width="10" height="8" rx="2" fill="#06b6d4"/>
-            <rect x="21" y="30" width="18" height="4" rx="2" fill="#0f172a"/>
-            <rect x="23" y="31" width="5" height="2" rx="1" fill="#06b6d4"/>
-            <rect x="12" y="19" width="4" height="9" rx="2" fill="#1e293b"/>
-            <rect x="44" y="19" width="4" height="9" rx="2" fill="#1e293b"/>
-            <rect x="16" y="38" width="28" height="20" rx="5" fill="#1e293b"/>
+            <!-- Antenna -->
+            <line x1="30" y1="4" x2="30" y2="12" stroke="#94a3b8" stroke-width="2"/>
+            <circle cx="30" cy="3" r="3.5" fill="#06b6d4"/>
+            <!-- Arms -->
+            <line x1="16" y1="32" x2="\(12.0 + armL)" y2="44" stroke="#475569" stroke-width="3.5" stroke-linecap="round"/>
+            <line x1="44" y1="32" x2="\(48.0 + armR)" y2="44" stroke="#475569" stroke-width="3.5" stroke-linecap="round"/>
+            <!-- Mechanical Legs -->
+            <line x1="22" y1="44" x2="\(22.0 + legL)" y2="56" stroke="#334155" stroke-width="4.5" stroke-linecap="square"/>
+            <line x1="38" y1="44" x2="\(38.0 + legR)" y2="56" stroke="#334155" stroke-width="4.5" stroke-linecap="square"/>
+            <!-- Torso -->
+            <rect x="18" y="26" width="24" height="20" rx="4" fill="#1e293b"/>
+            <rect x="22" y="30" width="16" height="12" rx="2" fill="#0f172a"/>
+            <!-- Head -->
+            <rect x="17" y="12" width="26" height="16" rx="4" fill="#1e293b"/>
+            <rect x="21" y="15" width="7" height="6" rx="1.5" fill="#06b6d4"/>
+            <rect x="32" y="15" width="7" height="6" rx="1.5" fill="#06b6d4"/>
             """
         case .robotcat:
+            let legL = sin(t * 8.0) * 10.0
+            let legR = -sin(t * 8.0) * 10.0
             inner = """
             <circle cx="30" cy="30" r="28" fill="rgba(16,185,129,0.15)"/>
-            <line x1="30" y1="6" x2="30" y2="14" stroke="#6ee7b7" stroke-width="2"/>
-            <circle cx="30" cy="4" r="3" fill="#10b981"/>
-            <polygon points="17,18 13,6 23,16" fill="#1e293b"/>
-            <polygon points="43,18 47,6 37,16" fill="#1e293b"/>
-            <rect x="15" y="16" width="30" height="22" rx="7" fill="#1e293b"/>
-            <rect x="17" y="18" width="26" height="18" rx="6" fill="#0f172a"/>
-            <ellipse cx="23" cy="26" rx="4" ry="5" fill="#10b981"/>
-            <ellipse cx="37" cy="26" rx="4" ry="5" fill="#10b981"/>
-            <ellipse cx="23" cy="26" rx="1.5" ry="3.5" fill="#022c22"/>
-            <ellipse cx="37" cy="26" rx="1.5" ry="3.5" fill="#022c22"/>
-            <rect x="27" y="33" width="6" height="3" rx="1.5" fill="#10b981"/>
-            <rect x="15" y="40" width="30" height="20" rx="5" fill="#1e293b"/>
+            <polygon points="19,14 15,4 23,12" fill="#1e293b"/>
+            <polygon points="41,14 45,4 37,12" fill="#1e293b"/>
+            <line x1="22" y1="44" x2="\(22.0 + legL)" y2="56" stroke="#10b981" stroke-width="4" stroke-linecap="round"/>
+            <line x1="38" y1="44" x2="\(38.0 + legR)" y2="56" stroke="#10b981" stroke-width="4" stroke-linecap="round"/>
+            <rect x="18" y="26" width="24" height="18" rx="5" fill="#1e293b"/>
+            <rect x="17" y="14" width="26" height="16" rx="4" fill="#0f172a"/>
+            <ellipse cx="23" cy="22" rx="3.5" ry="4" fill="#10b981"/>
+            <ellipse cx="37" cy="22" rx="3.5" ry="4" fill="#10b981"/>
             """
         case .ghost:
+            // Ghost: NO legs! Drifting vertical waves, flowing ghostly skirt, ethereal opacity
+            let waveY = sin(t * 4.0) * 6.0
+            let skirtWiggle = sin(t * 8.0) * 4.0
             inner = """
-            <circle cx="30" cy="30" r="28" fill="rgba(148,163,184,0.08)"/>
-            <ellipse cx="30" cy="26" rx="16" ry="18" fill="rgba(226,232,240,0.88)"/>
-            <path d="M14,30 Q14,48 18,50 Q22,52 22,48 Q22,52 26,50 Q30,52 30,48 Q30,52 34,50 Q38,52 38,48 Q38,52 42,50 Q46,48 46,30" fill="rgba(226,232,240,0.88)"/>
-            <ellipse cx="24" cy="24" rx="4" ry="5" fill="#1e1b4b"/>
-            <ellipse cx="36" cy="24" rx="4" ry="5" fill="#1e1b4b"/>
-            <circle cx="25" cy="23" r="1.5" fill="white"/>
-            <circle cx="37" cy="23" r="1.5" fill="white"/>
-            <ellipse cx="30" cy="34" rx="5" ry="3.5" fill="#475569" opacity="0.5"/>
+            <circle cx="30" cy="30" r="28" fill="rgba(148,163,184,0.06)"/>
+            <!-- Ghost floating body -->
+            <ellipse cx="30" cy="\(26.0 + waveY)" rx="15" ry="17" fill="rgba(226,232,240,0.92)"/>
+            <!-- Wavy floating skirt -->
+            <path d="M15,\(30.0 + waveY) Q16,\(48.0 + waveY) \(20.0 + skirtWiggle),\(46.0 + waveY) Q\(25.0 - skirtWiggle),\(49.0 + waveY) 30,\(46.0 + waveY) Q\(35.0 + skirtWiggle),\(49.0 + waveY) 40,\(46.0 + waveY) Q44,\(48.0 + waveY) 45,\(30.0 + waveY)" fill="rgba(226,232,240,0.92)"/>
+            <ellipse cx="25" cy="\(24.0 + waveY)" rx="3.5" ry="4.5" fill="#1e1b4b"/>
+            <ellipse cx="35" cy="\(24.0 + waveY)" rx="3.5" ry="4.5" fill="#1e1b4b"/>
+            <circle cx="26" cy="\(23.0 + waveY)" r="1.5" fill="white"/>
+            <circle cx="36" cy="\(23.0 + waveY)" r="1.5" fill="white"/>
+            <ellipse cx="30" cy="\(31.0 + waveY)" rx="3" ry="2" fill="#475569" opacity="0.6"/>
             """
         case .fox:
+            // 4-legged canine trot: alternating gait, fluffy tail bob, alert ears
+            let bob = abs(sin(t * 8.0)) * 2.5
+            let fLegL = sin(t * 8.0) * 11.0
+            let fLegR = -sin(t * 8.0) * 11.0
+            let rLegL = -sin(t * 8.0) * 9.0
+            let rLegR = sin(t * 8.0) * 9.0
+            let tailWag = sin(t * 7.0) * 9.0
             inner = """
             <circle cx="30" cy="30" r="28" fill="rgba(251,146,60,0.15)"/>
-            <polygon points="18,20 12,4 24,18" fill="#fb923c"/>
-            <polygon points="42,20 48,4 36,18" fill="#fb923c"/>
-            <polygon points="19,19 14,8 24,18" fill="#f472b6" opacity="0.5"/>
-            <polygon points="41,19 46,8 36,18" fill="#f472b6" opacity="0.5"/>
-            <ellipse cx="30" cy="34" rx="13" ry="11" fill="#fb923c"/>
-            <ellipse cx="30" cy="37" rx="8" ry="7" fill="#fde8d0"/>
-            <circle cx="30" cy="22" r="12" fill="#fb923c"/>
-            <ellipse cx="30" cy="28" rx="9" ry="7" fill="#fde8d0"/>
-            <ellipse cx="24" cy="20" rx="3.5" ry="4.5" fill="#1c1917"/>
-            <ellipse cx="36" cy="20" rx="3.5" ry="4.5" fill="#1c1917"/>
-            <ellipse cx="24" cy="20" rx="1.5" ry="3" fill="#fbbf24"/>
-            <ellipse cx="36" cy="20" rx="1.5" ry="3" fill="#fbbf24"/>
-            <ellipse cx="30" cy="28" rx="2.5" ry="2" fill="#1c1917"/>
+            <!-- Fluffy Fox Tail -->
+            <path d="M16,\(36.0 + bob) Q\(6.0 + tailWag),\(22.0 + bob) \(8.0 + tailWag),\(12.0 + bob)" stroke="#fb923c" stroke-width="7" fill="none" stroke-linecap="round"/>
+            <path d="M16,\(36.0 + bob) Q\(6.0 + tailWag),\(22.0 + bob) \(8.0 + tailWag),\(12.0 + bob)" stroke="#fde8d0" stroke-width="3" fill="none" stroke-linecap="round"/>
+            <!-- Rear Legs -->
+            <line x1="20" y1="42" x2="\(20.0 + rLegL)" y2="55" stroke="#ea580c" stroke-width="3.8" stroke-linecap="round"/>
+            <line x1="26" y1="42" x2="\(26.0 + rLegR)" y2="55" stroke="#c2410c" stroke-width="3.8" stroke-linecap="round"/>
+            <!-- Body -->
+            <ellipse cx="30" cy="\(36.0 + bob)" rx="14" ry="11" fill="#fb923c"/>
+            <ellipse cx="30" cy="\(38.0 + bob)" rx="8" ry="6" fill="#fde8d0"/>
+            <!-- Front Legs -->
+            <line x1="36" y1="42" x2="\(36.0 + fLegL)" y2="55" stroke="#ea580c" stroke-width="3.8" stroke-linecap="round"/>
+            <line x1="42" y1="42" x2="\(42.0 + fLegR)" y2="55" stroke="#c2410c" stroke-width="3.8" stroke-linecap="round"/>
+            <!-- Head & Ears -->
+            <circle cx="38" cy="\(24.0 + bob * 0.5)" r="11" fill="#fb923c"/>
+            <polygon points="32,\(16.0 + bob * 0.5) 28,\(4.0 + bob * 0.5) 36,\(15.0 + bob * 0.5)" fill="#fb923c"/>
+            <polygon points="42,\(16.0 + bob * 0.5) 46,\(4.0 + bob * 0.5) 38,\(15.0 + bob * 0.5)" fill="#fb923c"/>
+            <ellipse cx="35" cy="\(23.0 + bob * 0.5)" rx="3" ry="4" fill="#1c1917"/>
+            <ellipse cx="43" cy="\(23.0 + bob * 0.5)" rx="3" ry="4" fill="#1c1917"/>
+            <ellipse cx="39" cy="\(28.0 + bob * 0.5)" rx="2" ry="1.5" fill="#1c1917"/>
             """
         case .bunny:
+            // Bunny Hopping Gait: Crouch -> Hop -> Land -> Pause
+            // Use hop cycle: jump up, legs tuck, land on ground
+            let hopPhase = (t * 4.0).truncatingRemainder(dividingBy: 1.0)
+            let hopY: Double
+            let earTilt: Double
+            let legStretch: Double
+            if hopPhase < 0.6 {
+                // In air hopping!
+                let normalizedHop = hopPhase / 0.6
+                hopY = -sin(normalizedHop * .pi) * 16.0
+                earTilt = sin(normalizedHop * .pi) * 6.0
+                legStretch = sin(normalizedHop * .pi) * 8.0
+            } else {
+                // Ground pause / crouch
+                hopY = 0.0
+                earTilt = 0.0
+                legStretch = 0.0
+            }
             inner = """
             <circle cx="30" cy="30" r="28" fill="rgba(244,114,182,0.12)"/>
-            <ellipse cx="22" cy="10" rx="5" ry="10" fill="#fbcfe8"/>
-            <ellipse cx="38" cy="10" rx="5" ry="10" fill="#fbcfe8"/>
-            <ellipse cx="22" cy="10" rx="2.5" ry="7" fill="#f9a8d4"/>
-            <ellipse cx="38" cy="10" rx="2.5" ry="7" fill="#f9a8d4"/>
-            <ellipse cx="30" cy="34" rx="14" ry="12" fill="#fbcfe8"/>
-            <circle cx="30" cy="22" r="13" fill="#fce7f3"/>
-            <ellipse cx="23" cy="22" rx="4" ry="5" fill="#1e1b4b"/>
-            <ellipse cx="37" cy="22" rx="4" ry="5" fill="#1e1b4b"/>
-            <circle cx="24" cy="21" r="1.5" fill="white"/>
-            <circle cx="38" cy="21" r="1.5" fill="white"/>
-            <ellipse cx="30" cy="30" rx="3" ry="2" fill="#f9a8d4"/>
+            <!-- Bunny Long Ears Flopping -->
+            <ellipse cx="\(24.0 - earTilt)" cy="\(10.0 + hopY)" rx="4" ry="9" fill="#fbcfe8"/>
+            <ellipse cx="\(36.0 + earTilt)" cy="\(10.0 + hopY)" rx="4" ry="9" fill="#fbcfe8"/>
+            <ellipse cx="\(24.0 - earTilt)" cy="\(10.0 + hopY)" rx="2" ry="6" fill="#f9a8d4"/>
+            <ellipse cx="\(36.0 + earTilt)" cy="\(10.0 + hopY)" rx="2" ry="6" fill="#f9a8d4"/>
+            <!-- Feet -->
+            <ellipse cx="22" cy="\(48.0 + hopY + legStretch)" rx="5" ry="3.5" fill="#fbcfe8"/>
+            <ellipse cx="38" cy="\(48.0 + hopY + legStretch)" rx="5" ry="3.5" fill="#fbcfe8"/>
+            <!-- Body -->
+            <ellipse cx="30" cy="\(36.0 + hopY)" rx="14" ry="12" fill="#fbcfe8"/>
+            <!-- Head -->
+            <circle cx="30" cy="\(23.0 + hopY)" r="12" fill="#fce7f3"/>
+            <ellipse cx="25" cy="\(22.0 + hopY)" rx="3.5" ry="4.5" fill="#1e1b4b"/>
+            <ellipse cx="35" cy="\(22.0 + hopY)" rx="3.5" ry="4.5" fill="#1e1b4b"/>
+            <circle cx="26" cy="\(21.0 + hopY)" r="1.5" fill="white"/>
+            <circle cx="36" cy="\(21.0 + hopY)" r="1.5" fill="white"/>
+            <ellipse cx="30" cy="\(28.0 + hopY)" rx="2.5" ry="1.8" fill="#f9a8d4"/>
+            <!-- Fluffy Cotton Tail -->
+            <circle cx="16" cy="\(38.0 + hopY)" r="4.5" fill="white"/>
             """
         }
         return wrapSvg(inner, width: 60, height: 60)

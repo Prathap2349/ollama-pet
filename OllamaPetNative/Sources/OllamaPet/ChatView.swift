@@ -251,12 +251,12 @@ struct ChatView: View {
 
                         if petState.isThinking {
                             HStack {
-                                Text("\(petState.currentSpecies.displayName) is thinking...")
-                                    .font(.system(size: 11, design: .monospaced))
-                                    .foregroundColor(petState.currentSpecies.accentColor)
+                                TypingDotsView(accentColor: petState.currentSpecies.accentColor)
                                 Spacer()
                             }
                             .padding(.horizontal, 12)
+                            .padding(.vertical, 4)
+                            .transition(.opacity.combined(with: .scale(scale: 0.92)))
                             .id("thinking_indicator")
                         }
 
@@ -376,41 +376,44 @@ struct ChatView: View {
         }
     }
 
+    @ViewBuilder
     private func messageBubble(_ msg: ChatMessage) -> some View {
-        HStack(alignment: .top, spacing: 6) {
-            if msg.role == "user" {
-                Spacer()
-                Text(msg.content)
-                    .font(.system(size: 12))
-                    .foregroundColor(.white)
-                    .padding(8)
-                    .background(petState.currentSpecies.accentColor.opacity(0.45))
-                    .cornerRadius(12)
-            } else {
-                VStack(alignment: .leading, spacing: 4) {
+        if !msg.content.isEmpty {
+            HStack(alignment: .top, spacing: 6) {
+                if msg.role == "user" {
+                    Spacer()
                     Text(msg.content)
                         .font(.system(size: 12))
                         .foregroundColor(.white)
                         .padding(8)
-                        .background(Color.white.opacity(0.1))
+                        .background(petState.currentSpecies.accentColor.opacity(0.45))
                         .cornerRadius(12)
+                } else {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(msg.content)
+                            .font(.system(size: 12))
+                            .foregroundColor(.white)
+                            .padding(8)
+                            .background(Color.white.opacity(0.1))
+                            .cornerRadius(12)
 
-                    Button(action: {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(msg.content, forType: .string)
-                        petState.showBubble("Copied! ⎘", duration: 1.0)
-                    }) {
-                        Text("⎘ copy")
-                            .font(.system(size: 9, design: .monospaced))
-                            .foregroundColor(Color.white.opacity(0.4))
+                        Button(action: {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(msg.content, forType: .string)
+                            petState.showBubble("Copied! ⎘", duration: 1.0)
+                        }) {
+                            Text("⎘ copy")
+                                .font(.system(size: 9, design: .monospaced))
+                                .foregroundColor(Color.white.opacity(0.4))
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.leading, 4)
                     }
-                    .buttonStyle(.plain)
-                    .padding(.leading, 4)
+                    Spacer()
                 }
-                Spacer()
             }
+            .padding(.horizontal, 10)
         }
-        .padding(.horizontal, 10)
     }
 
     // MARK: - Weather Tab
@@ -934,13 +937,13 @@ struct ChatView: View {
 
         petState.streak = dataManager.savedData.streak
         dataManager.updateStreak()
-        petState.isThinking = true
+        withAnimation(.easeInOut(duration: 0.2)) {
+            petState.isThinking = true
+        }
         petState.animState = .thinking
         motion.transitionTo(.thinking)
 
         let assistantMsgId = UUID()
-        let assistantPlaceholder = ChatMessage(id: assistantMsgId, role: "assistant", content: "")
-        messages.append(assistantPlaceholder)
 
         Task {
             // 1. Check if Mac Control Action Assistant handles this request
@@ -948,14 +951,14 @@ struct ChatView: View {
             if macSettings.macControlEnabled {
                 if let action = await ActionIntentParser.shared.parseIntent(from: text) {
                     let actionResult = await MacActionExecutor.shared.processAction(action, userText: text)
-                    if let index = messages.firstIndex(where: { $0.id == assistantMsgId }) {
-                        messages[index] = ChatMessage(
-                            id: assistantMsgId,
-                            role: "assistant",
-                            content: actionResult
-                        )
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        petState.isThinking = false
                     }
-                    petState.isThinking = false
+                    messages.append(ChatMessage(
+                        id: assistantMsgId,
+                        role: "assistant",
+                        content: actionResult
+                    ))
                     petState.animState = .idle
                     motion.transitionTo(.idle)
                     saveMessages()
@@ -969,7 +972,7 @@ struct ChatView: View {
 
             do {
                 let systemCtx = "You are \(petState.currentSpecies.displayName), a cute friendly desktop companion. Keep answers concise, helpful, and in character."
-                let nonStreamingHistory = messages.filter { $0.id != assistantMsgId }
+                let nonStreamingHistory = messages
 
                 let fullReply = try await AIProviderManager.shared.streamChat(
                     systemPrompt: systemCtx,
@@ -981,8 +984,18 @@ struct ChatView: View {
                             role: "assistant",
                             content: messages[index].content + token
                         )
-                        motion.transitionTo(.streamingResponse)
+                    } else {
+                        // First token arrives! Fade out typing indicator smoothly
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            petState.isThinking = false
+                        }
+                        messages.append(ChatMessage(
+                            id: assistantMsgId,
+                            role: "assistant",
+                            content: token
+                        ))
                     }
+                    motion.transitionTo(.streamingResponse)
                 }
 
                 SoundEffect.receive.play()
@@ -994,6 +1007,9 @@ struct ChatView: View {
                     voiceAssistant.speak(text: fullReply)
                 }
             } catch {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    petState.isThinking = false
+                }
                 errorMessage = error.localizedDescription
                 lastFailedPrompt = text
                 messages.removeAll { $0.id == assistantMsgId }
@@ -1001,7 +1017,9 @@ struct ChatView: View {
                 petState.showBubble("Error! 😱", duration: 2.5)
                 SoundEffect.alert.play()
             }
-            petState.isThinking = false
+            withAnimation(.easeInOut(duration: 0.2)) {
+                petState.isThinking = false
+            }
             petState.animState = .idle
             motion.transitionTo(.idle)
         }
@@ -1061,5 +1079,51 @@ struct ChatView: View {
     private func startWalkAcrossScreen() {
         WalkerManager.shared.startWalk(species: petState.currentSpecies)
         petState.showBubble("Going for a walk! 🚶", duration: 2.0)
+    }
+}
+
+// MARK: - Native Staggered Typing Dots View
+
+public struct TypingDotsView: View {
+    public let accentColor: Color
+    @State private var dotScales: [CGFloat] = [0.45, 0.45, 0.45]
+    @State private var dotOffsets: [CGFloat] = [2.0, 2.0, 2.0]
+
+    public init(accentColor: Color) {
+        self.accentColor = accentColor
+    }
+
+    public var body: some View {
+        HStack(spacing: 5) {
+            ForEach(0..<3) { i in
+                Circle()
+                    .fill(accentColor.opacity(dotScales[i] > 0.6 ? 0.95 : 0.45))
+                    .frame(width: 5.5, height: 5.5)
+                    .offset(y: dotOffsets[i])
+                    .scaleEffect(dotScales[i])
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 9)
+        .background(
+            RoundedRectangle(cornerRadius: 14)
+                .fill(Color(white: 0.16).opacity(0.85))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14)
+                        .stroke(accentColor.opacity(0.2), lineWidth: 1)
+                )
+        )
+        .onAppear {
+            for i in 0..<3 {
+                withAnimation(
+                    Animation.easeInOut(duration: 0.45)
+                        .repeatForever(autoreverses: true)
+                        .delay(Double(i) * 0.16)
+                ) {
+                    dotOffsets[i] = -3.5
+                    dotScales[i] = 1.15
+                }
+            }
+        }
     }
 }

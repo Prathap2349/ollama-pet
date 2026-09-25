@@ -1,149 +1,171 @@
+# 🐾 Ollama Pet
+
 <p align="center">
   <img src="banner.png" alt="Ollama Pet Banner" width="100%">
 </p>
 
-<h1 align="center">🐾 Ollama Pet</h1>
-
 <p align="center">
-  <b>Lightweight, Native macOS Desktop AI Companion built with Swift, SwiftUI, and AppKit</b>
+  <strong>A native macOS AI desktop companion with local Ollama AI, animated characters, reminders, focus tools, Mac control, and privacy-first presence monitoring.</strong>
 </p>
 
-A local AI desktop companion that lives on your screen — powered entirely by [Ollama](https://ollama.ai) running on your own machine. No cloud, no external API keys, no subscriptions, and zero web runtime overhead. Chat with your pet, watch it dance to your music, schedule reminders that survive restarts, check live weather, track focus with Pomodoro, and monitor real system vitals.
+<p align="center">
+  <img src="https://img.shields.io/badge/Platform-macOS%2013%2B-blue?logo=apple" alt="macOS">
+  <img src="https://img.shields.io/badge/Architecture-Apple%20Silicon%20(arm64)-orange" alt="Apple Silicon">
+  <img src="https://img.shields.io/badge/Language-Swift%205.9%20%2F%20SwiftUI-red?logo=swift" alt="Swift">
+  <img src="https://img.shields.io/badge/AI-Ollama%20(Local--First)-emerald" alt="Ollama">
+  <img src="https://img.shields.io/badge/License-MIT-lightgrey" alt="License">
+</p>
 
 ---
 
-## ⚡ Native macOS Architecture
+## ✨ Overview
 
-Ollama Pet is built natively for macOS using **Swift**, **SwiftUI**, and **AppKit**:
+**Ollama Pet** is a native macOS application built with Swift, SwiftUI, and AppKit. It lives on your desktop as an interactive animated virtual companion powered by your local Ollama large language models. 
 
-- 🚀 **Blazing Fast & Lightweight**: Zero Chromium or Node.js overhead, instantaneous startup, and minimal memory usage.
-- 🪟 **True Floating NSPanel**: Borderless, transparent floating window with zero window flickering on spawn.
-- 🎯 **Anchor-Aware Dynamic Geometry**: Control drawer expands intelligently away from screen edges based on quadrant detection, preserving pet screen coordinates with 0px cumulative drift.
-- 🖐️ **Fluid Draggable Interface**: Mouse-offset dragging with a 5px threshold (click vs. drag separation) and corner snapping.
-- 🖥️ **Multi-Monitor Safe**: Window bounds are automatically constrained to active display `workArea` boundaries.
-- ⚡ **Apple Silicon Optimized**: Native ARM64 Mach-O binary compiled for macOS 13+ (Ventura, Sonoma, Sequoia).
-- 🐾 **Menu Bar & Global Hotkey**: Access via the status bar item (`🐾`) or toggle visibility globally anytime using <kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>P</kbd>.
+Unlike web wrappers or heavy electron apps, Ollama Pet is engineered specifically for macOS: ultra-lightweight, hardware-accelerated, power-efficient, and deeply respectful of your privacy.
 
 ---
 
-## ✨ Features
+## 🌟 Key Features
 
-| Feature | What it does |
-|---|---|
-| 💬 **AI Chat & Streaming Voice Assistant** | Talk to your pet using local Ollama models (`llama3.2`, `gemma2`, `phi3`, etc.). Features real-time token streaming with conversational eye tracking, Push-to-Talk STT (`SFSpeechRecognizer`), and speech synthesis (`AVSpeechSynthesizer`). |
-| 🧬 **5-Layer Composable Render Tree** | Hardware-accelerated SwiftUI Canvas render tree (`Aura -> Body Shell -> Clothing/Skin -> Facial Features -> Floating Accessories`) with procedural lighting, ambient day/night rim light, and reactive CPU thermal shifts. |
-| 🫧 **Selectable Character Structural Models** | Choose between authentic **Classic Species** (7 characters), **Kinetic Slime** (elastic bezier morphing), **Hovering Cyber-Sentry** (segmented floating plates & pulse visors), and **Pixel-Chibi Beast** (articulated limbs & ears). |
-| 🏃 **Procedural Motion Kinematics** | Explicit `CharacterMotionStateMachine` featuring organic breathing, random micro-blinks, gaze saccades, spring squash/stretch, thought sparks, and multi-phase dance choreography with celebratory confetti bursts. |
-| 🚶 **Gait Presets & Walk Mode** | Supports 3 distinct walk gait presets: **Bouncy March** (high vertical pop), **Stealth Prowl** (low predatory glide), and **Hover Glide** (inertial float with secondary delay) with speed controls ($0.5\times - 2.0\times$) and test previews. |
-| 🌦️ **Persistent Multi-City Climate Vault** | Add, manage, and switch arbitrary global cities permanently stored in `~/ollama-pet-data.json`. Directly influences pet stage rendering with dynamic rain ripples, snow accumulation, fog blur, and golden-hour sunbeams. |
-| 🪟 **True Desktop Pass-Through Hit-Testing** | Non-transparent geometry evaluation allows complete pass-through clicks for underlying desktop apps while preserving mouse dragging and interaction on the pet and drawer. |
-| ⚡ **Adaptive Resource Throttling** | Dynamically reduces animation frame rates (60fps -> 30fps) and monitoring intervals when operating on battery power to conserve energy. |
-| 👁️ **Optional Vision Guardian** | Privacy-first Apple Vision human presence detection. Low-res ($640\times 480$, 5s/10s/30s) scans detect presence and desk return. Off by default. |
-| 🖥️ **Screen Context Awareness** | Frontmost app detection without continuous screen recording. Off by default. |
-| 🍅 **Focus Guardian & Hydration** | 25-minute Pomodoro timer coordinated with presence and periodic hydration reminders. |
-| 🎵 **Music & Dance** | AVFoundation metering powers a beat visualizer with audio-reactive choreography. |
-| ⏰ **Persistent Reminders** | Reminders that survive restarts, delivered via `UNUserNotificationCenter`. |
-| 📊 **System Vitals** | Real Mach kernel CPU load, IOKit battery percentage/charging status, uptime, and active apps. |
-| ⌨️ **Customizable Shortcuts** | Assign custom global hotkeys for Pet Toggle, Voice Assistant Push-to-Talk, and Settings. |
-| 🔐 **Privacy Center** | Explicit status monitors and toggle controls for Microphone, Speech, Camera, and Screen Recording. |
+### 🧠 Local Ollama AI (Default)
+* **Local-First Inference**: Connects directly to your local Ollama instance (`http://127.0.0.1:11434`).
+* **Real-Time Token Streaming**: Text streams seamlessly into the chat interface with low latency.
+* **Auto-Model Discovery**: Automatically detects installed models (`llama3`, `mistral`, `qwen`, `gemma`, `phi3`, etc.) with quick switching in Settings.
+* **Typing Indicator**: Smooth, staggered 3-dot typing bubble that fades cleanly when streaming begins.
+
+### ☁️ Optional Cloud AI Providers
+* **Multi-Provider Support**: Optionally configure OpenAI, Google Gemini, or Anthropic Claude models alongside local Ollama.
+* **Hardware Keychain Security**: API keys are securely stored directly in your macOS Keychain—never plaintext in dotfiles or preferences.
+* **Zero Telemetry**: No user prompts or chat transcripts are logged to any third-party analytics servers.
+
+### 🎭 Distinct Character Mascots & Silhouettes
+* **5 Unique Species**:
+  * **BOO (Ghost)**: Floating spectral companion with a curious sideways drift, liquid hemline, and expressive blue-cyan eyes.
+  * **KIKI (Cat)**: Playful feline with twitching ears, curious head tilts, and kawaii expressions.
+  * **POCHI (Bunny)**: Energetic rabbit with tall upright ears and bouncy step kinematics.
+  * **DORA (Robot Cat)**: Digital cyber companion with LED visor expressions and futuristic sounds.
+  * **KAI (Reptile)**: Calm draconian beast with vertical slit pupils and gentle breathing cycles.
+* **Developer Grayscale Test Mode**: Verify anatomical silhouettes in high-contrast monochrome to confirm distinctive geometry without relying on color cues.
+
+### 🏃 Character Animation & Kinematics
+* **Organic Movement Physics**: Natural idle bobbing, breathing oscillation, and reactive squish/stretch on click or drag.
+* **Walking Across Screen**: Companions can walk across your desktop workspace with selectable gait presets (*Bouncy March*, *Stealth Prowl*, *Hover Glide*).
+* **Safe Mode Guard**: Automatic throttling to 15 FPS with all shaders disabled if battery or thermal load spikes.
+
+### 🎙️ Voice Assistant
+* **Push-to-Talk Speech Recognition**: High-accuracy local speech-to-text powered natively by Apple's Speech and AVFoundation frameworks.
+* **Natural Voice Synthesis**: Speaks responses using macOS system voices with adjustable pitch and rate.
+
+### 🧭 Safe Mac Control & Action Assistant
+* **Strict Security Action Pipeline**: Natural language intent parsing for common Mac tasks without arbitrary shell execution:
+  * Application management (open Safari, Finder, Terminal, Notes, etc.)
+  * Volume & brightness adjustments
+  * Direct web searches (Google, GitHub, Wikipedia, YouTube)
+  * System telemetry checks (battery, uptime, CPU status)
+* **Action History**: Local transparent audit log showing timestamps, intent, parameters, and execution outcomes.
+
+### 👁️ Native Presence Monitor
+* **Apple Vision Human Detection**: Detects human body rectangles locally with zero cloud streaming.
+* **Enhanced Proximity & IoU Tracking**: Combines spatial IoU and center-distance matching with missed-frame tolerance to prevent jumping or flickering.
+* **Separated Detection & Preview**: Detection runs silently in the background at an adaptive rate. Live video preview rendering is completely disabled unless you explicitly expand the camera view or open Settings.
+* **Adaptive Sampling Modes**:
+  * **Low Power**: 2.0s analysis intervals with maximum thermal throttling.
+  * **Balanced** *(Default)*: 0.8–1.2s adaptive analysis (relaxes to 2.2s when owner is verified).
+  * **Responsive**: 0.4–0.6s rapid presence reaction.
+* **Optional Local Owner Recognition**:
+  * Enroll your face locally using Apple Vision feature prints.
+  * Distinguishes between verified Owner, Unverified Guests, and Obscured faces.
+  * *Note: Owner recognition is designed for companion personalization and desktop convenience—it is not security-grade biometric authentication.*
+* **Event-Based Local Security Snapshots**:
+  * **Disabled by default**.
+  * When enabled, captures 1 discrete snapshot per unfamiliar encounter (> 5s dwell) with a 60-second cooldown.
+  * Strictly local storage (`~/Library/Application Support/OllamaPet/Snapshots`), capped at 20 images maximum (oldest pruned automatically).
+* **Internal Self-Healing Watchdog**: Automatically detects camera stalls and recovers the session without terminal commands or system freezes.
+
+### ⏱️ Focus Guardian & Healthy Habits
+* **Pomodoro Focus Timer**: Custom work intervals and break durations with discrete notification chimes.
+* **Hydration & Posture Nudges**: Gentle periodic companion alerts encouraging healthy desk habits.
+* **Eye Rest Reminders**: Screen awareness cues reminding you to take 20-20-20 breaks.
+
+### 🌦️ Weather & Music
+* **Live Weather Dashboard**: Queries current temperature, conditions, and humidity for your city.
+* **Atmospheric Visuals**: Optional real-time weather particle overlays (raindrops, flurries, golden hour aura).
+* **Local Music Player**: Play local MP3/audio files with synced companion dance animations.
 
 ---
 
-## 🛠 Project Structure
+## 🏗️ Architecture
 
 ```text
-ollama-pet/
-├── OllamaPetNative/               # Native macOS Swift codebase
-│   ├── Package.swift              # SPM package definition
-│   └── Sources/OllamaPet/
-│       ├── AppDelegate.swift      # Menu bar status item, hotkey & app lifecycle
-│       ├── CharacterMotionStateMachine.swift # Kinematic states, breathing, micro-blinks, gaits & particles
-│       ├── ChatView.swift         # Multi-tab SwiftUI drawer (Chat, Climate Vault, Focus, Settings)
-│       ├── DataManager.swift      # Persistent storage & UNUserNotificationCenter alerts
-│       ├── FocusGuardian.swift    # Pomodoro session coordinator & hydration alerts
-│       ├── Models.swift           # Characters, moods, climate models, preferences & shortcuts
-│       ├── MusicManager.swift     # AVFoundation audio player & audio metering
-│       ├── OllamaClient.swift     # URLSession client with real-time token streaming
-│       ├── PetArtwork.swift       # SVG vector rendering for classic species
-│       ├── PetCanvasRenderer.swift # 5-layer composable render tree & procedural color engine
-│       ├── PetStageView.swift     # TimelineView & SwiftUI Canvas physics pet stage
-│       ├── PetState.swift         # Animation, mood, Pomodoro, and game state machine
-│       ├── PetWindowController.swift # NSPanel with geometry-aware hit-testing & pass-through
-│       ├── ScreenGuardian.swift   # Privacy-first frontmost app context analyzer
-│       ├── ShortcutManager.swift  # Global keyboard event monitors & conflict resolver
-│       ├── SoundEffects.swift     # AudioToolbox sound effects
-│       ├── SystemMonitor.swift    # Mach host processor stats, IOKit power & dynamic throttling
-│       ├── VisionGuardian.swift   # Camera awareness & Apple Vision human detection
-│       ├── VoiceAssistant.swift   # Push-to-talk STT & TTS speech synthesizer
-│       ├── WalkerManager.swift    # TimelineView & Canvas bottom-screen walk animation
-│       ├── WeatherService.swift   # Multi-City Climate Vault service via Open-Meteo
-│       └── main.swift             # Native app entry point
-├── build-native.sh                # Automated build & packaging script for Native macOS .app
-├── install.sh                     # Automated build & install script into /Applications
-├── icon.icns                      # High-resolution macOS app icon bundle
-├── icon.png                       # App icon asset
-├── banner.png                     # Project banner asset
-├── LICENSE                        # Project license
-├── .gitignore                     # Git ignore rules for native builds
-└── README.md                      # Documentation
+┌────────────────────────────────────────────────────────┐
+│                      Ollama Pet                        │
+│                (Native macOS Application)              │
+└───────────┬────────────────────────────────┬───────────┘
+            │                                │
+    ┌───────▼────────┐               ┌───────▼────────┐
+    │ Companion Core │               │   AI Engine    │
+    ├────────────────┤               ├────────────────┤
+    │ PetStageView   │               │ OllamaClient   │
+    │ CanvasRenderer │               │ AIProviderMgr  │
+    │ MotionStateMachine             │ APIKeyManager  │
+    │ WalkerManager  │               │ (Keychain)     │
+    └───────┬────────┘               └───────┬────────┘
+            │                                │
+    ┌───────▼────────────────────────────────▼────────┐
+    │            Hardware & OS Integration            │
+    ├─────────────────────────────────────────────────┤
+    │ AVFoundation (Camera & Audio Capture)           │
+    │ Apple Vision (Human & Face Analysis)            │
+    │ Apple Speech & NSSpeechSynthesizer              │
+    │ AppKit Floating Windows (NSPanel)               │
+    │ CoreImage & Metal Graphics Acceleration         │
+    └─────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 🚀 Building & Running
+## 🚀 Getting Started
 
-### 1. Requirements
-
-- **macOS**: macOS 13.0 or later (Apple Silicon or Intel).
-- **Xcode Command Line Tools**: `xcode-select --install`
-- **Ollama**: Download from [ollama.ai](https://ollama.ai) and pull any model:
+### Prerequisites
+* **macOS 13.0 (Ventura)** or later (Apple Silicon M1/M2/M3/M4 recommended)
+* [Ollama](https://ollama.com) installed and running:
   ```bash
-  ollama pull llama3.2
-  # or
-  ollama pull phi3
+  ollama serve
+  ollama pull llama3:latest
   ```
 
----
+### Build & Installation
 
-### 2. Install to Applications (Recommended)
+1. **Clone the repository**:
+   ```bash
+   git clone https://github.com/Prathap2349/ollama-pet.git
+   cd ollama-pet
+   ```
 
-To build and automatically install directly into your macOS `/Applications` folder:
+2. **Build the native application**:
+   ```bash
+   ./build-native.sh
+   ```
+   *This compiles an arm64 release binary and code-signs the `.app` bundle ad-hoc.*
 
-```bash
-chmod +x install.sh
-./install.sh
-```
-
-This compiles the release binary and copies `OllamaPet.app` directly into `/Applications`, making it instantly searchable in Spotlight and Launchpad.
-
----
-
-### 3. Alternative: Build & Run Locally
-
-To compile and run directly from the workspace folder:
-
-```bash
-chmod +x build-native.sh
-./build-native.sh
-open dist-native/OllamaPet.app
-```
-
-> **Note**: Whenever you launch Ollama Pet outside your Applications folder (e.g. from Downloads or this repository), the app will automatically prompt:
-> *"Move to Applications Folder?"*
-> You can also click the status bar icon (`🐾`) at any time and choose **"📥 Move to Applications Folder..."**.
+3. **Install to `/Applications`**:
+   ```bash
+   ./install.sh
+   ```
+   *Safely installs `OllamaPet.app` to your Applications folder and launches it.*
 
 ---
 
-## ⌨️ Shortcuts & Controls
+## 🔒 Privacy & Permissions
 
-- **Click Pet**: Open or close the interactive drawer.
-- **Drag Pet**: Reposition anywhere on screen with automatic corner snapping.
-- **5 Clicks in a Row**: Triggers an instant celebration dance party! 🎉
-- <kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>P</kbd>: Toggle pet visibility globally on macOS.
-- **Status Bar Menu (`🐾`)**: Switch characters, toggle launch at login, or quit the app.
+* **100% On-Device Processing**: Ollama Pet never transmits camera frames, speech audio, or companion interactions to external cloud servers unless you explicitly configure a Cloud AI API key.
+* **Explicit Microphone Access**: Used solely when you click and hold the Push-to-Talk button.
+* **Explicit Camera Access**: Used solely for the local Presence Monitor. Can be disabled or paused at any time from the status bar or widget.
+* **Local Keychain Storage**: Cloud API credentials remain encrypted within the macOS Keychain.
 
 ---
 
 ## 📄 License
 
-MIT License. See [LICENSE](LICENSE) for details.
+This project is licensed under the [MIT License](LICENSE).

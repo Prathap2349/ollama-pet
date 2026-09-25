@@ -86,7 +86,7 @@ public enum SettingsGroup: String, CaseIterable, Identifiable {
         case .presence:
             return [.presenceMonitor, .screen, .focus]
         case .privacyAndSystem:
-            return [.permissions, .privacy, .performance]
+            return [.permissions, .privacy]
         }
     }
 }
@@ -107,7 +107,6 @@ public enum SettingsTab: String, CaseIterable, Identifiable {
     case focus = "Focus & Health"
     case permissions = "Permissions & Security"
     case privacy = "Privacy & Telemetry"
-    case performance = "System & Performance"
 
     public var id: String { rawValue }
 
@@ -128,7 +127,6 @@ public enum SettingsTab: String, CaseIterable, Identifiable {
         case .focus: return "brain.head.profile"
         case .permissions: return "lock.shield.fill"
         case .privacy: return "hand.raised.fill"
-        case .performance: return "bolt.shield.fill"
         }
     }
 }
@@ -520,8 +518,6 @@ public struct SettingsContainerView: View {
                             FocusSettingsSection()
                         case .privacy:
                             PrivacySettingsSection()
-                        case .performance:
-                            PerformanceSettingsSection()
                         }
                     }
                     .padding(24)
@@ -905,195 +901,15 @@ struct AnimationSettingsSection: View {
                 }
                 .pickerStyle(.segmented)
             }
-        }
-    }
-}
 
-// MARK: - System & Performance Section
+            Divider()
 
-struct PerformanceSettingsSection: View {
-    @ObservedObject var sys = SystemMonitor.shared
-    @ObservedObject var perf = PerformanceManager.shared
-    @ObservedObject var ollama = OllamaClient.shared
-    @ObservedObject var dataManager = DataManager.shared
-    @ObservedObject var perm = PermissionManager.shared
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("System & Performance")
-                        .font(.system(size: 18, weight: .bold))
-                    Text("Real-time telemetry and hardware specs for your Mac.")
-                        .font(.system(size: 12))
-                        .foregroundColor(.secondary)
-                }
-                Spacer()
-                Button(action: {
-                    sys.manualRefreshAll()
-                }) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "arrow.clockwise")
-                        Text("Refresh Metrics")
-                    }
-                    .font(.system(size: 11))
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-            }
-
-            // 1. SYSTEM & LOCAL AI CARD
+            // Visual Enhancements & Shaders
             VStack(alignment: .leading, spacing: 10) {
-                Text("Mac & AI Environment")
-                    .font(.system(size: 13, weight: .bold))
+                Text("Visual Enhancements & Shaders")
+                    .font(.system(size: 13, weight: .semibold))
 
-                VStack(spacing: 6) {
-                    metricRow(title: "Hardware Model", value: sys.macModel)
-                    Divider()
-                    metricRow(title: "Architecture", value: "\(sys.architecture) (\(sys.cpuCores) Cores)")
-                    Divider()
-                    metricRow(title: "Operating System", value: sys.macOSVersion)
-                    Divider()
-                    metricRow(
-                        title: "Ollama Status",
-                        value: ollama.isOnline ? "● Online (Connected)" : "○ Offline / Unreachable",
-                        valueColor: ollama.isOnline ? .green : .red
-                    )
-                    Divider()
-                    metricRow(title: "Ollama Endpoint", value: ollama.endpoint)
-                    Divider()
-                    metricRow(title: "Active LLM Model", value: dataManager.savedData.selectedModel ?? (ollama.activeModel.isEmpty ? "None" : ollama.activeModel))
-                }
-            }
-            .padding(14)
-            .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
-
-            // 2. LIVE PERFORMANCE METRICS
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Performance & Power")
-                    .font(.system(size: 13, weight: .bold))
-
-                VStack(spacing: 10) {
-                    // CPU Gauge
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack {
-                            Text("CPU Load")
-                                .font(.system(size: 12, weight: .medium))
-                            Spacer()
-                            Text(String(format: "%.1f%%", sys.cpuPercent))
-                                .font(.system(size: 12, weight: .bold, design: .monospaced))
-                                .foregroundColor(sys.cpuPercent > 75 ? .red : (sys.cpuPercent > 45 ? .orange : .primary))
-                        }
-                        ProgressView(value: min(100.0, max(0.0, sys.cpuPercent)), total: 100.0)
-                            .progressViewStyle(.linear)
-                            .accentColor(sys.cpuPercent > 75 ? .red : (sys.cpuPercent > 45 ? .orange : .accentColor))
-                    }
-
-                    Divider()
-
-                    // Memory Gauge
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack {
-                            Text("Memory (RAM)")
-                                .font(.system(size: 12, weight: .medium))
-                            Spacer()
-                            Text(String(format: "%.1f GB / %.1f GB (%.0f%%)", sys.memoryUsedGB, sys.memoryTotalGB, sys.memoryPercent))
-                                .font(.system(size: 12, weight: .bold, design: .monospaced))
-                        }
-                        ProgressView(value: min(100.0, max(0.0, sys.memoryPercent)), total: 100.0)
-                            .progressViewStyle(.linear)
-                    }
-
-                    Divider()
-
-                    // Battery & Power
-                    if sys.hasBattery {
-                        HStack {
-                            Text("Battery")
-                                .font(.system(size: 12, weight: .medium))
-                            Spacer()
-                            HStack(spacing: 6) {
-                                Image(systemName: sys.isCharging ? "battery.100.bolt" : "battery.75")
-                                    .foregroundColor(sys.isCharging ? .green : (sys.batteryPercent <= 20 ? .red : .primary))
-                                Text("\(sys.batteryPercent)% (\(sys.isCharging ? "Charging" : "On Battery"))")
-                                    .font(.system(size: 12, weight: .bold, design: .monospaced))
-                            }
-                        }
-                        Divider()
-                    }
-
-                    metricRow(title: "System Uptime", value: sys.uptimeString)
-                }
-            }
-            .padding(14)
-            .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
-
-            // 3. STORAGE & DISK
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Disk Storage (Primary Volume)")
-                    .font(.system(size: 13, weight: .bold))
-
-                VStack(spacing: 8) {
-                    HStack {
-                        Text("Space Allocation")
-                            .font(.system(size: 12, weight: .medium))
-                        Spacer()
-                        Text(String(format: "%.1f GB used of %.1f GB (%.1f GB free)", sys.diskUsedGB, sys.diskTotalGB, sys.diskAvailableGB))
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundColor(.secondary)
-                    }
-                    ProgressView(value: min(100.0, max(0.0, sys.diskPercent)), total: 100.0)
-                        .progressViewStyle(.linear)
-                        .accentColor(sys.diskPercent > 90 ? .red : .accentColor)
-                }
-            }
-            .padding(14)
-            .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
-
-            // 4. APP & PERMISSION INTEGRITY STATUS
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Application Status & Permissions")
-                    .font(.system(size: 13, weight: .bold))
-
-                VStack(spacing: 6) {
-                    metricRow(title: "Ollama Pet Version", value: sys.appVersion)
-                    Divider()
-                    metricRow(title: "Installed Location", value: sys.appInstallationPath)
-                    Divider()
-                    metricRow(
-                        title: "Notifications",
-                        value: perm.notificationsStatus.rawValue,
-                        valueColor: perm.notificationsStatus == .granted ? .green : .orange
-                    )
-                    Divider()
-                    metricRow(
-                        title: "Accessibility Permission",
-                        value: ShortcutManager.shared.isAccessibilityGranted ? "Granted" : "Required for Global Shortcuts",
-                        valueColor: ShortcutManager.shared.isAccessibilityGranted ? .green : .orange
-                    )
-                    Divider()
-                    metricRow(title: "Foreground App", value: sys.frontmostApp)
-                    Divider()
-                    metricRow(title: "Active GUI Applications", value: "\(sys.runningAppsCount) applications")
-                }
-            }
-            .padding(14)
-            .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
-
-            // 5. VISUAL SHADERS & GPU WORKLOAD
-            VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    Text("Visual Enhancements & Safe Mode")
-                        .font(.system(size: 13, weight: .bold))
-                    Spacer()
-                    if perf.isSafeMode {
-                        Text("🛡️ Safe Mode Active")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundColor(.yellow)
-                    }
-                }
-
-                Text("Visual shaders are strictly decoupled from companion physics. Turn off to minimize GPU utilization.")
+                Text("Visual effects are decoupled from companion physics. Turn off to minimize GPU utilization.")
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
 
@@ -1138,19 +954,11 @@ struct PerformanceSettingsSection: View {
                         }
                     }
                 }
-                .padding(.top, 4)
-
-                Divider()
+                .padding(12)
+                .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
 
                 HStack {
-                    Button(perf.isSafeMode ? "Exit Safe Mode (Restore 60 FPS)" : "Enable Safe Mode (15 FPS Low-Resource)") {
-                        perf.toggleSafeMode()
-                    }
-                    .font(.system(size: 11))
-                    .buttonStyle(.bordered)
-
                     Spacer()
-
                     Button("Reset Visuals to Default") {
                         perf.resetToDefaults()
                     }
@@ -1158,26 +966,6 @@ struct PerformanceSettingsSection: View {
                     .buttonStyle(.bordered)
                 }
             }
-            .padding(14)
-            .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
-        }
-        .onAppear {
-            sys.manualRefreshAll()
-            perm.checkAllPermissions()
-            ShortcutManager.shared.checkAccessibilityPermission()
-        }
-    }
-
-    private func metricRow(title: String, value: String, valueColor: Color = .primary) -> some View {
-        HStack {
-            Text(title)
-                .font(.system(size: 12, weight: .medium))
-            Spacer()
-            Text(value.isEmpty ? "Unavailable" : value)
-                .font(.system(size: 11, weight: .bold, design: .monospaced))
-                .foregroundColor(valueColor)
-                .lineLimit(1)
-                .truncationMode(.middle)
         }
     }
 }

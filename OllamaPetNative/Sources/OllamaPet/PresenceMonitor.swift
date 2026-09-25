@@ -25,26 +25,35 @@ public enum PresenceStatus: String {
 
 public struct TrackedSubject: Identifiable {
     public let id: UUID
-    public var rect: CGRect // Normalized (0...1) in Vision coords (origin bottom-left)
+    public var rect: CGRect // Normalized (0...1) in Vision coordinates (origin bottom-left)
     public var firstSeen: Date
     public var lastSeen: Date
     public var isOwner: Bool
     public var isUncertain: Bool
     public var lastRecognitionTime: Date?
     public var hasCapturedSnapshot: Bool
+    public var missedFramesCount: Int
 
     public var dwellDuration: TimeInterval {
         return lastSeen.timeIntervalSince(firstSeen)
     }
 
-    public init(id: UUID = UUID(), rect: CGRect, isOwner: Bool = false, isUncertain: Bool = false) {
+    public init(
+        id: UUID = UUID(),
+        rect: CGRect,
+        isOwner: Bool = false,
+        isUncertain: Bool = false,
+        lastRecognitionTime: Date? = nil
+    ) {
         self.id = id
         self.rect = rect
         self.firstSeen = Date()
         self.lastSeen = Date()
         self.isOwner = isOwner
         self.isUncertain = isUncertain
+        self.lastRecognitionTime = lastRecognitionTime
         self.hasCapturedSnapshot = false
+        self.missedFramesCount = 0
     }
 }
 
@@ -57,59 +66,73 @@ public enum MonitoringPerformanceMode: String, CaseIterable, Codable, Identifiab
 
     public var baseInterval: Double {
         switch self {
-        case .lowPower: return 2.2
-        case .balanced: return 1.4
-        case .responsive: return 0.9
+        case .lowPower: return 2.0
+        case .balanced: return 1.0
+        case .responsive: return 0.6
         }
     }
 
     public var activeInterval: Double {
         switch self {
-        case .lowPower: return 1.2
-        case .balanced: return 0.7
+        case .lowPower: return 1.8
+        case .balanced: return 0.8
         case .responsive: return 0.4
         }
     }
 
     public var ownerRelaxedInterval: Double {
         switch self {
-        case .lowPower: return 3.5
-        case .balanced: return 2.4
-        case .responsive: return 1.6
+        case .lowPower: return 3.2
+        case .balanced: return 2.2
+        case .responsive: return 1.2
         }
     }
 }
 
-// MARK: - Lightweight IoU Tracker
+// MARK: - Enhanced IoU & Proximity Tracker
 
-private final class LightweightIoUTracker {
+private final class EnhancedPresenceTracker {
     private var subjects: [TrackedSubject] = []
-    private let iouThreshold: CGFloat = 0.28
+    private let scoreThreshold: CGFloat = 0.28
+    private let maxMissedCycles = 3
     private let maxTimeWithoutUpdate: TimeInterval = 3.5
+
+    func currentSubjects() -> [TrackedSubject] {
+        return subjects
+    }
 
     func update(detections: [(rect: CGRect, isOwner: Bool, isUncertain: Bool, wasRecognized: Bool)]) -> [TrackedSubject] {
         let now = Date()
-        var matchedIndices = Set<Int>()
+        var matchedSubjectIndices = Set<Int>()
         var updatedSubjects: [TrackedSubject] = []
 
         for det in detections {
-            var bestIoU: CGFloat = 0.0
+            var bestScore: CGFloat = 0.0
             var bestIdx: Int? = nil
 
             for (idx, subj) in subjects.enumerated() {
-                if matchedIndices.contains(idx) { continue }
-                let iou = computeIoU(subj.rect, det.rect)
-                if iou > bestIoU && iou >= iouThreshold {
-                    bestIoU = iou
+                if matchedSubjectIndices.contains(idx) { continue }
+                let score = computeMatchScore(subj.rect, det.rect)
+                if score > bestScore && score >= scoreThreshold {
+                    bestScore = score
                     bestIdx = idx
                 }
             }
 
             if let matchedIdx = bestIdx {
-                matchedIndices.insert(matchedIdx)
+                matchedSubjectIndices.insert(matchedIdx)
                 var subj = subjects[matchedIdx]
-                subj.rect = det.rect
+
+                // Smooth exponential box update to eliminate jumping
+                let smoothX = subj.rect.origin.x * 0.35 + det.rect.origin.x * 0.65
+                let smoothY = subj.rect.origin.y * 0.35 + det.rect.origin.y * 0.65
+                let smoothW = subj.rect.size.width * 0.35 + det.rect.size.width * 0.65
+                let smoothH = subj.rect.size.height * 0.35 + det.rect.size.height * 0.65
+                subj.rect = CGRect(x: smoothX, y: smoothY, width: smoothW, height: smoothH)
+
                 subj.lastSeen = now
+                subj.missedFramesCount = 0
+
                 if det.wasRecognized {
                     subj.isOwner = det.isOwner
                     subj.isUncertain = det.isUncertain
@@ -117,18 +140,25 @@ private final class LightweightIoUTracker {
                 }
                 updatedSubjects.append(subj)
             } else {
-                var newSubj = TrackedSubject(rect: det.rect, isOwner: det.isOwner, isUncertain: det.isUncertain)
-                if det.wasRecognized {
-                    newSubj.lastRecognitionTime = now
-                }
+                var newSubj = TrackedSubject(
+                    rect: det.rect,
+                    isOwner: det.isOwner,
+                    isUncertain: det.isUncertain,
+                    lastRecognitionTime: det.wasRecognized ? now : nil
+                )
+                newSubj.lastSeen = now
                 updatedSubjects.append(newSubj)
             }
         }
 
-        // Retain surviving recent tracks
-        for (idx, subj) in subjects.enumerated() {
-            if !matchedIndices.contains(idx) && now.timeIntervalSince(subj.lastSeen) < maxTimeWithoutUpdate {
-                updatedSubjects.append(subj)
+        // Retain un-matched subjects within short missed-frame tolerance
+        for (idx, var subj) in subjects.enumerated() {
+            if !matchedSubjectIndices.contains(idx) {
+                subj.missedFramesCount += 1
+                let timeSinceLast = now.timeIntervalSince(subj.lastSeen)
+                if subj.missedFramesCount <= maxMissedCycles && timeSinceLast < maxTimeWithoutUpdate {
+                    updatedSubjects.append(subj)
+                }
             }
         }
 
@@ -138,6 +168,15 @@ private final class LightweightIoUTracker {
 
     func clear() {
         subjects.removeAll()
+    }
+
+    private func computeMatchScore(_ r1: CGRect, _ r2: CGRect) -> CGFloat {
+        let iou = computeIoU(r1, r2)
+        let c1 = CGPoint(x: r1.midX, y: r1.midY)
+        let c2 = CGPoint(x: r2.midX, y: r2.midY)
+        let dist = hypot(c1.x - c2.x, c1.y - c2.y)
+        let proximityScore = max(0.0, 1.0 - (dist / 0.40))
+        return (iou * 0.55) + (proximityScore * 0.45)
     }
 
     private func computeIoU(_ r1: CGRect, _ r2: CGRect) -> CGFloat {
@@ -153,21 +192,31 @@ private final class LightweightIoUTracker {
 // MARK: - Background Video Output Coordinator
 
 private final class PresenceCaptureCoordinator: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
-    var onFrameProcessed: (([(rect: CGRect, isOwner: Bool, isUncertain: Bool, wasRecognized: Bool)], CGImage?, PresenceStatus) -> Void)?
+    var onFrameProcessed: (([(rect: CGRect, isOwner: Bool, isUncertain: Bool, wasRecognized: Bool)], PresenceStatus) -> Void)?
+    var onPreviewFrameReady: ((CGImage) -> Void)?
+    var onHeartbeat: (() -> Void)?
 
-    // Shared reusable CIContext to prevent memory/GPU churn
     private let sharedCIContext = CIContext(options: [.useSoftwareRenderer: false])
-
     private var captureSession: AVCaptureSession?
     private let sessionQueue = DispatchQueue(label: "com.ollamapet.presence.sessionQueue", qos: .userInitiated)
 
-    var intervalSeconds: Double = 1.4
+    var intervalSeconds: Double = 1.0
     var isLivePreviewRequested: Bool = false
+
+    private var isAnalyzing: Bool = false
     private var lastAnalysisTimestamp: TimeInterval = 0
+    private var lastPreviewTimestamp: TimeInterval = 0
+    private let minPreviewInterval: TimeInterval = 0.12 // Controlled 8 FPS preview cap
+
     private var ownerFeaturePrint: VNFeaturePrintObservation?
+    private weak var trackerRef: EnhancedPresenceTracker?
 
     func setOwnerFeaturePrint(_ print: VNFeaturePrintObservation?) {
         self.ownerFeaturePrint = print
+    }
+
+    func setTrackerReference(_ tracker: EnhancedPresenceTracker) {
+        self.trackerRef = tracker
     }
 
     func start(interval: Double, completion: @escaping (Bool) -> Void) {
@@ -195,7 +244,8 @@ private final class PresenceCaptureCoordinator: NSObject, AVCaptureVideoDataOutp
                 kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_32BGRA)
             ]
 
-            let outputQueue = DispatchQueue(label: "com.ollamapet.presence.videoQueue", qos: .userInteractive)
+            // Video queue priority set to .userInitiated (NOT .userInteractive)
+            let outputQueue = DispatchQueue(label: "com.ollamapet.presence.videoQueue", qos: .userInitiated)
             output.setSampleBufferDelegate(self, queue: outputQueue)
 
             if session.canAddOutput(output) {
@@ -215,6 +265,7 @@ private final class PresenceCaptureCoordinator: NSObject, AVCaptureVideoDataOutp
             guard let self = self else { return }
             self.captureSession?.stopRunning()
             self.captureSession = nil
+            self.isAnalyzing = false
         }
     }
 
@@ -223,13 +274,33 @@ private final class PresenceCaptureCoordinator: NSObject, AVCaptureVideoDataOutp
         didOutput sampleBuffer: CMSampleBuffer,
         from connection: AVCaptureConnection
     ) {
-        let now = Date().timeIntervalSince1970
-        guard now - lastAnalysisTimestamp >= intervalSeconds else { return }
-        lastAnalysisTimestamp = now
+        // Record camera alive signal for watchdog
+        onHeartbeat?()
 
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+        let now = Date().timeIntervalSince1970
 
-        // Step 1: Detect Human Rectangles first (Fastest filter)
+        // 1. Controlled Preview Pipeline (Only when expanded/requested, capped at ~8 FPS)
+        if isLivePreviewRequested && (now - lastPreviewTimestamp >= minPreviewInterval) {
+            lastPreviewTimestamp = now
+            if let cg = renderCGImage(from: pixelBuffer) {
+                onPreviewFrameReady?(cg)
+            }
+        }
+
+        // 2. Controlled Vision Detection Pipeline (Gated by performance sampling interval)
+        guard now - lastAnalysisTimestamp >= intervalSeconds else { return }
+        guard !isAnalyzing else { return } // Prevent queued Vision requests from piling up
+        isAnalyzing = true
+        lastAnalysisTimestamp = now
+
+        processVisionFrame(pixelBuffer: pixelBuffer)
+    }
+
+    private func processVisionFrame(pixelBuffer: CVPixelBuffer) {
+        defer { isAnalyzing = false }
+
+        // Step 1: Human Detection First (Lightweight filter)
         let humanRequest = VNDetectHumanRectanglesRequest()
         let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: .up, options: [:])
 
@@ -238,9 +309,8 @@ private final class PresenceCaptureCoordinator: NSObject, AVCaptureVideoDataOutp
             let humanResults = humanRequest.results ?? []
 
             if humanResults.isEmpty {
-                // Zero humans detected -> Publish away state immediately without further Vision or preview work!
-                let cgPreview: CGImage? = self.isLivePreviewRequested ? self.renderCGImage(from: pixelBuffer) : nil
-                self.onFrameProcessed?([], cgPreview, .away)
+                // Zero humans detected -> Publish away state immediately; skip faces, feature prints, and recognition!
+                self.onFrameProcessed?([], .away)
                 return
             }
 
@@ -249,47 +319,68 @@ private final class PresenceCaptureCoordinator: NSObject, AVCaptureVideoDataOutp
             try handler.perform([faceRequest])
             let faceResults = faceRequest.results ?? []
 
+            // Step 3: Strict 1-to-1 Bipartite Face Matching
+            let matchedPairs = matchFacesToHumans(humans: humanResults, faces: faceResults)
+
             var detections: [(rect: CGRect, isOwner: Bool, isUncertain: Bool, wasRecognized: Bool)] = []
             var status: PresenceStatus = .searching
-
             let hasEnrolledOwner = self.ownerFeaturePrint != nil
+            let activeSubjects = trackerRef?.currentSubjects() ?? []
+            let now = Date()
 
-            for human in humanResults {
-                let hRect = human.boundingBox
-                // Check if any face overlaps this human body
-                let matchingFace = faceResults.first { face in
-                    face.boundingBox.intersects(hRect) || hRect.intersects(face.boundingBox)
-                }
+            for pair in matchedPairs {
+                let hRect = pair.human.boundingBox
 
-                if let face = matchingFace {
+                if let face = pair.face {
                     if let ownerPrint = self.ownerFeaturePrint {
-                        // Compare feature print
-                        let facePrintReq = VNGenerateImageFeaturePrintRequest()
-                        facePrintReq.regionOfInterest = face.boundingBox
-                        try? handler.perform([facePrintReq])
+                        // Check if an existing tracked subject already has a fresh recognition result (15s cooldown)
+                        let existingSubject = activeSubjects.first(where: {
+                            $0.rect.intersects(hRect) || hypot($0.rect.midX - hRect.midX, $0.rect.midY - hRect.midY) < 0.25
+                        })
 
-                        if let obs = facePrintReq.results?.first as? VNFeaturePrintObservation {
-                            var distance: Float = 1.0
-                            try? obs.computeDistance(&distance, to: ownerPrint)
-
-                            if distance < 0.40 {
-                                detections.append((rect: hRect, isOwner: true, isUncertain: false, wasRecognized: true))
+                        if let existing = existingSubject,
+                           let lastRec = existing.lastRecognitionTime,
+                           now.timeIntervalSince(lastRec) < 15.0 {
+                            // Reuse cached recognition result! Do NOT generate expensive feature print every cycle!
+                            detections.append((rect: hRect, isOwner: existing.isOwner, isUncertain: existing.isUncertain, wasRecognized: true))
+                            if existing.isOwner {
                                 status = .ownerPresent
-                            } else if distance <= 0.52 {
-                                detections.append((rect: hRect, isOwner: false, isUncertain: true, wasRecognized: true))
-                                if status != .ownerPresent { status = .uncertain }
-                            } else {
-                                detections.append((rect: hRect, isOwner: false, isUncertain: false, wasRecognized: true))
-                                if status != .ownerPresent { status = .unknownDetected }
+                            } else if existing.isUncertain && status != .ownerPresent {
+                                status = .uncertain
+                            } else if status != .ownerPresent {
+                                status = .unknownDetected
                             }
                         } else {
-                            detections.append((rect: hRect, isOwner: false, isUncertain: true, wasRecognized: false))
-                            if status != .ownerPresent { status = .uncertain }
+                            // Recognition needed: Generate feature print for this face
+                            let facePrintReq = VNGenerateImageFeaturePrintRequest()
+                            facePrintReq.regionOfInterest = face.boundingBox
+                            try? handler.perform([facePrintReq])
+
+                            if let obs = facePrintReq.results?.first as? VNFeaturePrintObservation {
+                                var distance: Float = 1.0
+                                try? obs.computeDistance(&distance, to: ownerPrint)
+
+                                if distance < 0.40 {
+                                    detections.append((rect: hRect, isOwner: true, isUncertain: false, wasRecognized: true))
+                                    status = .ownerPresent
+                                } else if distance <= 0.52 {
+                                    detections.append((rect: hRect, isOwner: false, isUncertain: true, wasRecognized: true))
+                                    if status != .ownerPresent { status = .uncertain }
+                                } else {
+                                    detections.append((rect: hRect, isOwner: false, isUncertain: false, wasRecognized: true))
+                                    if status != .ownerPresent { status = .unknownDetected }
+                                }
+                            } else {
+                                detections.append((rect: hRect, isOwner: false, isUncertain: true, wasRecognized: false))
+                                if status != .ownerPresent { status = .uncertain }
+                            }
                         }
                     } else {
-                        // Owner profile not configured
+                        // Owner profile not configured -> strictly "Person (Owner Not Set)"
                         detections.append((rect: hRect, isOwner: false, isUncertain: false, wasRecognized: false))
-                        status = .personDetectedNoOwner
+                        if status != .ownerPresent {
+                            status = .personDetectedNoOwner
+                        }
                     }
                 } else {
                     // Human detected but face obscured
@@ -304,25 +395,60 @@ private final class PresenceCaptureCoordinator: NSObject, AVCaptureVideoDataOutp
                 status = .multipleDetected
             }
 
-            // Only render preview image if user requested it!
-            let cgPreview: CGImage? = self.isLivePreviewRequested ? self.renderCGImage(from: pixelBuffer) : nil
-
-            self.onFrameProcessed?(detections, cgPreview, status)
+            self.onFrameProcessed?(detections, status)
         } catch {
-            // Ignore frame processing errors safely
+            // Ignore temporary Vision exceptions safely
         }
     }
 
-    /// Reusable CIContext image rendering
+    /// 1-to-1 Bipartite spatial matching: ensures a face cannot be assigned to multiple humans
+    private func matchFacesToHumans(
+        humans: [VNHumanObservation],
+        faces: [VNFaceObservation]
+    ) -> [(human: VNHumanObservation, face: VNFaceObservation?)] {
+        var availableFaceIndices = Set(0..<faces.count)
+        var results: [(human: VNHumanObservation, face: VNFaceObservation?)] = []
+
+        for human in humans {
+            let hRect = human.boundingBox
+            // Upper torso / head anchor in Vision coordinates (origin bottom-left, y=1 is top)
+            let headAnchor = CGPoint(x: hRect.midX, y: hRect.maxY - (hRect.height * 0.15))
+
+            var bestFaceIdx: Int? = nil
+            var bestDistance: CGFloat = .infinity
+
+            for faceIdx in availableFaceIndices {
+                let faceRect = faces[faceIdx].boundingBox
+                let faceCenter = CGPoint(x: faceRect.midX, y: faceRect.midY)
+
+                // Face must be vertically in the upper half of human rectangle or slightly above
+                let isVerticallyAligned = faceCenter.y >= (hRect.midY - 0.12)
+                // Face must be horizontally within human bounds (+ generous margin for side turns)
+                let isHorizontallyAligned = faceCenter.x >= (hRect.minX - 0.15) && faceCenter.x <= (hRect.maxX + 0.15)
+
+                if isVerticallyAligned && isHorizontallyAligned {
+                    let d = hypot(faceCenter.x - headAnchor.x, faceCenter.y - headAnchor.y)
+                    if d < bestDistance {
+                        bestDistance = d
+                        bestFaceIdx = faceIdx
+                    }
+                }
+            }
+
+            if let matchedIdx = bestFaceIdx {
+                availableFaceIndices.remove(matchedIdx)
+                results.append((human: human, face: faces[matchedIdx]))
+            } else {
+                results.append((human: human, face: nil))
+            }
+        }
+
+        return results
+    }
+
     private func renderCGImage(from pixelBuffer: CVPixelBuffer) -> CGImage? {
         let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
         return sharedCIContext.createCGImage(ciImage, from: ciImage.extent)
-    }
-
-    /// Instant snapshot capture of a single frame
-    func captureSingleSnapshot(from sampleBuffer: CMSampleBuffer) -> CGImage? {
-        guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return nil }
-        return renderCGImage(from: pixelBuffer)
     }
 }
 
@@ -350,9 +476,19 @@ public final class PresenceMonitor: ObservableObject {
         }
     }
 
-    private let tracker = LightweightIoUTracker()
+    private let tracker = EnhancedPresenceTracker()
     private let coordinator = PresenceCaptureCoordinator()
     private var snapshotCooldownUntil: Date = Date.distantPast
+
+    // Internal Watchdog for Self-Healing (Zero Terminal / killall commands)
+    private var watchdogTimer: Timer?
+    private var lastCameraFrameTime: Date = Date()
+    private var lastSuccessfulAnalysisTime: Date = Date()
+    private var recoveryAttemptsInWindow: Int = 0
+    private var lastRecoveryWindowStart: Date = Date()
+    private let recoveryWindowDuration: TimeInterval = 40.0
+    private let maxRecoveriesPerWindow: Int = 2
+    private var isRecovering: Bool = false
 
     private let fileManager = FileManager.default
     private var appSupportURL: URL {
@@ -380,12 +516,29 @@ public final class PresenceMonitor: ObservableObject {
             self.performanceMode = mode
         }
 
+        coordinator.setTrackerReference(tracker)
         loadOwnerProfile()
         updateSnapshotCount()
 
-        coordinator.onFrameProcessed = { [weak self] detections, cgImage, status in
+        // 1. Detection Results Callback (Runs on controlled analysis schedule)
+        coordinator.onFrameProcessed = { [weak self] detections, status in
             Task { @MainActor [weak self] in
-                self?.handleProcessedFrame(detections: detections, cgImage: cgImage, status: status)
+                self?.handleProcessedFrame(detections: detections, status: status)
+            }
+        }
+
+        // 2. Throttled Preview Callback (Runs at ~8 FPS only when requested)
+        coordinator.onPreviewFrameReady = { [weak self] cgImage in
+            Task { @MainActor [weak self] in
+                guard let self = self, self.isLivePreviewRequested else { return }
+                self.latestPreviewImage = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+            }
+        }
+
+        // 3. Heartbeat for Watchdog
+        coordinator.onHeartbeat = { [weak self] in
+            Task { @MainActor [weak self] in
+                self?.lastCameraFrameTime = Date()
             }
         }
     }
@@ -435,6 +588,7 @@ public final class PresenceMonitor: ObservableObject {
     public func stop() {
         guard isRunning else { return }
         isRunning = false
+        stopWatchdog()
         presenceStatus = .idle
         trackedSubjects = []
         latestPreviewImage = nil
@@ -444,12 +598,16 @@ public final class PresenceMonitor: ObservableObject {
 
     private func setupAndStartCapture() {
         updateSamplingFrequency()
+        lastCameraFrameTime = Date()
+        lastSuccessfulAnalysisTime = Date()
+
         coordinator.start(interval: coordinator.intervalSeconds) { [weak self] success in
             DispatchQueue.main.async {
                 guard let self = self else { return }
                 if success {
                     self.isRunning = true
                     self.presenceStatus = .searching
+                    self.startWatchdog()
                 } else {
                     self.presenceStatus = .cameraUnavailable
                 }
@@ -457,23 +615,91 @@ public final class PresenceMonitor: ObservableObject {
         }
     }
 
+    // MARK: - Internal Self-Healing Watchdog
+
+    private func startWatchdog() {
+        stopWatchdog()
+        watchdogTimer = Timer.scheduledTimer(withTimeInterval: 2.5, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.inspectPipelineHealth()
+            }
+        }
+    }
+
+    private func stopWatchdog() {
+        watchdogTimer?.invalidate()
+        watchdogTimer = nil
+    }
+
+    private func inspectPipelineHealth() {
+        guard isRunning, !isRecovering else { return }
+        let now = Date()
+
+        // Check if camera frames or analysis have stalled (> 9.0s)
+        let frameLag = now.timeIntervalSince(lastCameraFrameTime)
+        let analysisLag = now.timeIntervalSince(lastSuccessfulAnalysisTime)
+
+        if frameLag > 8.0 || analysisLag > 9.5 {
+            // Pipeline appears stuck
+            handleWatchdogStall()
+        }
+    }
+
+    private func handleWatchdogStall() {
+        let now = Date()
+
+        // Reset recovery window if 40s have elapsed
+        if now.timeIntervalSince(lastRecoveryWindowStart) > recoveryWindowDuration {
+            recoveryAttemptsInWindow = 0
+            lastRecoveryWindowStart = now
+        }
+
+        if recoveryAttemptsInWindow < maxRecoveriesPerWindow {
+            recoveryAttemptsInWindow += 1
+            isRecovering = true
+
+            // Gracefully reset camera session without terminal commands
+            coordinator.stop()
+            tracker.clear()
+            latestPreviewImage = nil
+            trackedSubjects = []
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+                guard let self = self, self.isRunning else { return }
+                self.coordinator.start(interval: self.coordinator.intervalSeconds) { [weak self] success in
+                    DispatchQueue.main.async {
+                        guard let self = self else { return }
+                        self.isRecovering = false
+                        if success {
+                            self.lastCameraFrameTime = Date()
+                            self.lastSuccessfulAnalysisTime = Date()
+                            self.presenceStatus = .searching
+                        } else {
+                            self.presenceStatus = .cameraUnavailable
+                        }
+                    }
+                }
+            }
+        } else {
+            // Repeated recovery failures in short window -> safely pause monitoring
+            stop()
+            presenceStatus = .cameraUnavailable
+            PetState.shared.showBubble("Camera paused: pipeline could not recover", duration: 3.5)
+        }
+    }
+
     // MARK: - Frame & Subject Processing
 
     private func handleProcessedFrame(
         detections: [(rect: CGRect, isOwner: Bool, isUncertain: Bool, wasRecognized: Bool)],
-        cgImage: CGImage?,
         status: PresenceStatus
     ) {
         guard isRunning else { return }
+        lastSuccessfulAnalysisTime = Date()
 
         let subjects = tracker.update(detections: detections)
         self.trackedSubjects = subjects
         self.presenceStatus = status
-
-        // Update preview image only if requested
-        if isLivePreviewRequested, let cg = cgImage {
-            self.latestPreviewImage = NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
-        }
 
         // Dynamically tune sampling frequency based on presence state
         updateSamplingFrequency()
@@ -489,9 +715,10 @@ public final class PresenceMonitor: ObservableObject {
                 if !subj.isOwner && !subj.isUncertain && subj.dwellDuration >= 5.0 && !subj.hasCapturedSnapshot {
                     subj.hasCapturedSnapshot = true
                     trackedSubjects[i] = subj
-                    snapshotCooldownUntil = now.addingTimeInterval(60.0) // 1 minute cooldown per unknown subject
+                    snapshotCooldownUntil = now.addingTimeInterval(60.0) // 1 minute cooldown per unknown encounter
 
-                    if let cg = cgImage {
+                    if let preview = latestPreviewImage,
+                       let cg = preview.cgImage(forProposedRect: nil, context: nil, hints: nil) {
                         saveSnapshotLocally(cgImage: cg)
                     }
                     if dwellAlertEnabled {

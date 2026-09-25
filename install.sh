@@ -44,7 +44,7 @@ is_ollama_pet() {
     local target="$1"
     if [ -d "$target" ] && [ -f "$target/Contents/Info.plist" ]; then
         local bundle_id
-        bundle_id=$(defaults read "$target/Contents/Info.plist" CFBundleIdentifier 2>/dev/null || echo "")
+        bundle_id=$(plutil -extract CFBundleIdentifier raw "$target/Contents/Info.plist" 2>/dev/null || /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$target/Contents/Info.plist" 2>/dev/null || echo "")
         if [[ "$bundle_id" == *"ollamapet"* ]]; then
             return 0
         fi

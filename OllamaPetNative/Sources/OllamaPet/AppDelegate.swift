@@ -39,6 +39,11 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         // Start periodic reminder timer
         startReminderTimer()
 
+        // Check & Auto-start Ollama asynchronously in background
+        Task {
+            await OllamaClient.shared.connectOrStartIfNeeded()
+        }
+
         // Check if running from /Applications (only for user downloads, delayed)
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
             self?.checkAndPromptToMoveToApplications()
@@ -248,6 +253,10 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
             errAlert.informativeText = "\(error.localizedDescription)\n\nYou can manually drag OllamaPet.app into your Applications folder."
             errAlert.runModal()
         }
+    }
+
+    public func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        return false
     }
 
     public func applicationWillTerminate(_ notification: Notification) {

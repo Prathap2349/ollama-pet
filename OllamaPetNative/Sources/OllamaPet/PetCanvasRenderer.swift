@@ -19,7 +19,7 @@ public struct PetCanvasRenderer {
         let center = CGPoint(x: size.width / 2, y: size.height / 2)
 
         // 1. LAYER 1: AURA (Optional, low cost)
-        if !perf.isSafeMode && (perf.dynamicLightingEnabled || perf.cpuReactiveGlowEnabled) {
+        if !perf.isSafeMode && (perf.dynamicLightingEnabled || perf.cpuReactiveGlowEnabled) && !perf.grayscaleTestMode {
             drawAura(context: &context, center: center, species: species, perf: perf, time: snapshot.time)
         }
 
@@ -159,6 +159,15 @@ public struct PetCanvasRenderer {
 
     // 1. CAT — MOCHI
     private static func drawCatAnatomy(context: inout GraphicsContext, center: CGPoint, primary: Color, belly: Color, snapshot: AnimationSnapshot) {
+        let earTwitch = CGFloat(snapshot.earTwitchAngle.degrees * 0.4)
+
+        // Long curved cat tail with dynamic wag
+        var tail = Path()
+        let tailEnd = CGPoint(x: center.x - 34 + CGFloat(snapshot.tailWagAngle.degrees * 0.6), y: center.y - 6)
+        tail.move(to: CGPoint(x: center.x - 22, y: center.y + 16))
+        tail.addQuadCurve(to: tailEnd, control: CGPoint(x: center.x - 40, y: center.y + 20))
+        context.stroke(tail, with: .color(primary), lineWidth: 5.0)
+
         // Body (feline sitting posture)
         let bodyRect = CGRect(x: center.x - 26, y: center.y - 12, width: 52, height: 42)
         context.fill(RoundedRectangle(cornerRadius: 18).path(in: bodyRect), with: .color(primary))
@@ -171,33 +180,58 @@ public struct PetCanvasRenderer {
         let headRect = CGRect(x: center.x - 22, y: center.y - 34, width: 44, height: 34)
         context.fill(RoundedRectangle(cornerRadius: 16).path(in: headRect), with: .color(primary))
 
-        // Triangular Upright Cat Ears
+        // Triangular Upright Cat Ears (with inner pink & twitch)
         var lEar = Path()
         lEar.move(to: CGPoint(x: center.x - 20, y: center.y - 30))
-        lEar.addLine(to: CGPoint(x: center.x - 26, y: center.y - 48))
+        lEar.addLine(to: CGPoint(x: center.x - 26 + earTwitch, y: center.y - 48))
         lEar.addLine(to: CGPoint(x: center.x - 10, y: center.y - 32))
         lEar.closeSubpath()
         context.fill(lEar, with: .color(primary))
 
+        var lInner = Path()
+        lInner.move(to: CGPoint(x: center.x - 19, y: center.y - 31))
+        lInner.addLine(to: CGPoint(x: center.x - 24 + earTwitch, y: center.y - 44))
+        lInner.addLine(to: CGPoint(x: center.x - 12, y: center.y - 32))
+        lInner.closeSubpath()
+        context.fill(lInner, with: .color(Color.pink.opacity(0.45)))
+
         var rEar = Path()
         rEar.move(to: CGPoint(x: center.x + 10, y: center.y - 32))
-        rEar.addLine(to: CGPoint(x: center.x + 26, y: center.y - 48))
+        rEar.addLine(to: CGPoint(x: center.x + 26 - earTwitch, y: center.y - 48))
         rEar.addLine(to: CGPoint(x: center.x + 20, y: center.y - 30))
         rEar.closeSubpath()
         context.fill(rEar, with: .color(primary))
 
-        // Short front feline paws
-        let lPaw = Capsule().path(in: CGRect(x: center.x - 18, y: center.y + 22, width: 12, height: 10))
-        let rPaw = Capsule().path(in: CGRect(x: center.x + 6, y: center.y + 22, width: 12, height: 10))
-        context.fill(lPaw, with: .color(primary.opacity(0.9)))
-        context.fill(rPaw, with: .color(primary.opacity(0.9)))
+        var rInner = Path()
+        rInner.move(to: CGPoint(x: center.x + 12, y: center.y - 32))
+        rInner.addLine(to: CGPoint(x: center.x + 24 - earTwitch, y: center.y - 44))
+        rInner.addLine(to: CGPoint(x: center.x + 19, y: center.y - 31))
+        rInner.closeSubpath()
+        context.fill(rInner, with: .color(Color.pink.opacity(0.45)))
 
-        // Long curved cat tail
-        var tail = Path()
-        let tailEnd = CGPoint(x: center.x - 34 + CGFloat(snapshot.tailWagAngle.degrees * 0.5), y: center.y - 6)
-        tail.move(to: CGPoint(x: center.x - 22, y: center.y + 16))
-        tail.addQuadCurve(to: tailEnd, control: CGPoint(x: center.x - 38, y: center.y + 18))
-        context.stroke(tail, with: .color(primary), lineWidth: 4.5)
+        // Whiskers (3 left, 3 right)
+        var whiskers = Path()
+        whiskers.move(to: CGPoint(x: center.x - 16, y: center.y - 12))
+        whiskers.addLine(to: CGPoint(x: center.x - 32, y: center.y - 14))
+        whiskers.move(to: CGPoint(x: center.x - 16, y: center.y - 10))
+        whiskers.addLine(to: CGPoint(x: center.x - 33, y: center.y - 10))
+        whiskers.move(to: CGPoint(x: center.x - 16, y: center.y - 8))
+        whiskers.addLine(to: CGPoint(x: center.x - 31, y: center.y - 6))
+
+        whiskers.move(to: CGPoint(x: center.x + 16, y: center.y - 12))
+        whiskers.addLine(to: CGPoint(x: center.x + 32, y: center.y - 14))
+        whiskers.move(to: CGPoint(x: center.x + 16, y: center.y - 10))
+        whiskers.addLine(to: CGPoint(x: center.x + 33, y: center.y - 10))
+        whiskers.move(to: CGPoint(x: center.x + 16, y: center.y - 8))
+        whiskers.addLine(to: CGPoint(x: center.x + 31, y: center.y - 6))
+        context.stroke(whiskers, with: .color(Color.white.opacity(0.65)), lineWidth: 1.2)
+
+        // Short front feline paws
+        let pawY = center.y + 22 + snapshot.pawOffset * 0.4
+        let lPaw = Capsule().path(in: CGRect(x: center.x - 18, y: pawY, width: 12, height: 10))
+        let rPaw = Capsule().path(in: CGRect(x: center.x + 6, y: pawY, width: 12, height: 10))
+        context.fill(lPaw, with: .color(primary.opacity(0.95)))
+        context.fill(rPaw, with: .color(primary.opacity(0.95)))
     }
 
     // 2. DRAGON — EMBER (Distinct from cat: Horns, wings, elongated snout, claws, spade tail)
@@ -383,47 +417,123 @@ public struct PetCanvasRenderer {
         context.fill(rPaw, with: .color(Color.gray))
     }
 
-    // 5. GHOST — BOO (NO LEGS AT ALL! Floating body, wavy lower skirt, floating wisps)
+    // 5. GHOST — BOO (Floating mascot spirit: crest wisp, floating sleeves, 3-fold undulating skirt, zero legs)
     private static func drawGhostAnatomy(context: inout GraphicsContext, center: CGPoint, primary: Color, snapshot: AnimationSnapshot) {
-        // Floating Undulating Ghost Body (NO LEGS!)
-        let wave = snapshot.ghostWaveOffset
+        let wave = CGFloat(snapshot.ghostWaveOffset)
+        let crestSway = CGFloat(sin(snapshot.time * 2.8) * 4.0)
+
+        // 1. Ghost Cowl Crest Wisp / Ethereal Flame atop the head
+        var crest = Path()
+        let crestTip = CGPoint(x: center.x + 6 + crestSway, y: center.y - 50)
+        crest.move(to: CGPoint(x: center.x - 7, y: center.y - 32))
+        crest.addCurve(to: crestTip,
+                       control1: CGPoint(x: center.x - 10, y: center.y - 42),
+                       control2: CGPoint(x: center.x - 2, y: center.y - 48))
+        crest.addCurve(to: CGPoint(x: center.x + 7, y: center.y - 32),
+                       control1: CGPoint(x: center.x + 12 + crestSway, y: center.y - 44),
+                       control2: CGPoint(x: center.x + 8, y: center.y - 38))
+        crest.closeSubpath()
+        context.fill(crest, with: .color(primary.opacity(0.92)))
+        context.stroke(crest, with: .color(Color.white.opacity(0.7)), lineWidth: 1.2)
+
+        // 2. Main Ghost Cowl & Flowing Body (Dome head, tapered waist, flowing outward)
         var ghost = Path()
-        let topCenter = CGPoint(x: center.x, y: center.y - 34)
-        ghost.move(to: CGPoint(x: center.x - 26, y: center.y - 6))
-        // Top dome
-        ghost.addQuadCurve(to: CGPoint(x: center.x + 26, y: center.y - 6), control: CGPoint(x: topCenter.x, y: topCenter.y - 12))
-        // Right side
-        ghost.addLine(to: CGPoint(x: center.x + 24, y: center.y + 18))
-        // Wavy scalloped bottom skirt (Floating sheet with zero legs)
+        let topCenter = CGPoint(x: center.x, y: center.y - 36)
+
+        // Start left shoulder
+        ghost.move(to: CGPoint(x: center.x - 26, y: center.y - 8))
+        // Rounded Head Dome
+        ghost.addCurve(to: CGPoint(x: center.x + 26, y: center.y - 8),
+                       control1: CGPoint(x: center.x - 26, y: topCenter.y - 2),
+                       control2: CGPoint(x: center.x + 26, y: topCenter.y - 2))
+        // Right flank extending downward into skirt
+        ghost.addCurve(to: CGPoint(x: center.x + 28, y: center.y + 18),
+                       control1: CGPoint(x: center.x + 27, y: center.y + 2),
+                       control2: CGPoint(x: center.x + 29, y: center.y + 10))
+
+        // 3-Fold Flowing Scalloped Liquid Skirt (Left, Center, Right ripples)
         let bY = center.y + 22
-        ghost.addQuadCurve(to: CGPoint(x: center.x + 8, y: bY + wave), control: CGPoint(x: center.x + 16, y: bY - 6))
-        ghost.addQuadCurve(to: CGPoint(x: center.x - 8, y: bY - wave), control: CGPoint(x: center.x, y: bY + 6))
-        ghost.addQuadCurve(to: CGPoint(x: center.x - 24, y: bY), control: CGPoint(x: center.x - 16, y: bY - 6))
-        // Left side
+        // Right ripple fold
+        ghost.addCurve(to: CGPoint(x: center.x + 10, y: bY + wave * 0.8),
+                       control1: CGPoint(x: center.x + 25, y: bY + 8 + wave),
+                       control2: CGPoint(x: center.x + 16, y: bY + 4))
+        // Center ripple fold
+        ghost.addCurve(to: CGPoint(x: center.x - 10, y: bY - wave * 0.8),
+                       control1: CGPoint(x: center.x + 4, y: bY - 6),
+                       control2: CGPoint(x: center.x - 4, y: bY + 8 - wave))
+        // Left ripple fold
+        ghost.addCurve(to: CGPoint(x: center.x - 28, y: center.y + 18),
+                       control1: CGPoint(x: center.x - 18, y: bY + 4),
+                       control2: CGPoint(x: center.x - 26, y: bY + 7 - wave))
+
+        // Left flank returning upward
+        ghost.addCurve(to: CGPoint(x: center.x - 26, y: center.y - 8),
+                       control1: CGPoint(x: center.x - 29, y: center.y + 10),
+                       control2: CGPoint(x: center.x - 27, y: center.y + 2))
         ghost.closeSubpath()
 
-        // Translucent ethereal ghost fill
-        context.fill(ghost, with: .color(primary.opacity(0.85)))
-        context.stroke(ghost, with: .color(Color.white.opacity(0.7)), lineWidth: 1.5)
+        // Ghost Base fill with subtle ethereal translucent gradient
+        context.fill(ghost, with: .color(primary.opacity(0.90)))
+        context.stroke(ghost, with: .color(Color.white.opacity(0.85)), lineWidth: 1.6)
 
-        // Floating rounded ghost arms/wisps
-        let lWisp = Ellipse().path(in: CGRect(x: center.x - 34, y: center.y - 2, width: 14, height: 8))
-        let rWisp = Ellipse().path(in: CGRect(x: center.x + 20, y: center.y - 2, width: 14, height: 8))
-        context.fill(lWisp, with: .color(primary.opacity(0.85)))
-        context.fill(rWisp, with: .color(primary.opacity(0.85)))
+        // 3. Inner Ethereal Glow Core (Gives 3D volumetric depth)
+        var innerCore = Path()
+        innerCore.move(to: CGPoint(x: center.x - 18, y: center.y - 6))
+        innerCore.addCurve(to: CGPoint(x: center.x + 18, y: center.y - 6),
+                           control1: CGPoint(x: center.x - 18, y: center.y - 28),
+                           control2: CGPoint(x: center.x + 18, y: center.y - 28))
+        innerCore.addQuadCurve(to: CGPoint(x: center.x, y: center.y + 14),
+                               control: CGPoint(x: center.x + 16, y: center.y + 10))
+        innerCore.addQuadCurve(to: CGPoint(x: center.x - 18, y: center.y - 6),
+                               control: CGPoint(x: center.x - 16, y: center.y + 10))
+        innerCore.closeSubpath()
+        context.fill(innerCore, with: .color(Color.white.opacity(0.22)))
+
+        // 4. Floating Wispy Arms / Mittens (Kinematic floating with wave offset)
+        let armFloat = CGFloat(cos(snapshot.time * 2.5) * 3.0)
+
+        // Left Arm Wisp
+        var lArm = Path()
+        let lArmCenter = CGPoint(x: center.x - 30, y: center.y + 4 + armFloat)
+        lArm.move(to: CGPoint(x: center.x - 24, y: center.y))
+        lArm.addCurve(to: CGPoint(x: lArmCenter.x - 7, y: lArmCenter.y + 4),
+                      control1: CGPoint(x: center.x - 32, y: center.y - 2),
+                      control2: CGPoint(x: lArmCenter.x - 10, y: lArmCenter.y - 2))
+        lArm.addCurve(to: CGPoint(x: center.x - 22, y: center.y + 8),
+                      control1: CGPoint(x: lArmCenter.x - 2, y: lArmCenter.y + 8),
+                      control2: CGPoint(x: center.x - 22, y: center.y + 8))
+        lArm.closeSubpath()
+        context.fill(lArm, with: .color(primary.opacity(0.92)))
+        context.stroke(lArm, with: .color(Color.white.opacity(0.75)), lineWidth: 1.2)
+
+        // Right Arm Wisp
+        var rArm = Path()
+        let rArmCenter = CGPoint(x: center.x + 30, y: center.y + 4 - armFloat)
+        rArm.move(to: CGPoint(x: center.x + 24, y: center.y))
+        rArm.addCurve(to: CGPoint(x: rArmCenter.x + 7, y: rArmCenter.y + 4),
+                      control1: CGPoint(x: center.x + 32, y: center.y - 2),
+                      control2: CGPoint(x: rArmCenter.x + 10, y: rArmCenter.y - 2))
+        rArm.addCurve(to: CGPoint(x: center.x + 22, y: center.y + 8),
+                      control1: CGPoint(x: rArmCenter.x + 2, y: rArmCenter.y + 8),
+                      control2: CGPoint(x: center.x + 22, y: center.y + 8))
+        rArm.closeSubpath()
+        context.fill(rArm, with: .color(primary.opacity(0.92)))
+        context.stroke(rArm, with: .color(Color.white.opacity(0.75)), lineWidth: 1.2)
     }
 
     // 6. FOX — KITA (Pointed ears with dark rims, elongated muzzle, fox ruff, giant fluffy tail)
     private static func drawFoxAnatomy(context: inout GraphicsContext, center: CGPoint, primary: Color, secondary: Color, snapshot: AnimationSnapshot) {
+        let earTwitch = CGFloat(snapshot.earTwitchAngle.degrees * 0.5)
+
         // Large Fluffy Fox Tail (prominent behind body)
         var tail = Path()
-        let tailEnd = CGPoint(x: center.x - 42 + CGFloat(snapshot.tailWagAngle.degrees * 0.6), y: center.y - 4)
+        let tailEnd = CGPoint(x: center.x - 44 + CGFloat(snapshot.tailWagAngle.degrees * 0.7), y: center.y - 4)
         tail.move(to: CGPoint(x: center.x - 18, y: center.y + 14))
-        tail.addQuadCurve(to: tailEnd, control: CGPoint(x: center.x - 48, y: center.y + 28))
-        context.stroke(tail, with: .color(primary), lineWidth: 14.0)
+        tail.addQuadCurve(to: tailEnd, control: CGPoint(x: center.x - 50, y: center.y + 28))
+        context.stroke(tail, with: .color(primary), lineWidth: 15.0)
 
         // White fluffy tip of fox tail
-        let tailTip = Circle().path(in: CGRect(x: tailEnd.x - 6, y: tailEnd.y - 6, width: 12, height: 12))
+        let tailTip = Circle().path(in: CGRect(x: tailEnd.x - 7, y: tailEnd.y - 7, width: 14, height: 14))
         context.fill(tailTip, with: .color(Color.white))
 
         // Fox Body
@@ -438,9 +548,24 @@ public struct PetCanvasRenderer {
         ruff.closeSubpath()
         context.fill(ruff, with: .color(Color.white.opacity(0.9)))
 
-        // Fox Head with Elongated Muzzle
+        // Fox Head with Elongated Muzzle & Cheek Tuft Ruffs
         let headRect = CGRect(x: center.x - 24, y: center.y - 34, width: 48, height: 32)
         context.fill(RoundedRectangle(cornerRadius: 14).path(in: headRect), with: .color(primary))
+
+        // Cheek fluff ruffs (left and right)
+        var lRuff = Path()
+        lRuff.move(to: CGPoint(x: center.x - 22, y: center.y - 20))
+        lRuff.addLine(to: CGPoint(x: center.x - 31, y: center.y - 14))
+        lRuff.addLine(to: CGPoint(x: center.x - 22, y: center.y - 8))
+        lRuff.closeSubpath()
+        context.fill(lRuff, with: .color(primary))
+
+        var rRuff = Path()
+        rRuff.move(to: CGPoint(x: center.x + 22, y: center.y - 20))
+        rRuff.addLine(to: CGPoint(x: center.x + 31, y: center.y - 14))
+        rRuff.addLine(to: CGPoint(x: center.x + 22, y: center.y - 8))
+        rRuff.closeSubpath()
+        context.fill(rRuff, with: .color(primary))
 
         // Pointed Fox Snout/Muzzle
         var muzzle = Path()
@@ -453,67 +578,133 @@ public struct PetCanvasRenderer {
         let nose = Circle().path(in: CGRect(x: center.x - 2.5, y: center.y - 8, width: 5, height: 5))
         context.fill(nose, with: .color(Color.black))
 
-        // Large Pointed Fox Ears with Dark Rims
+        // Large Pointed Fox Ears with Dark Rims & Twitch Kinematics
         var lEar = Path()
         lEar.move(to: CGPoint(x: center.x - 22, y: center.y - 30))
-        lEar.addLine(to: CGPoint(x: center.x - 28, y: center.y - 52))
+        lEar.addLine(to: CGPoint(x: center.x - 28 + earTwitch, y: center.y - 54))
         lEar.addLine(to: CGPoint(x: center.x - 8, y: center.y - 32))
         lEar.closeSubpath()
         context.fill(lEar, with: .color(primary))
         context.stroke(lEar, with: .color(Color(white: 0.15)), lineWidth: 1.5)
 
+        var lEarInner = Path()
+        lEarInner.move(to: CGPoint(x: center.x - 20, y: center.y - 31))
+        lEarInner.addLine(to: CGPoint(x: center.x - 25 + earTwitch, y: center.y - 48))
+        lEarInner.addLine(to: CGPoint(x: center.x - 11, y: center.y - 32))
+        lEarInner.closeSubpath()
+        context.fill(lEarInner, with: .color(Color.white.opacity(0.85)))
+
         var rEar = Path()
         rEar.move(to: CGPoint(x: center.x + 8, y: center.y - 32))
-        rEar.addLine(to: CGPoint(x: center.x + 28, y: center.y - 52))
+        rEar.addLine(to: CGPoint(x: center.x + 28 - earTwitch, y: center.y - 54))
         rEar.addLine(to: CGPoint(x: center.x + 22, y: center.y - 30))
         rEar.closeSubpath()
         context.fill(rEar, with: .color(primary))
         context.stroke(rEar, with: .color(Color(white: 0.15)), lineWidth: 1.5)
 
+        var rEarInner = Path()
+        rEarInner.move(to: CGPoint(x: center.x + 11, y: center.y - 32))
+        rEarInner.addLine(to: CGPoint(x: center.x + 25 - earTwitch, y: center.y - 48))
+        rEarInner.addLine(to: CGPoint(x: center.x + 20, y: center.y - 31))
+        rEarInner.closeSubpath()
+        context.fill(rEarInner, with: .color(Color.white.opacity(0.85)))
+
         // Four Slender Legs with Dark Paws
-        let lPaw = Capsule().path(in: CGRect(x: center.x - 16, y: center.y + 24, width: 8, height: 10))
-        let rPaw = Capsule().path(in: CGRect(x: center.x + 8, y: center.y + 24, width: 8, height: 10))
+        let pawY = center.y + 24 + snapshot.pawOffset * 0.4
+        let lPaw = Capsule().path(in: CGRect(x: center.x - 16, y: pawY, width: 8, height: 10))
+        let rPaw = Capsule().path(in: CGRect(x: center.x + 8, y: pawY, width: 8, height: 10))
         context.fill(lPaw, with: .color(Color(white: 0.15)))
         context.fill(rPaw, with: .color(Color(white: 0.15)))
     }
 
-    // 7. BUNNY — POCHI (Very tall ears, chubby round body, short front paws, large hind hopping legs, puff tail)
+    // 7. BUNNY — POCHI (Very tall curved ears, chubby cheeks, soft muzzle, tucked front paws, large hind hopping legs, cotton puff tail)
     private static func drawBunnyAnatomy(context: inout GraphicsContext, center: CGPoint, primary: Color, snapshot: AnimationSnapshot) {
-        // Very Tall Upright Rabbit Ears
-        let lEar = Capsule().path(in: CGRect(x: center.x - 20, y: center.y - 58, width: 12, height: 36))
-        let rEar = Capsule().path(in: CGRect(x: center.x + 8, y: center.y - 58, width: 12, height: 36))
+        let earTwitch = snapshot.earTwitchAngle.degrees
+
+        // 1. Round Cotton Puff Tail (Multi-lobed fluffy pom-pom behind left hip)
+        let tailBaseX = center.x - 30 + CGFloat(snapshot.tailWagAngle.degrees * 0.25)
+        let tailBaseY = center.y + 14
+        let p1 = Circle().path(in: CGRect(x: tailBaseX - 7, y: tailBaseY - 6, width: 14, height: 14))
+        let p2 = Circle().path(in: CGRect(x: tailBaseX - 3, y: tailBaseY - 10, width: 12, height: 12))
+        let p3 = Circle().path(in: CGRect(x: tailBaseX - 2, y: tailBaseY - 2, width: 11, height: 11))
+        context.fill(p1, with: .color(Color.white.opacity(0.95)))
+        context.fill(p2, with: .color(Color.white.opacity(0.95)))
+        context.fill(p3, with: .color(Color.white.opacity(0.95)))
+
+        // 2. Very Tall Upright Curved Rabbit Ears (Curved bezier with independent twitch kinematics)
+        // Left Ear
+        var lEar = Path()
+        let lTip = CGPoint(x: center.x - 22 + CGFloat(earTwitch * 0.6), y: center.y - 66)
+        lEar.move(to: CGPoint(x: center.x - 17, y: center.y - 28))
+        lEar.addCurve(to: lTip, control1: CGPoint(x: center.x - 28, y: center.y - 42), control2: CGPoint(x: center.x - 30, y: center.y - 58))
+        lEar.addCurve(to: CGPoint(x: center.x - 7, y: center.y - 28), control1: CGPoint(x: center.x - 14, y: center.y - 60), control2: CGPoint(x: center.x - 6, y: center.y - 44))
+        lEar.closeSubpath()
         context.fill(lEar, with: .color(primary))
+
+        // Left Inner Ear Channel (soft blush pink)
+        var lInner = Path()
+        let lInnerTip = CGPoint(x: center.x - 21 + CGFloat(earTwitch * 0.6), y: center.y - 62)
+        lInner.move(to: CGPoint(x: center.x - 15, y: center.y - 30))
+        lInner.addCurve(to: lInnerTip, control1: CGPoint(x: center.x - 24, y: center.y - 42), control2: CGPoint(x: center.x - 26, y: center.y - 56))
+        lInner.addCurve(to: CGPoint(x: center.x - 9, y: center.y - 30), control1: CGPoint(x: center.x - 16, y: center.y - 58), control2: CGPoint(x: center.x - 10, y: center.y - 44))
+        lInner.closeSubpath()
+        context.fill(lInner, with: .color(Color.pink.opacity(0.55)))
+
+        // Right Ear
+        var rEar = Path()
+        let rTip = CGPoint(x: center.x + 22 - CGFloat(earTwitch * 0.4), y: center.y - 66)
+        rEar.move(to: CGPoint(x: center.x + 7, y: center.y - 28))
+        rEar.addCurve(to: rTip, control1: CGPoint(x: center.x + 6, y: center.y - 44), control2: CGPoint(x: center.x + 14, y: center.y - 60))
+        rEar.addCurve(to: CGPoint(x: center.x + 17, y: center.y - 28), control1: CGPoint(x: center.x + 30, y: center.y - 58), control2: CGPoint(x: center.x + 28, y: center.y - 42))
+        rEar.closeSubpath()
         context.fill(rEar, with: .color(primary))
 
-        // Pink inner ears
-        let lInner = Capsule().path(in: CGRect(x: center.x - 17, y: center.y - 54, width: 6, height: 28))
-        let rInner = Capsule().path(in: CGRect(x: center.x + 11, y: center.y - 54, width: 6, height: 28))
-        context.fill(lInner, with: .color(Color.pink.opacity(0.55)))
+        // Right Inner Ear Channel
+        var rInner = Path()
+        let rInnerTip = CGPoint(x: center.x + 21 - CGFloat(earTwitch * 0.4), y: center.y - 62)
+        rInner.move(to: CGPoint(x: center.x + 9, y: center.y - 30))
+        rInner.addCurve(to: rInnerTip, control1: CGPoint(x: center.x + 10, y: center.y - 44), control2: CGPoint(x: center.x + 16, y: center.y - 58))
+        rInner.addCurve(to: CGPoint(x: center.x + 15, y: center.y - 30), control1: CGPoint(x: center.x + 26, y: center.y - 56), control2: CGPoint(x: center.x + 24, y: center.y - 42))
+        rInner.closeSubpath()
         context.fill(rInner, with: .color(Color.pink.opacity(0.55)))
 
-        // Chubby Round Rabbit Body
-        let bodyRect = CGRect(x: center.x - 28, y: center.y - 8, width: 56, height: 42)
-        context.fill(Ellipse().path(in: bodyRect), with: .color(primary))
+        // 3. Chubby Round Rabbit Body (Plump pear-like base)
+        let bodyRect = CGRect(x: center.x - 29, y: center.y - 8, width: 58, height: 44)
+        context.fill(RoundedRectangle(cornerRadius: 22).path(in: bodyRect), with: .color(primary))
 
-        // Round Head
-        let headRect = CGRect(x: center.x - 22, y: center.y - 32, width: 44, height: 32)
-        context.fill(Ellipse().path(in: headRect), with: .color(primary))
+        // Tummy patch (soft warm white)
+        let tummyRect = CGRect(x: center.x - 16, y: center.y, width: 32, height: 28)
+        context.fill(Ellipse().path(in: tummyRect), with: .color(Color.white.opacity(0.35)))
 
-        // Short front bunny paws held near chest
-        let lFront = Capsule().path(in: CGRect(x: center.x - 12, y: center.y + 6, width: 8, height: 12))
-        let rFront = Capsule().path(in: CGRect(x: center.x + 4, y: center.y + 6, width: 8, height: 12))
-        context.fill(lFront, with: .color(primary.opacity(0.9)))
-        context.fill(rFront, with: .color(primary.opacity(0.9)))
+        // 4. Bunny Head with Chubby Fluffy Cheeks (Wider at bottom cheeks)
+        var headPath = Path()
+        headPath.move(to: CGPoint(x: center.x - 18, y: center.y - 34))
+        headPath.addQuadCurve(to: CGPoint(x: center.x + 18, y: center.y - 34), control: CGPoint(x: center.x, y: center.y - 38))
+        headPath.addCurve(to: CGPoint(x: center.x, y: center.y - 6),
+                          control1: CGPoint(x: center.x + 27, y: center.y - 26),
+                          control2: CGPoint(x: center.x + 26, y: center.y - 10))
+        headPath.addCurve(to: CGPoint(x: center.x - 18, y: center.y - 34),
+                          control1: CGPoint(x: center.x - 26, y: center.y - 10),
+                          control2: CGPoint(x: center.x - 27, y: center.y - 26))
+        headPath.closeSubpath()
+        context.fill(headPath, with: .color(primary))
 
-        // Large Hind Hopping Feet (Key bunny silhouette feature!)
-        let lFoot = Capsule().path(in: CGRect(x: center.x - 28, y: center.y + 22, width: 20, height: 10))
-        let rFoot = Capsule().path(in: CGRect(x: center.x + 8, y: center.y + 22, width: 20, height: 10))
+        // 5. Short front bunny paws held near chest (reacts to pawOffset)
+        let pawY = center.y + 8 + snapshot.pawOffset * 0.5
+        let lFront = Capsule().path(in: CGRect(x: center.x - 12, y: pawY, width: 9, height: 13))
+        let rFront = Capsule().path(in: CGRect(x: center.x + 3, y: pawY, width: 9, height: 13))
+        context.fill(lFront, with: .color(primary.opacity(0.92)))
+        context.stroke(lFront, with: .color(Color.white.opacity(0.3)), lineWidth: 1.0)
+        context.fill(rFront, with: .color(primary.opacity(0.92)))
+        context.stroke(rFront, with: .color(Color.white.opacity(0.3)), lineWidth: 1.0)
+
+        // 6. Large Hind Hopping Feet (Signature rabbit silhouette)
+        let lFoot = Capsule().path(in: CGRect(x: center.x - 30, y: center.y + 24, width: 22, height: 11))
+        let rFoot = Capsule().path(in: CGRect(x: center.x + 8, y: center.y + 24, width: 22, height: 11))
         context.fill(lFoot, with: .color(primary))
+        context.stroke(lFoot, with: .color(Color.black.opacity(0.12)), lineWidth: 1.0)
         context.fill(rFoot, with: .color(primary))
-
-        // Round Cotton Puff Tail
-        let puffTail = Circle().path(in: CGRect(x: center.x - 34, y: center.y + 12, width: 12, height: 12))
-        context.fill(puffTail, with: .color(Color.white))
+        context.stroke(rFoot, with: .color(Color.black.opacity(0.12)), lineWidth: 1.0)
     }
 
     // Structural Model Renderers

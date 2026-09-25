@@ -51,7 +51,7 @@ struct ChatView: View {
                 case "remind":
                     remindTabContent
                 case "settings":
-                    settingsTabContent
+                    chatTabContent
                 default:
                     chatTabContent
                 }
@@ -83,7 +83,7 @@ struct ChatView: View {
         VStack(spacing: 4) {
             HStack {
                 Circle()
-                    .fill(ollamaClient.isOnline ? (ollamaClient.installedModels.isEmpty ? Color.orange : Color.green) : Color.red)
+                    .fill(headerStatusColor)
                     .frame(width: 8, height: 8)
 
                 Text(ollamaClient.statusMessage)
@@ -92,6 +92,22 @@ struct ChatView: View {
                     .lineLimit(1)
 
                 Spacer()
+
+                if !ollamaClient.isOnline {
+                    Button(action: {
+                        Task {
+                            await ollamaClient.connectOrStartIfNeeded(preferredModel: dataManager.savedData.selectedModel)
+                        }
+                    }) {
+                        Text(ollamaClient.connectionState.isConnecting ? "Starting..." : "Start Ollama")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 3)
+                            .background(Capsule().fill(Color.orange.opacity(0.6)))
+                    }
+                    .buttonStyle(.plain)
+                }
 
                 Button(action: {
                     PetWindowController.shared.closePanel()
@@ -123,13 +139,40 @@ struct ChatView: View {
                     if dataManager.isFeatureVisible("system") {
                         tabButton(title: "System", id: "system", icon: "cpu")
                     }
-                    tabButton(title: "Settings", id: "settings", icon: "gearshape")
+                    Button(action: {
+                        SettingsWindowController.shared.showWindow()
+                        SoundEffect.click.play()
+                    }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "gearshape")
+                                .font(.system(size: 10))
+                            Text("Settings")
+                                .font(.system(size: 11, weight: .semibold))
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.white.opacity(0.08))
+                        .cornerRadius(8)
+                        .foregroundColor(Color.white.opacity(0.7))
+                    }
+                    .buttonStyle(.plain)
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 4)
             }
         }
         .background(Color.white.opacity(0.04))
+    }
+
+    private var headerStatusColor: Color {
+        switch ollamaClient.connectionState {
+        case .connected:
+            return ollamaClient.installedModels.isEmpty ? .orange : .green
+        case .connecting, .reconnecting, .checking:
+            return .orange
+        case .failed:
+            return .red
+        }
     }
 
     private func tabButton(title: String, id: String, icon: String) -> some View {
@@ -166,10 +209,39 @@ struct ChatView: View {
                 ScrollView {
                     LazyVStack(spacing: 10) {
                         if messages.isEmpty {
-                            Text("Session started. Ask \(petState.currentSpecies.displayName) anything!")
-                                .font(.system(size: 11, design: .monospaced))
-                                .foregroundColor(Color.white.opacity(0.4))
-                                .padding(.top, 20)
+                            if !ollamaClient.isOnline {
+                                VStack(spacing: 8) {
+                                    Text("🔴 Ollama is Offline")
+                                        .font(.system(size: 12, weight: .bold))
+                                        .foregroundColor(.orange)
+                                    Text("Start Ollama service to chat with \(petState.currentSpecies.displayName).")
+                                        .font(.system(size: 11))
+                                        .foregroundColor(Color.white.opacity(0.6))
+                                        .multilineTextAlignment(.center)
+                                    Button(action: {
+                                        Task {
+                                            await ollamaClient.connectOrStartIfNeeded(preferredModel: dataManager.savedData.selectedModel)
+                                        }
+                                    }) {
+                                        Text("Start Ollama")
+                                            .font(.system(size: 11, weight: .semibold))
+                                            .foregroundColor(.white)
+                                            .padding(.horizontal, 12)
+                                            .padding(.vertical, 5)
+                                            .background(RoundedRectangle(cornerRadius: 6).fill(petState.currentSpecies.accentColor))
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                                .padding(14)
+                                .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.05)))
+                                .padding(.horizontal, 16)
+                                .padding(.top, 16)
+                            } else {
+                                Text("Session started. Ask \(petState.currentSpecies.displayName) anything!")
+                                    .font(.system(size: 11, design: .monospaced))
+                                    .foregroundColor(Color.white.opacity(0.4))
+                                    .padding(.top, 20)
+                            }
                         }
 
                         ForEach(messages) { msg in
@@ -843,156 +915,7 @@ struct ChatView: View {
         }
     }
 
-    // MARK: - Settings Tab (Clean Quick-Summary Only)
-    private var settingsTabContent: some View {
-        VStack(spacing: 12) {
-            // Header: Open Settings Center
-            Button(action: {
-                SettingsWindowController.shared.showWindow()
-            }) {
-                HStack(spacing: 8) {
-                    Image(systemName: "slider.horizontal.3")
-                        .font(.system(size: 14, weight: .bold))
-                    Text("Open Settings Center")
-                        .font(.system(size: 13, weight: .bold))
-                    Spacer()
-                    Image(systemName: "arrow.up.forward.app")
-                        .font(.system(size: 12))
-                }
-                .foregroundColor(.white)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .background(
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(petState.currentSpecies.accentColor)
-                )
-                .shadow(color: petState.currentSpecies.accentColor.opacity(0.4), radius: 6, x: 0, y: 2)
-            }
-            .buttonStyle(.plain)
 
-            // Status Summary Cards
-            VStack(spacing: 8) {
-                // Ollama Summary
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Ollama AI")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundColor(.secondary)
-                        Text(ollamaClient.activeModel.isEmpty ? (dataManager.savedData.selectedModel ?? "No Model") : ollamaClient.activeModel)
-                            .font(.system(size: 12, weight: .bold, design: .monospaced))
-                            .foregroundColor(.white)
-                            .lineLimit(1)
-                    }
-                    Spacer()
-                    HStack(spacing: 5) {
-                        Circle()
-                            .fill(ollamaClient.isOnline ? Color.green : Color.red)
-                            .frame(width: 8, height: 8)
-                        Text(ollamaClient.isOnline ? "Online" : "Offline")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundColor(ollamaClient.isOnline ? .green : .red)
-                    }
-                }
-                .padding(10)
-                .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.05)))
-
-                // Character Summary
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Character")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundColor(.secondary)
-                        HStack(spacing: 6) {
-                            Text(petState.currentSpecies.icon)
-                                .font(.system(size: 16))
-                            Text(petState.currentSpecies.displayName)
-                                .font(.system(size: 13, weight: .bold))
-                                .foregroundColor(.white)
-                            Text("(\(petState.currentSpecies.speciesName))")
-                                .font(.system(size: 11))
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                    Spacer()
-                    Button("Switch") {
-                        SettingsWindowController.shared.showWindow()
-                    }
-                    .font(.system(size: 11, weight: .medium))
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                }
-                .padding(10)
-                .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.05)))
-
-                // Performance Summary
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Performance")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundColor(.secondary)
-                        Text(PerformanceManager.shared.isSafeMode ? "🛡️ Safe Mode (15 FPS)" : "● \(PerformanceManager.shared.quality.rawValue)")
-                            .font(.system(size: 12, weight: .bold))
-                            .foregroundColor(PerformanceManager.shared.isSafeMode ? .yellow : .white)
-                    }
-                    Spacer()
-                    Button(action: {
-                        PerformanceManager.shared.toggleSafeMode()
-                    }) {
-                        Text(PerformanceManager.shared.isSafeMode ? "Disable Safe" : "Safe Mode")
-                            .font(.system(size: 10, weight: .medium))
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                }
-                .padding(10)
-                .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.05)))
-
-                // Quick Sound Toggle
-                HStack {
-                    Text("Sound Effects")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(.white)
-                    Spacer()
-                    Toggle("", isOn: Binding(
-                        get: { dataManager.savedData.soundEffectsEnabled ?? true },
-                        set: {
-                            dataManager.savedData.soundEffectsEnabled = $0
-                            dataManager.saveData()
-                        }
-                    ))
-                    .labelsHidden()
-                    .controlSize(.small)
-                }
-                .padding(10)
-                .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.05)))
-
-                // Mac Control Quick Summary
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Mac Control")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundColor(.secondary)
-                        let isEnabled = dataManager.savedData.macControlSettings?.macControlEnabled ?? false
-                        Text(isEnabled ? "🟢 Enabled" : "⚪ Disabled")
-                            .font(.system(size: 12, weight: .bold))
-                            .foregroundColor(isEnabled ? .green : .white)
-                    }
-                    Spacer()
-                    Button("Configure") {
-                        SettingsWindowController.shared.showTab(.macControl)
-                    }
-                    .font(.system(size: 10, weight: .medium))
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                }
-                .padding(10)
-                .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.05)))
-            }
-
-            Spacer(minLength: 0)
-        }
-        .padding(12)
-    }
 
 
     // MARK: - Actions
@@ -1048,7 +971,7 @@ struct ChatView: View {
                 let systemCtx = "You are \(petState.currentSpecies.displayName), a cute friendly desktop companion. Keep answers concise, helpful, and in character."
                 let nonStreamingHistory = messages.filter { $0.id != assistantMsgId }
 
-                let fullReply = try await ollamaClient.streamChat(
+                let fullReply = try await AIProviderManager.shared.streamChat(
                     systemPrompt: systemCtx,
                     messages: nonStreamingHistory
                 ) { token in

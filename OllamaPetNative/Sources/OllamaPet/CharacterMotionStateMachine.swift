@@ -113,6 +113,8 @@ public struct AnimationSnapshot {
     public let hopProgress: Double // 0 = ground, 1 = peak jump
     public let wingFlapAngle: Angle
     public let ghostWaveOffset: CGFloat
+    public let earTwitchAngle: Angle
+    public let pawOffset: CGFloat
     public let thoughtSparks: [ThoughtSpark]
     public let confettiList: [ConfettiParticle]
     public let weatherParticles: [WeatherAtmosphereParticle]
@@ -130,6 +132,8 @@ public struct AnimationSnapshot {
         hopProgress: 0,
         wingFlapAngle: .zero,
         ghostWaveOffset: 0,
+        earTwitchAngle: .zero,
+        pawOffset: 0,
         thoughtSparks: [],
         confettiList: [],
         weatherParticles: []
@@ -270,6 +274,27 @@ public class CharacterMotionStateMachine: ObservableObject {
         let wingFlapAngle = Angle(degrees: sin(time * 8.0) * 24.0)
         let ghostWaveOffset = CGFloat(sin(time * 3.2) * 5.0)
 
+        // Independent ear twitch: every ~4.2s a quick micro-twitch flick, otherwise subtle sway
+        let earCycle = time.truncatingRemainder(dividingBy: 4.2)
+        let earTwitchAngle: Angle
+        if earCycle < 0.25 {
+            let flick = sin(earCycle / 0.25 * .pi * 2.0)
+            earTwitchAngle = Angle(degrees: flick * 9.0)
+        } else {
+            earTwitchAngle = Angle(degrees: sin(time * 1.8) * 1.5)
+        }
+
+        // Paw bounce & stride kinematics
+        let pawOffset: CGFloat
+        switch state {
+        case .walking:
+            pawOffset = CGFloat(sin(time * 8.0) * 4.0)
+        case .dancing:
+            pawOffset = CGFloat(abs(sin(time * 7.5)) * 6.0)
+        default:
+            pawOffset = CGFloat(sin(time * 2.6) * 1.0)
+        }
+
         // 6. Thought Sparks (Only if not in Safe Mode and in thinking state)
         var sparks: [ThoughtSpark] = []
         if !isSafeMode && (state == .thinking || animState == .thinking) {
@@ -343,6 +368,8 @@ public class CharacterMotionStateMachine: ObservableObject {
             hopProgress: hopProgress,
             wingFlapAngle: wingFlapAngle,
             ghostWaveOffset: ghostWaveOffset,
+            earTwitchAngle: earTwitchAngle,
+            pawOffset: pawOffset,
             thoughtSparks: sparks,
             confettiList: confetti,
             weatherParticles: weatherParts

@@ -8,6 +8,7 @@ public enum SoundEffect {
     case click
     case wake
     case alert
+    case success
 
     public func play() {
         switch self {
@@ -21,6 +22,8 @@ public enum SoundEffect {
             playSystemSound(1000) // Mail sound
         case .alert:
             playSystemSound(1005) // Alert tone
+        case .success:
+            playSystemSound(1001) // Positive chime
         }
     }
 

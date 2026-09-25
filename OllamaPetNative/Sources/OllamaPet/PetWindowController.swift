@@ -269,6 +269,9 @@ public class PetWindowController: NSObject, NSWindowDelegate {
         panel.hasShadow = false
         panel.level = .floating
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+        panel.hidesOnDeactivate = false
+        panel.becomesKeyOnlyIfNeeded = true
+        panel.isReleasedWhenClosed = false
         panel.delegate = self
 
         let stageView = PetStageView()

@@ -86,6 +86,90 @@ public enum PetSpecies: String, CaseIterable, Codable, Identifiable {
         }
     }
 
+    public var personality: String {
+        switch self {
+        case .cat: return "Playful & Cozy"
+        case .dragon: return "Warm & Spirited"
+        case .robot: return "Analytical & Helpful"
+        case .robotcat: return "Cybernetic & Snarky"
+        case .ghost: return "Whimsical & Ethereal"
+        case .fox: return "Clever & Mischievous"
+        case .bunny: return "Gentle & Energetic"
+        }
+    }
+
+    public var idleBehavior: String {
+        switch self {
+        case .cat: return "Gentle belly breathing, micro-blinks, and slow tail sway"
+        case .dragon: return "Deep chest pulse with warm ember glow and wing stretch"
+        case .robot: return "Gyro self-calibration and ambient optical sensor pulse"
+        case .robotcat: return "Matrix eye shimmer and holographic paw tapping"
+        case .ghost: return "Hypnotic vertical drift and spectral ripple wave"
+        case .fox: return "Alert ear swivel and sweeping fluffy tail wag"
+        case .bunny: return "Rhythmic nose twitching, tall ear adjustments, and resting crouch"
+        }
+    }
+
+    public var happyBehavior: String {
+        switch self {
+        case .cat: return "Purring smile with crescent-shaped eyes and arched back"
+        case .dragon: return "Playful fire spark burp and upbeat wing beats"
+        case .robot: return "Chime tone melody and green display smileys"
+        case .robotcat: return "Overclocked heart emote and rhythmic tail flip"
+        case .ghost: return "Ectoplasmic bounce and warm twilight shimmer"
+        case .fox: return "Cheerful barks, playful head tilt, and excited tail swirl"
+        case .bunny: return "Delightful full-body binky hop and joyful ear flutter"
+        }
+    }
+
+    public var excitedBehavior: String {
+        switch self {
+        case .cat: return "Wide dilated pupils and high-speed tail wagging"
+        case .dragon: return "Flapping wings hovering mid-air with ember trail"
+        case .robot: return "Rapid telemetry pulses and optic lens focus zooms"
+        case .robotcat: return "Electric spark aura and rapid digital foot stomps"
+        case .ghost: return "Luminous aura pulsation and rapid playful orbits"
+        case .fox: return "Zig-zag pounce stance and rapid tail spinning"
+        case .bunny: return "Rapid double-hop pounce with perked upright ears"
+        }
+    }
+
+    public var sleepBehavior: String {
+        switch self {
+        case .cat: return "Curled into a tight cozy loaf with slow rhythmic purrs"
+        case .dragon: return "Folded wings covering face with soft smoke puffs"
+        case .robot: return "Standby low-power cycle with dim pulsing core"
+        case .robotcat: return "Hibernate mode with slow scrolling digital glyphs"
+        case .ghost: return "Faded translucency sinking softly into the surface"
+        case .fox: return "Curled tight behind giant fluffy tail pillow"
+        case .bunny: return "Tucked front paws under chest with drooped ears and slow breathing"
+        }
+    }
+
+    public var thinkingBehavior: String {
+        switch self {
+        case .cat: return "Puzzled head tilt with slow curious ear twitch"
+        case .dragon: return "Floating thought spark orbs hovering above horns"
+        case .robot: return "Spinning neon loading arc and telemetry calculations"
+        case .robotcat: return "Binary data streams fluttering across optic visor"
+        case .ghost: return "Deep lavender aura rotation and shimmering particles"
+        case .fox: return "Narrowed scheming eyes with poised inquisitive ear"
+        case .bunny: return "Fast nose wiggles, tilted ears, and floating sparkles"
+        }
+    }
+
+    public var sadBehavior: String {
+        switch self {
+        case .cat: return "Flattened ears and drooped head with quiet meows"
+        case .dragon: return "Damp smoke sigh and tucked-in limp wings"
+        case .robot: return "Desaturated amber LEDs and slumped mechanical joints"
+        case .robotcat: return "Static noise visual glitch and lowered cyber ears"
+        case .ghost: return "Translucent droop with cold blue rain droplets"
+        case .fox: return "Limp tail and lowered ears with whimpering stance"
+        case .bunny: return "Flattened back ears, lowered head, and tucked trembling feet"
+        }
+    }
+
     public func moodEmoji(for mood: PetMood) -> String {
         switch (self, mood) {
         case (.cat, .happy): return "😸"
@@ -247,6 +331,17 @@ public struct PetSavedData: Codable {
     public var soundEffectsEnabled: Bool?
     public var launchAtLoginEnabled: Bool?
 
+    // Ollama Startup & Auto-Reconnect Settings
+    public var autoStartOllama: Bool? = true
+    public var autoReconnectOllama: Bool? = true
+
+    // Multi-Provider AI Settings
+    public var selectedProvider: String? = "ollama"
+    public var openaiModel: String? = "gpt-4o-mini"
+    public var geminiModel: String? = "gemini-1.5-flash"
+    public var anthropicModel: String? = "claude-3-5-haiku-20241022"
+    public var groqModel: String? = "llama-3.3-70b-versatile"
+
     // Voice Assistant Settings
     public var voiceAssistantEnabled: Bool?
     public var selectedVoiceId: String?
@@ -262,10 +357,15 @@ public struct PetSavedData: Codable {
     public var shortcutTogglePet: String? // e.g. "cmd+shift+p"
     public var shortcutSettings: String? // e.g. "cmd+shift+,"
 
-    // Camera & Vision Settings
+    // Camera & Vision / Native Presence Monitor Settings
     public var cameraAwarenessEnabled: Bool?
     public var cameraIntervalSeconds: Int? // 5, 10, 30 (default 10)
     public var stillnessAlertEnabled: Bool?
+    public var presenceMonitorEnabled: Bool? = false
+    public var presenceDwellAlertEnabled: Bool? = true
+    public var presenceUnknownAlertEnabled: Bool? = true
+    public var presenceWidgetEnabled: Bool? = false
+    public var presenceIntervalSeconds: Double? = 1.0
 
     // Screen Awareness Settings
     public var screenMonitoringEnabled: Bool?

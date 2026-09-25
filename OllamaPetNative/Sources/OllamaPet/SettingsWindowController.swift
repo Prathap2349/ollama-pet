@@ -57,26 +57,56 @@ public class SettingsWindowController: NSObject, ObservableObject, NSWindowDeleg
 
     public func windowWillClose(_ notification: Notification) {
         DataManager.shared.saveData()
+        PetWindowController.shared.window?.orderFrontRegardless()
     }
 }
 
-// MARK: - Settings Tab Items
+// MARK: - Settings Grouping & Tab Items
+
+public enum SettingsGroup: String, CaseIterable, Identifiable {
+    case general = "GENERAL"
+    case companion = "COMPANION"
+    case aiAndVoice = "AI & VOICE"
+    case macControl = "MAC CONTROL"
+    case presence = "PRESENCE"
+    case privacyAndSystem = "PRIVACY & SYSTEM"
+
+    public var id: String { rawValue }
+
+    public var tabs: [SettingsTab] {
+        switch self {
+        case .general:
+            return [.general, .appearance, .shortcuts]
+        case .companion:
+            return [.character, .animation]
+        case .aiAndVoice:
+            return [.ollama, .cloudAi, .voice]
+        case .macControl:
+            return [.macControl, .actionHistory]
+        case .presence:
+            return [.presenceMonitor, .screen, .focus]
+        case .privacyAndSystem:
+            return [.permissions, .privacy, .performance]
+        }
+    }
+}
 
 public enum SettingsTab: String, CaseIterable, Identifiable {
     case general = "General"
     case appearance = "Appearance"
-    case character = "Character & Silhouettes"
-    case macControl = "Mac Control"
-    case permissions = "Permissions & Privacy"
-    case actionHistory = "Action History"
-    case animation = "Animation & Physics"
-    case voice = "Voice Assistant"
     case shortcuts = "Keyboard Shortcuts"
-    case ollama = "Ollama & AI"
-    case vision = "Camera Awareness"
+    case character = "Character & Silhouettes"
+    case animation = "Animation & Physics"
+    case ollama = "Ollama Local AI"
+    case cloudAi = "Cloud AI Providers"
+    case voice = "Voice Assistant"
+    case macControl = "Mac Control"
+    case actionHistory = "Action History"
+    case presenceMonitor = "Presence Monitor"
     case screen = "Screen Awareness"
     case focus = "Focus & Health"
-    case privacy = "Privacy & Data"
+    case permissions = "Permissions & Security"
+    case privacy = "Privacy & Telemetry"
     case performance = "System & Performance"
 
     public var id: String { rawValue }
@@ -85,19 +115,257 @@ public enum SettingsTab: String, CaseIterable, Identifiable {
         switch self {
         case .general: return "gearshape.fill"
         case .appearance: return "paintpalette.fill"
-        case .character: return "pawprint.fill"
-        case .macControl: return "macmini.fill"
-        case .permissions: return "lock.shield.fill"
-        case .actionHistory: return "clock.arrow.circlepath"
-        case .animation: return "figure.walk.motion"
-        case .voice: return "mic.fill"
         case .shortcuts: return "command"
+        case .character: return "pawprint.fill"
+        case .animation: return "figure.walk.motion"
         case .ollama: return "cpu.fill"
-        case .vision: return "camera.fill"
+        case .cloudAi: return "sparkles"
+        case .voice: return "mic.fill"
+        case .macControl: return "macmini.fill"
+        case .actionHistory: return "clock.arrow.circlepath"
+        case .presenceMonitor: return "person.crop.rectangle.badge.plus"
         case .screen: return "display"
         case .focus: return "brain.head.profile"
+        case .permissions: return "lock.shield.fill"
         case .privacy: return "hand.raised.fill"
         case .performance: return "bolt.shield.fill"
+        }
+    }
+}
+
+// MARK: - Reusable Settings Design System Components
+
+public struct SettingsSection<Content: View>: View {
+    public let title: String
+    public let subtitle: String?
+    public let badge: String?
+    public let badgeColor: Color
+    public let content: Content
+
+    public init(
+        title: String,
+        subtitle: String? = nil,
+        badge: String? = nil,
+        badgeColor: Color = .accentColor,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.title = title
+        self.subtitle = subtitle
+        self.badge = badge
+        self.badgeColor = badgeColor
+        self.content = content()
+    }
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 8) {
+                    Text(title)
+                        .font(.system(size: 16, weight: .bold))
+                    if let badge = badge {
+                        Text(badge)
+                            .font(.system(size: 10, weight: .semibold))
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(badgeColor.opacity(0.18)))
+                            .foregroundColor(badgeColor)
+                    }
+                }
+                if let subtitle = subtitle {
+                    Text(subtitle)
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            content
+        }
+    }
+}
+
+public struct SettingsCard<Content: View>: View {
+    public let content: Content
+
+    public init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            content
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color(NSColor.controlBackgroundColor).opacity(0.55))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(Color.primary.opacity(0.06), lineWidth: 1)
+        )
+    }
+}
+
+public struct SettingsRow<Trailing: View>: View {
+    public let title: String
+    public let subtitle: String?
+    public let trailing: Trailing
+
+    public init(
+        title: String,
+        subtitle: String? = nil,
+        @ViewBuilder trailing: () -> Trailing
+    ) {
+        self.title = title
+        self.subtitle = subtitle
+        self.trailing = trailing()
+    }
+
+    public var body: some View {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 13, weight: .medium))
+                if let subtitle = subtitle {
+                    Text(subtitle)
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Spacer()
+            trailing
+        }
+    }
+}
+
+public struct SettingsToggleRow: View {
+    public let title: String
+    public let subtitle: String?
+    public let binding: Binding<Bool>
+
+    public init(title: String, subtitle: String? = nil, isOn: Binding<Bool>) {
+        self.title = title
+        self.subtitle = subtitle
+        self.binding = isOn
+    }
+
+    public var body: some View {
+        Toggle(isOn: binding) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 13, weight: .medium))
+                if let subtitle = subtitle {
+                    Text(subtitle)
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .toggleStyle(.switch)
+    }
+}
+
+public struct SettingsStatusCard: View {
+    public let statusDotColor: Color
+    public let title: String
+    public let detail: String
+    public let actionTitle: String?
+    public let onAction: (() -> Void)?
+
+    public init(
+        statusDotColor: Color,
+        title: String,
+        detail: String,
+        actionTitle: String? = nil,
+        onAction: (() -> Void)? = nil
+    ) {
+        self.statusDotColor = statusDotColor
+        self.title = title
+        self.detail = detail
+        self.actionTitle = actionTitle
+        self.onAction = onAction
+    }
+
+    public var body: some View {
+        HStack(spacing: 12) {
+            Circle()
+                .fill(statusDotColor)
+                .frame(width: 10, height: 10)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 13, weight: .semibold))
+                Text(detail)
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer()
+            if let actionTitle = actionTitle, let onAction = onAction {
+                Button(actionTitle) {
+                    onAction()
+                }
+                .font(.system(size: 11, weight: .medium))
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(statusDotColor.opacity(0.08))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(statusDotColor.opacity(0.2), lineWidth: 1)
+        )
+    }
+}
+
+// MARK: - Live Ollama Status Pill
+
+public struct OllamaStatusPill: View {
+    @ObservedObject var client = OllamaClient.shared
+
+    public init() {}
+
+    public var body: some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(statusColor)
+                .frame(width: 8, height: 8)
+            Text(statusText)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(statusColor)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 4)
+        .background(Capsule().fill(statusColor.opacity(0.12)))
+        .overlay(Capsule().stroke(statusColor.opacity(0.25), lineWidth: 1))
+    }
+
+    private var statusColor: Color {
+        switch client.connectionState {
+        case .connected: return .green
+        case .connecting, .reconnecting, .checking: return .orange
+        case .failed: return .red
+        }
+    }
+
+    private var statusText: String {
+        switch client.connectionState {
+        case .connected:
+            return "Ollama Ready (\(client.activeModel))"
+        case .connecting:
+            return "Connecting to Ollama..."
+        case .reconnecting:
+            return "Reconnecting..."
+        case .checking:
+            return "Checking Ollama..."
+        case .failed:
+            return "Ollama Offline"
         }
     }
 }
@@ -111,8 +379,8 @@ public struct SettingsContainerView: View {
 
     public var body: some View {
         HStack(spacing: 0) {
-            // Sidebar Navigation
-            VStack(alignment: .leading, spacing: 2) {
+            // Grouped Sidebar Navigation
+            VStack(alignment: .leading, spacing: 0) {
                 // Header badge
                 HStack(spacing: 8) {
                     Text(petState.currentSpecies.icon)
@@ -129,34 +397,45 @@ public struct SettingsContainerView: View {
                 .padding(.vertical, 14)
 
                 Divider()
-                    .padding(.bottom, 6)
 
                 ScrollView(.vertical, showsIndicators: false) {
-                    VStack(spacing: 3) {
-                        ForEach(SettingsTab.allCases) { tab in
-                            Button(action: {
-                                windowController.activeTab = tab
-                            }) {
-                                HStack(spacing: 10) {
-                                    Image(systemName: tab.icon)
-                                        .frame(width: 18)
-                                        .foregroundColor(windowController.activeTab == tab ? .white : .secondary)
-                                    Text(tab.rawValue)
-                                        .font(.system(size: 12, weight: windowController.activeTab == tab ? .semibold : .regular))
-                                    Spacer()
+                    VStack(alignment: .leading, spacing: 14) {
+                        ForEach(SettingsGroup.allCases) { group in
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(group.rawValue)
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundColor(.secondary)
+                                    .padding(.horizontal, 12)
+                                    .padding(.top, 4)
+
+                                ForEach(group.tabs) { tab in
+                                    Button(action: {
+                                        windowController.activeTab = tab
+                                    }) {
+                                        HStack(spacing: 10) {
+                                            Image(systemName: tab.icon)
+                                                .frame(width: 18)
+                                                .foregroundColor(windowController.activeTab == tab ? .white : .secondary)
+                                            Text(tab.rawValue)
+                                                .font(.system(size: 12, weight: windowController.activeTab == tab ? .semibold : .regular))
+                                                .lineLimit(1)
+                                            Spacer()
+                                        }
+                                        .padding(.horizontal, 10)
+                                        .padding(.vertical, 6)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 7)
+                                                .fill(windowController.activeTab == tab ? Color.accentColor : Color.clear)
+                                        )
+                                        .foregroundColor(windowController.activeTab == tab ? .white : .primary)
+                                    }
+                                    .buttonStyle(.plain)
                                 }
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 7)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 8)
-                                        .fill(windowController.activeTab == tab ? Color.accentColor : Color.clear)
-                                )
-                                .foregroundColor(windowController.activeTab == tab ? .white : .primary)
                             }
-                            .buttonStyle(.plain)
                         }
                     }
                     .padding(.horizontal, 8)
+                    .padding(.vertical, 10)
                 }
 
                 Spacer()
@@ -189,46 +468,68 @@ public struct SettingsContainerView: View {
             Divider()
 
             // Detail Content
-            ScrollView(.vertical) {
-                VStack(alignment: .leading, spacing: 20) {
-                    switch windowController.activeTab {
-                    case .general:
-                        GeneralSettingsSection()
-                    case .appearance:
-                        AppearanceSettingsSection()
-                    case .character:
-                        CharacterSettingsSection()
-                    case .macControl:
-                        MacControlSettingsSection()
-                    case .permissions:
-                        PermissionsPrivacySettingsSection()
-                    case .actionHistory:
-                        ActionHistorySettingsSection()
-                    case .animation:
-                        AnimationSettingsSection()
-                    case .voice:
-                        VoiceSettingsSection()
-                    case .shortcuts:
-                        ShortcutsSettingsSection()
-                    case .ollama:
-                        OllamaSettingsSection()
-                    case .vision:
-                        VisionSettingsSection()
-                    case .screen:
-                        ScreenSettingsSection()
-                    case .focus:
-                        FocusSettingsSection()
-                    case .privacy:
-                        PrivacySettingsSection()
-                    case .performance:
-                        PerformanceSettingsSection()
+            VStack(spacing: 0) {
+                // Top Header Bar with Live Status Pill
+                HStack(alignment: .center) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Ollama Pet Settings")
+                            .font(.system(size: 15, weight: .bold))
+                        Text(windowController.activeTab.rawValue)
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
                     }
+                    Spacer()
+                    OllamaStatusPill()
                 }
-                .padding(24)
-                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .padding(.horizontal, 24)
+                .padding(.vertical, 14)
+                .background(Color(NSColor.windowBackgroundColor).opacity(0.5))
+
+                Divider()
+
+                ScrollView(.vertical) {
+                    VStack(alignment: .leading, spacing: 20) {
+                        switch windowController.activeTab {
+                        case .general:
+                            GeneralSettingsSection()
+                        case .appearance:
+                            AppearanceSettingsSection()
+                        case .character:
+                            CharacterSettingsSection()
+                        case .macControl:
+                            MacControlSettingsSection()
+                        case .permissions:
+                            PermissionsPrivacySettingsSection()
+                        case .actionHistory:
+                            ActionHistorySettingsSection()
+                        case .animation:
+                            AnimationSettingsSection()
+                        case .voice:
+                            VoiceSettingsSection()
+                        case .shortcuts:
+                            ShortcutsSettingsSection()
+                        case .ollama:
+                            OllamaSettingsSection()
+                        case .cloudAi:
+                            CloudAISettingsSection()
+                        case .presenceMonitor:
+                            PresenceSettingsSection()
+                        case .screen:
+                            ScreenSettingsSection()
+                        case .focus:
+                            FocusSettingsSection()
+                        case .privacy:
+                            PrivacySettingsSection()
+                        case .performance:
+                            PerformanceSettingsSection()
+                        }
+                    }
+                    .padding(24)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                }
             }
         }
-        .frame(minWidth: 680, minHeight: 520)
+        .frame(minWidth: 700, minHeight: 540)
     }
 }
 
@@ -307,19 +608,38 @@ struct CharacterSettingsSection: View {
                         Text("(\(petState.currentSpecies.speciesName))")
                             .font(.system(size: 13))
                             .foregroundColor(.secondary)
+                        Spacer()
+                        Text(petState.currentSpecies.personality)
+                            .font(.system(size: 10, weight: .bold))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(Capsule().fill(petState.currentSpecies.accentColor.opacity(0.18)))
+                            .foregroundColor(petState.currentSpecies.accentColor)
                     }
 
                     Text(petState.currentSpecies.lore)
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
-                        .lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
 
-                    HStack(spacing: 6) {
-                        Text("Distinct Feature:")
-                            .font(.system(size: 11, weight: .bold))
-                        Text(distinctFeatureDescription(for: petState.currentSpecies))
-                            .font(.system(size: 11))
-                            .foregroundColor(.secondary)
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack(alignment: .top, spacing: 6) {
+                            Text("Distinct Feature:")
+                                .font(.system(size: 11, weight: .bold))
+                            Text(distinctFeatureDescription(for: petState.currentSpecies))
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+
+                        HStack(alignment: .top, spacing: 6) {
+                            Text("Idle Behavior:")
+                                .font(.system(size: 11, weight: .bold))
+                            Text(petState.currentSpecies.idleBehavior)
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
                     .padding(.top, 4)
                 }
@@ -1186,86 +1506,628 @@ struct OllamaSettingsSection: View {
     @ObservedObject var dataManager = DataManager.shared
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Text("Ollama & Local AI")
-                .font(.system(size: 18, weight: .bold))
-
-            // Installed Models
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text("Selected Model")
-                        .font(.system(size: 13, weight: .medium))
-                    Spacer()
-                    Button("Refresh") {
-                        Task { await client.checkHealth(preferredModel: dataManager.savedData.selectedModel) }
-                    }
-                    .buttonStyle(.borderless)
-                }
-
-                if client.installedModels.isEmpty {
-                    Text("No local models found at http://127.0.0.1:11434. Ensure Ollama is running.")
-                        .font(.system(size: 11))
-                        .foregroundColor(.red)
-                } else {
-                    Picker("", selection: Binding(
-                        get: { dataManager.savedData.selectedModel ?? client.installedModels.first ?? "llama3" },
-                        set: {
-                            dataManager.savedData.selectedModel = $0
-                            dataManager.saveData()
-                            client.activeModel = $0
+        VStack(alignment: .leading, spacing: 20) {
+            // 1. Connection Status Card
+            SettingsSection(
+                title: "Ollama Connection & Service",
+                subtitle: "Direct local inference on your Mac with zero cloud dependencies.",
+                badge: connectionBadgeText,
+                badgeColor: connectionColor
+            ) {
+                SettingsCard {
+                    SettingsStatusCard(
+                        statusDotColor: connectionColor,
+                        title: connectionTitle,
+                        detail: connectionDetail,
+                        actionTitle: client.connectionState.isConnected ? "Refresh Models" : "Start / Connect",
+                        onAction: {
+                            Task {
+                                await client.connectOrStartIfNeeded(preferredModel: dataManager.savedData.selectedModel)
+                            }
                         }
-                    )) {
-                        ForEach(client.installedModels, id: \.self) { m in
-                            Text(m).tag(m)
-                        }
+                    )
+
+                    Divider()
+
+                    SettingsRow(
+                        title: "Daemon Endpoint",
+                        subtitle: "Local REST API host for Llama, Mistral, and custom models"
+                    ) {
+                        Text("http://127.0.0.1:11434")
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.06)))
                     }
-                    .labelsHidden()
+
+                    Divider()
+
+                    SettingsToggleRow(
+                        title: "Auto-Start Ollama at Launch",
+                        subtitle: "Automatically checks and launches Ollama background service when Ollama Pet opens.",
+                        isOn: Binding(
+                            get: { dataManager.savedData.autoStartOllama ?? true },
+                            set: {
+                                dataManager.savedData.autoStartOllama = $0
+                                dataManager.saveData()
+                            }
+                        )
+                    )
+
+                    Divider()
+
+                    SettingsToggleRow(
+                        title: "Background Auto-Reconnect Monitor",
+                        subtitle: "Silently reconnects if Ollama service is restarted or wakes from sleep.",
+                        isOn: Binding(
+                            get: { dataManager.savedData.autoReconnectOllama ?? true },
+                            set: {
+                                dataManager.savedData.autoReconnectOllama = $0
+                                dataManager.saveData()
+                            }
+                        )
+                    )
                 }
             }
-            .padding(14)
-            .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
+
+            // 2. Active Model Configuration
+            SettingsSection(
+                title: "Model Selection",
+                subtitle: "Choose which local Ollama model powers your companion's voice, chat, and reasoning."
+            ) {
+                SettingsCard {
+                    if client.installedModels.isEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack(spacing: 8) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundColor(.orange)
+                                Text("No local models detected")
+                                    .font(.system(size: 13, weight: .semibold))
+                            }
+                            Text("Ollama is not running, or no models have been pulled yet. Open your Terminal and run:")
+                                .font(.system(size: 12))
+                                .foregroundColor(.secondary)
+
+                            Text("ollama pull llama3.2")
+                                .font(.system(size: 12, design: .monospaced))
+                                .padding(8)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(RoundedRectangle(cornerRadius: 6).fill(Color.black.opacity(0.06)))
+
+                            HStack(spacing: 10) {
+                                Button("Start Ollama Now") {
+                                    Task {
+                                        await client.connectOrStartIfNeeded(preferredModel: dataManager.savedData.selectedModel)
+                                    }
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .controlSize(.small)
+
+                                Button("Check Again") {
+                                    Task {
+                                        await client.checkHealth(preferredModel: dataManager.savedData.selectedModel)
+                                    }
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                            }
+                            .padding(.top, 4)
+                        }
+                    } else {
+                        SettingsRow(
+                            title: "Companion AI Model",
+                            subtitle: "\(client.installedModels.count) models installed on your Mac"
+                        ) {
+                            Picker("", selection: Binding(
+                                get: { dataManager.savedData.selectedModel ?? client.installedModels.first ?? "llama3" },
+                                set: {
+                                    dataManager.savedData.selectedModel = $0
+                                    dataManager.saveData()
+                                    client.activeModel = $0
+                                }
+                            )) {
+                                ForEach(client.installedModels, id: \.self) { m in
+                                    Text(m).tag(m)
+                                }
+                            }
+                            .labelsHidden()
+                            .frame(width: 180)
+                        }
+
+                        Divider()
+
+                        HStack {
+                            Text("Active Model: \(client.activeModel)")
+                                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            Button("Refresh Model List") {
+                                Task {
+                                    await client.checkHealth(preferredModel: dataManager.savedData.selectedModel)
+                                }
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var connectionColor: Color {
+        switch client.connectionState {
+        case .connected: return .green
+        case .connecting, .reconnecting, .checking: return .orange
+        case .failed: return .red
+        }
+    }
+
+    private var connectionBadgeText: String {
+        switch client.connectionState {
+        case .connected: return "Ready"
+        case .connecting: return "Connecting"
+        case .reconnecting: return "Reconnecting"
+        case .checking: return "Checking"
+        case .failed: return "Offline"
+        }
+    }
+
+    private var connectionTitle: String {
+        switch client.connectionState {
+        case .connected:
+            return "Ollama Connected & Operational"
+        case .connecting:
+            return "Connecting to Ollama Daemon..."
+        case .reconnecting:
+            return "Reconnecting to Ollama..."
+        case .checking:
+            return "Checking Ollama Service Status..."
+        case .failed:
+            return "Ollama Is Not Running"
+        }
+    }
+
+    private var connectionDetail: String {
+        switch client.connectionState {
+        case .connected:
+            return "Local daemon responded successfully at http://127.0.0.1:11434 with \(client.installedModels.count) models available."
+        case .connecting, .checking:
+            return "Verifying local HTTP daemon at port 11434..."
+        case .reconnecting:
+            return "Attempting to re-establish link with Ollama background service..."
+        case .failed:
+            return "Could not reach local server. Click 'Start / Connect' to auto-launch Ollama background daemon."
         }
     }
 }
 
 // MARK: - Vision / Screen / Focus / Privacy
 
-struct VisionSettingsSection: View {
-    @ObservedObject var vision = VisionGuardian.shared
+// MARK: - Native Presence Monitor & Cloud AI Providers
+
+struct PresenceSettingsSection: View {
+    @ObservedObject var monitor = PresenceMonitor.shared
     @ObservedObject var dataManager = DataManager.shared
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Text("Camera & Focus Vision")
-                .font(.system(size: 18, weight: .bold))
-
-            Text("Processes webcam frames strictly on-device using local Vision frameworks. No photos or video leave your Mac.")
-                .font(.system(size: 12))
-                .foregroundColor(.secondary)
-
-            Toggle(isOn: Binding(
-                get: { dataManager.savedData.cameraAwarenessEnabled ?? false },
-                set: { enabled in
-                    dataManager.savedData.cameraAwarenessEnabled = enabled
-                    dataManager.saveData()
-                    if enabled {
-                        vision.startSession()
-                    } else {
-                        vision.stopSession()
+        VStack(alignment: .leading, spacing: 20) {
+            // Header
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Native Presence Monitor")
+                        .font(.system(size: 18, weight: .bold))
+                    Text("Local computer-vision presence analysis powered by Apple Vision. Real-time human bounding box detection, owner verification, and local security snapshots.")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                }
+                Spacer()
+                Button(action: {
+                    PresenceMonitorWindowController.shared.toggleWidget()
+                }) {
+                    HStack(spacing: 5) {
+                        Image(systemName: "macwindow.on.rectangle")
+                        Text("Desktop Widget")
                     }
                 }
-            )) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Enable Camera Awareness")
-                        .font(.system(size: 13, weight: .semibold))
-                    Text("Allows pet to notice posture and presence. Off by default on startup.")
+                .buttonStyle(.bordered)
+            }
+
+            // Radar / Live Camera Monitor Card
+            VStack(spacing: 12) {
+                HStack {
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(statusColor)
+                            .frame(width: 10, height: 10)
+                        Text(monitor.presenceStatus.rawValue)
+                            .font(.system(size: 13, weight: .bold))
+                    }
+                    Spacer()
+                    Button(action: {
+                        if monitor.isRunning {
+                            monitor.stop()
+                        } else {
+                            monitor.start()
+                        }
+                    }) {
+                        Text(monitor.isRunning ? "Stop Monitor" : "Start Monitor")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 5)
+                            .background(
+                                Capsule().fill(monitor.isRunning ? Color.red : Color.green)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                // Camera preview box
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color.black.opacity(0.85))
+                        .frame(height: 190)
+
+                    if let img = monitor.latestPreviewImage {
+                        Image(nsImage: img)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(height: 190)
+                            .cornerRadius(10)
+
+                        // Subject Bounding Boxes
+                        GeometryReader { geo in
+                            ForEach(monitor.trackedSubjects) { subj in
+                                subjectBoundingBox(subj: subj, in: geo)
+                            }
+                        }
+                        .frame(height: 190)
+                    } else {
+                        VStack(spacing: 8) {
+                            Image(systemName: "camera.viewfinder")
+                                .font(.system(size: 32))
+                                .foregroundColor(.secondary)
+                            Text(monitor.isRunning ? "Scanning for human subjects..." : "Monitor is currently stopped.")
+                                .font(.system(size: 12))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+            }
+            .padding(14)
+            .background(RoundedRectangle(cornerRadius: 12).fill(Color.primary.opacity(0.04)))
+
+            // Owner Profile Section
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Owner Verification")
+                    .font(.system(size: 14, weight: .bold))
+
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(monitor.isOwnerEnrolled ? "🟢 Owner Enrolled" : "⚪ No Owner Enrolled")
+                            .font(.system(size: 12, weight: .semibold))
+                        Text(monitor.isOwnerEnrolled ? "Your facial feature print is stored locally. Unknown faces trigger presence alerts." : "Enroll your face so Ollama Pet recognizes you and distinguishes guests.")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    if monitor.isOwnerEnrolled {
+                        Button("Reset Profile") {
+                            monitor.resetOwnerProfile()
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+                    Button("Enroll Current Face") {
+                        monitor.enrollCurrentFaceAsOwner()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                }
+            }
+            .padding(14)
+            .background(RoundedRectangle(cornerRadius: 12).fill(Color.primary.opacity(0.04)))
+
+            // Alert Configuration
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Security & Notification Rules")
+                    .font(.system(size: 14, weight: .bold))
+
+                Toggle("Alert when unknown person stays near Mac > 5s", isOn: Binding(
+                    get: { dataManager.savedData.presenceDwellAlertEnabled ?? true },
+                    set: { dataManager.savedData.presenceDwellAlertEnabled = $0; dataManager.saveData() }
+                ))
+
+                Toggle("Capture security snapshot of unknown person", isOn: Binding(
+                    get: { dataManager.savedData.presenceUnknownAlertEnabled ?? true },
+                    set: { dataManager.savedData.presenceUnknownAlertEnabled = $0; dataManager.saveData() }
+                ))
+            }
+            .padding(14)
+            .background(RoundedRectangle(cornerRadius: 12).fill(Color.primary.opacity(0.04)))
+
+            // Snapshot Vault (Max 20, FIFO)
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Local Security Snapshots (\(monitor.snapshotCount)/20)")
+                            .font(.system(size: 14, weight: .bold))
+                        Text("Stored purely in ~/Library/Application Support/OllamaPet/Snapshots. Oldest pruned automatically.")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    if monitor.snapshotCount > 0 {
+                        Button("Clear All") {
+                            monitor.clearAllSnapshots()
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+                }
+
+                let snapshotURLs = monitor.getSnapshotURLs()
+                if snapshotURLs.isEmpty {
+                    Text("No snapshots captured yet.")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                        .padding(.vertical, 8)
+                } else {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(snapshotURLs, id: \.self) { url in
+                                if let img = NSImage(contentsOf: url) {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Image(nsImage: img)
+                                            .resizable()
+                                            .aspectRatio(contentMode: .fill)
+                                            .frame(width: 80, height: 60)
+                                            .cornerRadius(6)
+                                            .clipped()
+                                        Text(url.lastPathComponent.replacingOccurrences(of: "snapshot_", with: "").replacingOccurrences(of: ".jpg", with: ""))
+                                            .font(.system(size: 8, design: .monospaced))
+                                            .foregroundColor(.secondary)
+                                            .lineLimit(1)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(14)
+            .background(RoundedRectangle(cornerRadius: 12).fill(Color.primary.opacity(0.04)))
+        }
+    }
+
+    private var statusColor: Color {
+        switch monitor.presenceStatus {
+        case .ownerPresent: return .green
+        case .unknownDetected: return .orange
+        case .multipleDetected: return .yellow
+        case .searching: return .cyan
+        case .away: return .gray
+        case .cameraUnavailable, .idle: return .red
+        }
+    }
+
+    @ViewBuilder
+    private func subjectBoundingBox(subj: TrackedSubject, in geo: GeometryProxy) -> some View {
+        let r = subj.rect
+        let w = max(24.0, r.width * geo.size.width)
+        let h = max(24.0, r.height * geo.size.height)
+        let x = r.minX * geo.size.width + w / 2.0
+        let y = (1.0 - r.maxY) * geo.size.height + h / 2.0
+        let isOwner = subj.isOwner
+        let color = isOwner ? Color.green : Color.orange
+        let dwellSec = Int(subj.dwellDuration)
+        let label = isOwner ? "Owner 👤" : "Unknown (\(dwellSec)s)"
+
+        ZStack(alignment: .top) {
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(color, lineWidth: 2)
+                .frame(width: w, height: h)
+
+            Text(label)
+                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                .foregroundColor(.white)
+                .padding(3)
+                .background(color.opacity(0.85))
+                .cornerRadius(4)
+                .offset(y: -14)
+        }
+        .position(x: x, y: y)
+    }
+}
+
+struct CloudAISettingsSection: View {
+    @ObservedObject var aiManager = AIProviderManager.shared
+    @ObservedObject var dataManager = DataManager.shared
+
+    @State private var openaiKeyInput: String = ""
+    @State private var geminiKeyInput: String = ""
+    @State private var anthropicKeyInput: String = ""
+    @State private var groqKeyInput: String = ""
+
+    @State private var testStatus: [String: String] = [:]
+    @State private var isTesting: [String: Bool] = [:]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            // Header
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Cloud AI Providers & API Keys")
+                    .font(.system(size: 18, weight: .bold))
+                Text("All API keys are securely stored inside your macOS Keychain and never saved in plaintext files or logs. If local Ollama is offline, Ollama Pet seamlessly falls back to your configured cloud providers.")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+            }
+
+            // Primary Provider Selector
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Active Companion AI Provider")
+                    .font(.system(size: 14, weight: .bold))
+
+                Picker("", selection: $aiManager.activeProvider) {
+                    ForEach(AIProvider.allCases) { p in
+                        HStack {
+                            Image(systemName: p.icon)
+                            Text(p.displayName)
+                        }
+                        .tag(p)
+                    }
+                }
+                .pickerStyle(.radioGroup)
+                .onChange(of: aiManager.activeProvider) { newProvider in
+                    aiManager.setProvider(newProvider)
+                }
+
+                HStack(spacing: 6) {
+                    Image(systemName: "shield.lefthalf.filled")
+                        .foregroundColor(.green)
+                    Text("Auto-Fallback Enabled: If \(aiManager.activeProvider.displayName) is unreachable, available cloud keys will be used automatically.")
                         .font(.system(size: 11))
                         .foregroundColor(.secondary)
                 }
             }
             .padding(14)
-            .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
+            .background(RoundedRectangle(cornerRadius: 12).fill(Color.primary.opacity(0.04)))
+
+            // Provider Cards (OpenAI, Gemini, Anthropic, Groq)
+            VStack(spacing: 12) {
+                providerRow(
+                    provider: .openai,
+                    input: $openaiKeyInput,
+                    modelBinding: Binding(
+                        get: { dataManager.savedData.openaiModel ?? "gpt-4o-mini" },
+                        set: { dataManager.savedData.openaiModel = $0; dataManager.saveData() }
+                    ),
+                    models: ["gpt-4o-mini", "gpt-4o", "gpt-4-turbo", "o3-mini"]
+                )
+
+                providerRow(
+                    provider: .gemini,
+                    input: $geminiKeyInput,
+                    modelBinding: Binding(
+                        get: { dataManager.savedData.geminiModel ?? "gemini-1.5-flash" },
+                        set: { dataManager.savedData.geminiModel = $0; dataManager.saveData() }
+                    ),
+                    models: ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.0-flash"]
+                )
+
+                providerRow(
+                    provider: .anthropic,
+                    input: $anthropicKeyInput,
+                    modelBinding: Binding(
+                        get: { dataManager.savedData.anthropicModel ?? "claude-3-5-haiku-20241022" },
+                        set: { dataManager.savedData.anthropicModel = $0; dataManager.saveData() }
+                    ),
+                    models: ["claude-3-5-haiku-20241022", "claude-3-5-sonnet-20241022"]
+                )
+
+                providerRow(
+                    provider: .groq,
+                    input: $groqKeyInput,
+                    modelBinding: Binding(
+                        get: { dataManager.savedData.groqModel ?? "llama-3.3-70b-versatile" },
+                        set: { dataManager.savedData.groqModel = $0; dataManager.saveData() }
+                    ),
+                    models: ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768"]
+                )
+            }
         }
+    }
+
+    private func providerRow(
+        provider: AIProvider,
+        input: Binding<String>,
+        modelBinding: Binding<String>,
+        models: [String]
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Image(systemName: provider.icon)
+                    .font(.system(size: 14))
+                Text(provider.displayName)
+                    .font(.system(size: 13, weight: .bold))
+
+                Spacer()
+
+                let masked = APIKeyManager.shared.maskedKey(for: provider.rawValue)
+                Text(masked)
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundColor(APIKeyManager.shared.hasKey(for: provider.rawValue) ? .green : .secondary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.primary.opacity(0.06))
+                    .cornerRadius(4)
+            }
+
+            HStack(spacing: 8) {
+                SecureField("Enter API Key (saved to Keychain)", text: input)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 11))
+
+                Button("Save") {
+                    let key = input.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !key.isEmpty {
+                        APIKeyManager.shared.setKey(key, for: provider.rawValue)
+                        input.wrappedValue = ""
+                        testStatus[provider.rawValue] = "Saved to Keychain! ✓"
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+
+                if APIKeyManager.shared.hasKey(for: provider.rawValue) {
+                    Button("Remove") {
+                        APIKeyManager.shared.deleteKey(for: provider.rawValue)
+                        testStatus[provider.rawValue] = "Key removed from Keychain."
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+
+                Button(action: {
+                    Task {
+                        isTesting[provider.rawValue] = true
+                        testStatus[provider.rawValue] = "Testing connection..."
+                        let result = await aiManager.testProvider(provider: provider)
+                        isTesting[provider.rawValue] = false
+                        testStatus[provider.rawValue] = result.message
+                    }
+                }) {
+                    Text((isTesting[provider.rawValue] ?? false) ? "Testing..." : "Test")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(isTesting[provider.rawValue] ?? false || !APIKeyManager.shared.hasKey(for: provider.rawValue))
+            }
+
+            // Model Selection
+            HStack {
+                Text("Default Model:")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+                Picker("", selection: modelBinding) {
+                    ForEach(models, id: \.self) { m in
+                        Text(m).tag(m)
+                    }
+                }
+                .labelsHidden()
+                .controlSize(.small)
+            }
+
+            if let status = testStatus[provider.rawValue] {
+                Text(status)
+                    .font(.system(size: 10))
+                    .foregroundColor(status.contains("✓") || status.contains("successfully") ? .green : .orange)
+            }
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.03)))
     }
 }
 

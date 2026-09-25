@@ -179,6 +179,7 @@ struct PetStageView: View {
                 let snapshot = motion.evaluateSnapshot(
                     at: t,
                     animState: petState.animState,
+                    mood: petState.currentMood,
                     atmosphere: perf.weatherEffectsEnabled ? weatherService.activeAtmosphere : .clearDay,
                     isSafeMode: perf.isSafeMode
                 )
@@ -190,6 +191,7 @@ struct PetStageView: View {
                     species: petState.currentSpecies,
                     model: model,
                     animState: petState.animState,
+                    mood: petState.currentMood,
                     snapshot: snapshot,
                     perf: perf
                 )

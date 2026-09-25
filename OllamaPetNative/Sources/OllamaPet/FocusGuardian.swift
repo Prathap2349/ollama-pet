@@ -153,11 +153,7 @@ public class FocusGuardian: ObservableObject {
         VisionGuardian.shared.stopSession()
         ScreenGuardian.shared.stopMonitoring()
 
-        NotificationScheduler.shared.cancelTimer(timerId: "focus-session")
-
-        PetState.shared.showBubble("🎉 Focus session completed! Great job!", duration: 5.0)
-        SoundEffect.receive.play()
-        DataManager.shared.postNotification(title: "🎯 Focus Complete", body: "You completed your focus session! Take a break.")
+        NotificationScheduler.shared.handleFocusCompleted(durationSeconds: sessionTotalSeconds)
     }
 
     // MARK: - Away & Return Notifications

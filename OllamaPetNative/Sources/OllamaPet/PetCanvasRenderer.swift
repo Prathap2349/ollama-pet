@@ -13,6 +13,7 @@ public struct PetCanvasRenderer {
         species: PetSpecies,
         model: CharacterStructuralModel,
         animState: PetAnimState,
+        mood: PetMood = .happy,
         snapshot: AnimationSnapshot,
         perf: PerformanceManager
     ) {
@@ -51,6 +52,7 @@ public struct PetCanvasRenderer {
             species: species,
             model: model,
             animState: animState,
+            mood: mood,
             snapshot: snapshot,
             isGrayscale: perf.grayscaleTestMode
         )
@@ -935,6 +937,7 @@ public struct PetCanvasRenderer {
         species: PetSpecies,
         model: CharacterStructuralModel,
         animState: PetAnimState,
+        mood: PetMood,
         snapshot: AnimationSnapshot,
         isGrayscale: Bool
     ) {
@@ -947,6 +950,7 @@ public struct PetCanvasRenderer {
             species: species,
             layout: layout,
             animState: animState,
+            mood: mood,
             snapshot: snapshot,
             isGrayscale: isGrayscale
         )
@@ -967,6 +971,7 @@ public struct PetCanvasRenderer {
             species: species,
             layout: layout,
             animState: animState,
+            mood: mood,
             snapshot: snapshot,
             isGrayscale: isGrayscale
         )
@@ -1002,6 +1007,7 @@ public struct PetCanvasRenderer {
         species: PetSpecies,
         layout: CharacterFaceLayout,
         animState: PetAnimState,
+        mood: PetMood,
         snapshot: AnimationSnapshot,
         isGrayscale: Bool
     ) {
@@ -1027,7 +1033,14 @@ public struct PetCanvasRenderer {
             let scanColor = (isGrayscale ? Color.white : (species == .robotcat ? Color.green : Color.cyan)).opacity(0.2)
             context.stroke(scan, with: .color(scanColor), lineWidth: 1.0)
 
-            let ledColor = isGrayscale ? Color.white : (species == .robotcat ? Color.green : Color.cyan)
+            var ledColor = isGrayscale ? Color.white : (species == .robotcat ? Color.green : Color.cyan)
+            if mood == .proud {
+                ledColor = Color(red: 1.0, green: 0.85, blue: 0.2)
+            } else if mood == .concerned {
+                ledColor = Color.orange
+            } else if mood == .angry {
+                ledColor = Color.red
+            }
 
             if isClosed {
                 // Dimmed horizontal LED slit during blink/sleep
@@ -1035,6 +1048,19 @@ public struct PetCanvasRenderer {
                 let rSlit = Rectangle().path(in: CGRect(x: rightEyeX - 3.5, y: gazeY - 0.75, width: 7, height: 1.5))
                 context.fill(lSlit, with: .color(ledColor.opacity(0.4)))
                 context.fill(rSlit, with: .color(ledColor.opacity(0.4)))
+            } else if mood == .proud || animState == .dance {
+                // Happy chevron/arch LED (^ ^)
+                var lArc = Path()
+                lArc.move(to: CGPoint(x: leftEyeX - 4, y: gazeY + 2))
+                lArc.addLine(to: CGPoint(x: leftEyeX, y: gazeY - 3))
+                lArc.addLine(to: CGPoint(x: leftEyeX + 4, y: gazeY + 2))
+                context.stroke(lArc, with: .color(ledColor), lineWidth: 2.2)
+
+                var rArc = Path()
+                rArc.move(to: CGPoint(x: rightEyeX - 4, y: gazeY + 2))
+                rArc.addLine(to: CGPoint(x: rightEyeX, y: gazeY - 3))
+                rArc.addLine(to: CGPoint(x: rightEyeX + 4, y: gazeY + 2))
+                context.stroke(rArc, with: .color(ledColor), lineWidth: 2.2)
             } else {
                 // Two clearly visible glowing LED eyes: ●  ●
                 let openHeight = animState == .shock ? layout.eyeHeight * 1.25 : layout.eyeHeight
@@ -1072,7 +1098,7 @@ public struct PetCanvasRenderer {
                 var rArc = Path()
                 rArc.addArc(center: CGPoint(x: rightEyeX, y: eyeY), radius: 4.5, startAngle: .degrees(0), endAngle: .degrees(180), clockwise: false)
                 context.stroke(rArc, with: .color(Color(white: 0.15)), lineWidth: 2.0)
-            } else if animState == .dance {
+            } else if mood == .proud || animState == .dance {
                 // Happy curved squint arcs (^ ^)
                 var lArc = Path()
                 lArc.addArc(center: CGPoint(x: leftEyeX, y: eyeY + 1.5), radius: 4.5, startAngle: .degrees(180), endAngle: .degrees(360), clockwise: false)
@@ -1115,6 +1141,18 @@ public struct PetCanvasRenderer {
                     context.fill(lSubSpark, with: .color(Color.white.opacity(0.85)))
                     context.fill(rSubSpark, with: .color(Color.white.opacity(0.85)))
                 }
+
+                if mood == .concerned {
+                    var lBrow = Path()
+                    lBrow.move(to: CGPoint(x: leftEyeX - 4, y: finalGazeY - 7))
+                    lBrow.addLine(to: CGPoint(x: leftEyeX + 4, y: finalGazeY - 9))
+                    context.stroke(lBrow, with: .color(Color(white: 0.2)), lineWidth: 1.5)
+
+                    var rBrow = Path()
+                    rBrow.move(to: CGPoint(x: rightEyeX - 4, y: finalGazeY - 9))
+                    rBrow.addLine(to: CGPoint(x: rightEyeX + 4, y: finalGazeY - 7))
+                    context.stroke(rBrow, with: .color(Color(white: 0.2)), lineWidth: 1.5)
+                }
             }
 
         case .reptilian:
@@ -1126,6 +1164,14 @@ public struct PetCanvasRenderer {
                 var rArc = Path()
                 rArc.addArc(center: CGPoint(x: rightEyeX, y: eyeY), radius: 4.5, startAngle: .degrees(0), endAngle: .degrees(180), clockwise: false)
                 context.stroke(rArc, with: .color(Color(white: 0.15)), lineWidth: 2.0)
+            } else if mood == .proud {
+                var lArc = Path()
+                lArc.addArc(center: CGPoint(x: leftEyeX, y: eyeY + 1.5), radius: 4.5, startAngle: .degrees(180), endAngle: .degrees(360), clockwise: false)
+                context.stroke(lArc, with: .color(Color(white: 0.15)), lineWidth: 2.2)
+
+                var rArc = Path()
+                rArc.addArc(center: CGPoint(x: rightEyeX, y: eyeY + 1.5), radius: 4.5, startAngle: .degrees(180), endAngle: .degrees(360), clockwise: false)
+                context.stroke(rArc, with: .color(Color(white: 0.15)), lineWidth: 2.2)
             } else {
                 let openHeight = animState == .shock ? layout.eyeHeight * 1.25 : layout.eyeHeight
                 let h = max(1.5, openHeight * (1.0 - snapshot.blinkProgress))
@@ -1162,6 +1208,15 @@ public struct PetCanvasRenderer {
                 var rArc = Path()
                 rArc.addArc(center: CGPoint(x: rightEyeX, y: eyeY), radius: 4.5, startAngle: .degrees(0), endAngle: .degrees(180), clockwise: false)
                 context.stroke(rArc, with: .color(Color(white: 0.15)), lineWidth: 2.2)
+            } else if mood == .proud || animState == .dance {
+                // Cheerful closed smiling crescent arcs (^ ^)
+                var lArc = Path()
+                lArc.addArc(center: CGPoint(x: leftEyeX, y: gazeY + 1.5), radius: 4.5, startAngle: .degrees(180), endAngle: .degrees(360), clockwise: false)
+                context.stroke(lArc, with: .color(Color(white: 0.15)), lineWidth: 2.4)
+
+                var rArc = Path()
+                rArc.addArc(center: CGPoint(x: rightEyeX, y: gazeY + 1.5), radius: 4.5, startAngle: .degrees(180), endAngle: .degrees(360), clockwise: false)
+                context.stroke(rArc, with: .color(Color(white: 0.15)), lineWidth: 2.4)
             } else {
                 let openHeight = animState == .shock ? layout.eyeHeight * 1.3 : layout.eyeHeight
                 let h = max(1.5, openHeight * (1.0 - snapshot.blinkProgress))
@@ -1184,6 +1239,33 @@ public struct PetCanvasRenderer {
                     let rSub = Circle().path(in: CGRect(x: rightEyeX + 1, y: gazeY + 1, width: 1.6, height: 1.6))
                     context.fill(lSub, with: .color(Color.white.opacity(0.8)))
                     context.fill(rSub, with: .color(Color.white.opacity(0.8)))
+                }
+
+                // Mood overlays
+                if mood == .concerned {
+                    var lBrow = Path()
+                    lBrow.move(to: CGPoint(x: leftEyeX - 4, y: gazeY - 7))
+                    lBrow.addLine(to: CGPoint(x: leftEyeX + 4, y: gazeY - 9))
+                    context.stroke(lBrow, with: .color(Color(white: 0.2)), lineWidth: 1.5)
+
+                    var rBrow = Path()
+                    rBrow.move(to: CGPoint(x: rightEyeX - 4, y: gazeY - 9))
+                    rBrow.addLine(to: CGPoint(x: rightEyeX + 4, y: gazeY - 7))
+                    context.stroke(rBrow, with: .color(Color(white: 0.2)), lineWidth: 1.5)
+                } else if mood == .angry {
+                    var lBrow = Path()
+                    lBrow.move(to: CGPoint(x: leftEyeX - 4, y: gazeY - 9))
+                    lBrow.addLine(to: CGPoint(x: leftEyeX + 4, y: gazeY - 6))
+                    context.stroke(lBrow, with: .color(Color(white: 0.15)), lineWidth: 1.8)
+
+                    var rBrow = Path()
+                    rBrow.move(to: CGPoint(x: rightEyeX - 4, y: gazeY - 6))
+                    rBrow.addLine(to: CGPoint(x: rightEyeX + 4, y: gazeY - 9))
+                    context.stroke(rBrow, with: .color(Color(white: 0.15)), lineWidth: 1.8)
+                } else if (mood == .sad || mood == .crying) && !isGrayscale {
+                    let tearY = gazeY + 5 + CGFloat(fmod(snapshot.time * 6.0, 8.0))
+                    let lTear = Ellipse().path(in: CGRect(x: leftEyeX - 1.5, y: tearY, width: 3, height: 4.5))
+                    context.fill(lTear, with: .color(Color(red: 0.4, green: 0.7, blue: 1.0).opacity(0.85)))
                 }
             }
         }
@@ -1246,6 +1328,7 @@ public struct PetCanvasRenderer {
         species: PetSpecies,
         layout: CharacterFaceLayout,
         animState: PetAnimState,
+        mood: PetMood,
         snapshot: AnimationSnapshot,
         isGrayscale: Bool
     ) {
@@ -1256,8 +1339,9 @@ public struct PetCanvasRenderer {
             // Digital LED smile or segmented line
             var ledMouth = Path()
             ledMouth.move(to: CGPoint(x: center.x - halfW, y: mouthY))
-            ledMouth.addQuadCurve(to: CGPoint(x: center.x + halfW, y: mouthY), control: CGPoint(x: center.x, y: mouthY + 2.5))
-            let mColor = isGrayscale ? Color.white : (species == .robotcat ? Color.green : Color.cyan)
+            ledMouth.addQuadCurve(to: CGPoint(x: center.x + halfW, y: mouthY), control: CGPoint(x: center.x, y: mouthY + (mood == .angry ? -2.0 : (mood == .concerned ? 0.0 : 2.5))))
+            var mColor = isGrayscale ? Color.white : (species == .robotcat ? Color.green : Color.cyan)
+            if mood == .proud { mColor = Color.yellow }
             context.stroke(ledMouth, with: .color(mColor), lineWidth: 1.6)
             return
         }
@@ -1265,6 +1349,48 @@ public struct PetCanvasRenderer {
         if animState == .shock {
             let oMouth = Ellipse().path(in: CGRect(x: center.x - 3.5, y: mouthY - 3, width: 7, height: 8))
             context.fill(oMouth, with: .color(Color(white: 0.12)))
+            return
+        }
+
+        if mood == .proud {
+            // Broad cheerful beaming smile with tongue
+            var smile = Path()
+            smile.move(to: CGPoint(x: center.x - halfW - 1, y: mouthY))
+            smile.addQuadCurve(to: CGPoint(x: center.x + halfW + 1, y: mouthY), control: CGPoint(x: center.x, y: mouthY + 5.5))
+            smile.closeSubpath()
+            context.fill(smile, with: .color(Color(white: 0.15)))
+            if !isGrayscale {
+                let tongue = Ellipse().path(in: CGRect(x: center.x - 2.5, y: mouthY + 2.0, width: 5, height: 3.5))
+                context.fill(tongue, with: .color(Color.pink.opacity(0.85)))
+            }
+            return
+        }
+
+        if mood == .concerned {
+            // Worried wavy mouth
+            var wavy = Path()
+            wavy.move(to: CGPoint(x: center.x - halfW, y: mouthY))
+            wavy.addQuadCurve(to: CGPoint(x: center.x, y: mouthY - 1.5), control: CGPoint(x: center.x - halfW/2, y: mouthY - 2.5))
+            wavy.addQuadCurve(to: CGPoint(x: center.x + halfW, y: mouthY + 1.0), control: CGPoint(x: center.x + halfW/2, y: mouthY + 2.0))
+            context.stroke(wavy, with: .color(Color(white: 0.18)), lineWidth: 1.6)
+            return
+        }
+
+        if mood == .angry {
+            // Stern downturned mouth
+            var frown = Path()
+            frown.move(to: CGPoint(x: center.x - halfW, y: mouthY + 2.0))
+            frown.addQuadCurve(to: CGPoint(x: center.x + halfW, y: mouthY + 2.0), control: CGPoint(x: center.x, y: mouthY - 1.5))
+            context.stroke(frown, with: .color(Color(white: 0.18)), lineWidth: 1.8)
+            return
+        }
+
+        if mood == .sad || mood == .crying {
+            // Downturned sad mouth
+            var sadMouth = Path()
+            sadMouth.move(to: CGPoint(x: center.x - halfW, y: mouthY + 1.5))
+            sadMouth.addQuadCurve(to: CGPoint(x: center.x + halfW, y: mouthY + 1.5), control: CGPoint(x: center.x, y: mouthY - 2.0))
+            context.stroke(sadMouth, with: .color(Color(white: 0.18)), lineWidth: 1.6)
             return
         }
 

@@ -39,27 +39,33 @@ struct ChatView: View {
                 headerBar
 
                 // Tab Content
-                switch petState.activeTab {
-                case "chat":
-                    chatTabContent
-                case "weather":
-                    weatherTabContent
-                case "system":
-                    systemTabContent
-                case "game":
-                    gameTabContent
-                case "remind":
-                    remindTabContent
-                case "settings":
-                    chatTabContent
-                default:
-                    chatTabContent
+                Group {
+                    switch petState.activeTab {
+                    case "chat":
+                        chatTabContent
+                    case "weather":
+                        weatherTabContent
+                    case "system":
+                        systemTabContent
+                    case "game":
+                        gameTabContent
+                    case "remind":
+                        remindTabContent
+                    case "settings":
+                        chatTabContent
+                    default:
+                        chatTabContent
+                    }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .transition(.opacity.combined(with: .offset(y: 4)))
+                .id(petState.activeTab)
             }
 
             // Native Action Confirmation Dialog
             ActionConfirmationView()
         }
+        .animation(.easeInOut(duration: 0.18), value: petState.activeTab)
         .frame(width: 320, height: 460)
         .background(
             RoundedRectangle(cornerRadius: 16)
@@ -80,18 +86,31 @@ struct ChatView: View {
 
     // MARK: - Header Bar
     private var headerBar: some View {
-        VStack(spacing: 4) {
-            HStack {
-                Circle()
-                    .fill(headerStatusColor)
-                    .frame(width: 8, height: 8)
-
-                Text(ollamaClient.statusMessage)
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundColor(Color.white.opacity(0.85))
-                    .lineLimit(1)
+        VStack(spacing: 5) {
+            HStack(spacing: 8) {
+                HStack(spacing: 5) {
+                    Text(petState.currentSpecies.icon)
+                        .font(.system(size: 13))
+                    Text("Ollama Pet")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(.white)
+                }
 
                 Spacer()
+
+                HStack(spacing: 5) {
+                    Circle()
+                        .fill(headerStatusColor)
+                        .frame(width: 7, height: 7)
+
+                    Text(ollamaClient.statusMessage)
+                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .foregroundColor(Color.white.opacity(0.85))
+                        .lineLimit(1)
+                }
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(Capsule().fill(Color.white.opacity(0.08)))
 
                 if !ollamaClient.isOnline {
                     Button(action: {
@@ -99,12 +118,12 @@ struct ChatView: View {
                             await ollamaClient.connectOrStartIfNeeded(preferredModel: dataManager.savedData.selectedModel)
                         }
                     }) {
-                        Text(ollamaClient.connectionState.isConnecting ? "Starting..." : "Start Ollama")
+                        Text(ollamaClient.connectionState.isConnecting ? "Starting..." : "Start")
                             .font(.system(size: 10, weight: .bold))
                             .foregroundColor(.white)
                             .padding(.horizontal, 7)
                             .padding(.vertical, 3)
-                            .background(Capsule().fill(Color.orange.opacity(0.6)))
+                            .background(Capsule().fill(Color.orange.opacity(0.7)))
                     }
                     .buttonStyle(.plain)
                 }
@@ -113,13 +132,14 @@ struct ChatView: View {
                     PetWindowController.shared.closePanel()
                 }) {
                     Image(systemName: "xmark.circle.fill")
-                        .foregroundColor(Color.white.opacity(0.6))
-                        .font(.system(size: 14))
+                        .foregroundColor(Color.white.opacity(0.5))
+                        .font(.system(size: 13))
                 }
                 .buttonStyle(.plain)
+                .help("Close Panel")
             }
             .padding(.horizontal, 12)
-            .padding(.top, 10)
+            .padding(.top, 9)
 
             // Tabs Selector
             ScrollView(.horizontal, showsIndicators: false) {
@@ -177,7 +197,9 @@ struct ChatView: View {
 
     private func tabButton(title: String, id: String, icon: String) -> some View {
         Button(action: {
-            petState.activeTab = id
+            withAnimation(.easeInOut(duration: 0.18)) {
+                petState.activeTab = id
+            }
             dataManager.savedData.activeTab = id
             dataManager.saveData()
             SoundEffect.click.play()
@@ -192,10 +214,14 @@ struct ChatView: View {
             .padding(.vertical, 4)
             .background(
                 petState.activeTab == id
-                    ? petState.currentSpecies.accentColor.opacity(0.3)
+                    ? petState.currentSpecies.accentColor.opacity(0.35)
                     : Color.white.opacity(0.08)
             )
             .cornerRadius(8)
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(petState.activeTab == id ? petState.currentSpecies.accentColor.opacity(0.5) : Color.white.opacity(0.05), lineWidth: 1)
+            )
             .foregroundColor(petState.activeTab == id ? .white : Color.white.opacity(0.7))
         }
         .buttonStyle(.plain)

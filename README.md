@@ -16,6 +16,12 @@
   <img src="https://img.shields.io/badge/License-MIT-lightgrey" alt="License">
 </p>
 
+<p align="center">
+  <a href="https://github.com/Prathap2349/ollama-pet/releases/latest">
+    <img src="https://img.shields.io/badge/📥_Download_for_macOS-OllamaPet--macOS.zip-2ea44f?style=for-the-badge&logo=apple&logoColor=white" alt="Download Ollama Pet for macOS">
+  </a>
+</p>
+
 ---
 
 ## ✨ Overview
@@ -135,7 +141,19 @@ Unlike web wrappers or heavy electron apps, Ollama Pet is engineered specificall
   ollama pull llama3:latest
   ```
 
-### Build & Installation
+### 📦 Quick Install (Pre-built Release)
+
+1. **Download** `OllamaPet-macOS.zip` from [Releases](https://github.com/Prathap2349/ollama-pet/releases/latest).
+2. **Unzip** the archive to reveal `OllamaPet.app`.
+3. **Drag** `OllamaPet.app` into your macOS `/Applications` folder.
+4. **Launch** the app:
+   * Double-click `OllamaPet.app` in `/Applications`.
+   * *Note: Because Ollama Pet uses ad-hoc signing for open-source builds, if macOS displays a warning on first launch, simply right-click `OllamaPet.app` and select **Open**, or run:*
+     ```bash
+     xattr -cr /Applications/OllamaPet.app
+     ```
+
+### 🛠️ Build & Install from Source
 
 1. **Clone the repository**:
    ```bash
@@ -147,7 +165,7 @@ Unlike web wrappers or heavy electron apps, Ollama Pet is engineered specificall
    ```bash
    ./build-native.sh
    ```
-   *This compiles an arm64 release binary and code-signs the `.app` bundle ad-hoc.*
+   *This compiles an arm64 release binary, code-signs the `.app` bundle ad-hoc, and packages `dist-release/OllamaPet-macOS.zip`.*
 
 3. **Install to `/Applications`**:
    ```bash

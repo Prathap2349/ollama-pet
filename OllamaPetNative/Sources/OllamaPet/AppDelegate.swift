@@ -159,6 +159,7 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         reminderCheckTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { _ in
             Task { @MainActor in
                 DataManager.shared.checkReminders { reminder, isOverdue in
+                    PetState.shared.setTemporaryMood(.concerned, duration: 4.5)
                     PetState.shared.showBubble("⏰ \(isOverdue ? "Overdue: " : "")\(reminder.text)", duration: 5.0)
                     SoundEffect.alert.play()
                 }

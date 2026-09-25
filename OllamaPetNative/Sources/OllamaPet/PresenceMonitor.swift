@@ -30,6 +30,7 @@ public struct TrackedSubject: Identifiable {
     public var lastSeen: Date
     public var isOwner: Bool
     public var isUncertain: Bool
+    public var consecutiveOwnerMatches: Int
     public var lastRecognitionTime: Date?
     public var hasCapturedSnapshot: Bool
     public var missedFramesCount: Int
@@ -43,6 +44,7 @@ public struct TrackedSubject: Identifiable {
         rect: CGRect,
         isOwner: Bool = false,
         isUncertain: Bool = false,
+        consecutiveOwnerMatches: Int = 0,
         lastRecognitionTime: Date? = nil
     ) {
         self.id = id
@@ -51,6 +53,7 @@ public struct TrackedSubject: Identifiable {
         self.lastSeen = Date()
         self.isOwner = isOwner
         self.isUncertain = isUncertain
+        self.consecutiveOwnerMatches = consecutiveOwnerMatches
         self.lastRecognitionTime = lastRecognitionTime
         self.hasCapturedSnapshot = false
         self.missedFramesCount = 0
@@ -93,26 +96,35 @@ public enum MonitoringPerformanceMode: String, CaseIterable, Codable, Identifiab
 
 private final class EnhancedPresenceTracker {
     private var subjects: [TrackedSubject] = []
-    private let scoreThreshold: CGFloat = 0.28
+    private let scoreThreshold: CGFloat = 0.30
     private let maxMissedCycles = 3
-    private let maxTimeWithoutUpdate: TimeInterval = 3.5
+    private let maxTimeWithoutUpdate: TimeInterval = 3.2
 
     func currentSubjects() -> [TrackedSubject] {
         return subjects
     }
 
-    func update(detections: [(rect: CGRect, isOwner: Bool, isUncertain: Bool, wasRecognized: Bool)]) -> [TrackedSubject] {
+    func clear() {
+        subjects.removeAll()
+    }
+
+    func update(
+        matchedPairs: [(human: VNHumanObservation, face: VNFaceObservation?)],
+        ownerPrints: [VNFeaturePrintObservation],
+        handler: VNImageRequestHandler
+    ) -> ([TrackedSubject], PresenceStatus) {
         let now = Date()
         var matchedSubjectIndices = Set<Int>()
         var updatedSubjects: [TrackedSubject] = []
 
-        for det in detections {
+        for pair in matchedPairs {
+            let hRect = pair.human.boundingBox
             var bestScore: CGFloat = 0.0
             var bestIdx: Int? = nil
 
             for (idx, subj) in subjects.enumerated() {
                 if matchedSubjectIndices.contains(idx) { continue }
-                let score = computeMatchScore(subj.rect, det.rect)
+                let score = computeMatchScore(subj.rect, hRect)
                 if score > bestScore && score >= scoreThreshold {
                     bestScore = score
                     bestIdx = idx
@@ -124,29 +136,119 @@ private final class EnhancedPresenceTracker {
                 var subj = subjects[matchedIdx]
 
                 // Smooth exponential box update to eliminate jumping
-                let smoothX = subj.rect.origin.x * 0.35 + det.rect.origin.x * 0.65
-                let smoothY = subj.rect.origin.y * 0.35 + det.rect.origin.y * 0.65
-                let smoothW = subj.rect.size.width * 0.35 + det.rect.size.width * 0.65
-                let smoothH = subj.rect.size.height * 0.35 + det.rect.size.height * 0.65
+                let smoothX = subj.rect.origin.x * 0.35 + hRect.origin.x * 0.65
+                let smoothY = subj.rect.origin.y * 0.35 + hRect.origin.y * 0.65
+                let smoothW = subj.rect.size.width * 0.35 + hRect.size.width * 0.65
+                let smoothH = subj.rect.size.height * 0.35 + hRect.size.height * 0.65
                 subj.rect = CGRect(x: smoothX, y: smoothY, width: smoothW, height: smoothH)
-
                 subj.lastSeen = now
                 subj.missedFramesCount = 0
 
-                if det.wasRecognized {
-                    subj.isOwner = det.isOwner
-                    subj.isUncertain = det.isUncertain
-                    subj.lastRecognitionTime = now
+                // Face Recognition & Verification
+                if let face = pair.face, !ownerPrints.isEmpty {
+                    let timeSinceLastRec = subj.lastRecognitionTime != nil ? now.timeIntervalSince(subj.lastRecognitionTime!) : 999.0
+
+                    // If verified owner and within recent cooldown (12s), keep verification to save CPU
+                    if subj.isOwner && timeSinceLastRec < 12.0 {
+                        // Cooldown active, keep isOwner = true
+                    } else {
+                        // Perform recognition
+                        let facePrintReq = VNGenerateImageFeaturePrintRequest()
+                        facePrintReq.regionOfInterest = face.boundingBox
+                        try? handler.perform([facePrintReq])
+
+                        if let obs = facePrintReq.results?.first as? VNFeaturePrintObservation {
+                            var minDistance: Float = 1.0
+                            for op in ownerPrints {
+                                var d: Float = 1.0
+                                if (try? obs.computeDistance(&d, to: op)) != nil {
+                                    minDistance = min(minDistance, d)
+                                }
+                            }
+
+                            // Strict conservative thresholds
+                            if minDistance < 0.38 {
+                                subj.consecutiveOwnerMatches += 1
+                                if subj.consecutiveOwnerMatches >= 2 {
+                                    subj.isOwner = true
+                                    subj.isUncertain = false
+                                } else {
+                                    // 1st match: require 2 consecutive samples
+                                    subj.isOwner = false
+                                    subj.isUncertain = true
+                                }
+                            } else if minDistance <= 0.48 {
+                                subj.consecutiveOwnerMatches = 0
+                                subj.isOwner = false
+                                subj.isUncertain = true
+                            } else {
+                                subj.consecutiveOwnerMatches = 0
+                                subj.isOwner = false
+                                subj.isUncertain = false
+                            }
+                            subj.lastRecognitionTime = now
+                        } else {
+                            if timeSinceLastRec > 8.0 {
+                                subj.isOwner = false
+                                subj.isUncertain = true
+                            }
+                        }
+                    }
+                } else if pair.face == nil {
+                    // Face obscured
+                    let timeSinceLastRec = subj.lastRecognitionTime != nil ? now.timeIntervalSince(subj.lastRecognitionTime!) : 999.0
+                    if timeSinceLastRec > 6.0 {
+                        subj.isOwner = false
+                        subj.isUncertain = false
+                    }
+                } else {
+                    // Owner prints empty (no owner enrolled)
+                    subj.isOwner = false
+                    subj.isUncertain = false
                 }
+
                 updatedSubjects.append(subj)
             } else {
+                // New subject entering frame — NEVER inherits previous owner status!
                 var newSubj = TrackedSubject(
-                    rect: det.rect,
-                    isOwner: det.isOwner,
-                    isUncertain: det.isUncertain,
-                    lastRecognitionTime: det.wasRecognized ? now : nil
+                    rect: hRect,
+                    isOwner: false,
+                    isUncertain: false,
+                    consecutiveOwnerMatches: 0
                 )
                 newSubj.lastSeen = now
+
+                if let face = pair.face, !ownerPrints.isEmpty {
+                    let facePrintReq = VNGenerateImageFeaturePrintRequest()
+                    facePrintReq.regionOfInterest = face.boundingBox
+                    try? handler.perform([facePrintReq])
+
+                    if let obs = facePrintReq.results?.first as? VNFeaturePrintObservation {
+                        var minDistance: Float = 1.0
+                        for op in ownerPrints {
+                            var d: Float = 1.0
+                            if (try? obs.computeDistance(&d, to: op)) != nil {
+                                minDistance = min(minDistance, d)
+                            }
+                        }
+
+                        if minDistance < 0.38 {
+                            newSubj.consecutiveOwnerMatches = 1 // Sample 1 of 2 -> NOT owner yet!
+                            newSubj.isOwner = false
+                            newSubj.isUncertain = true
+                        } else if minDistance <= 0.48 {
+                            newSubj.consecutiveOwnerMatches = 0
+                            newSubj.isOwner = false
+                            newSubj.isUncertain = true
+                        } else {
+                            newSubj.consecutiveOwnerMatches = 0
+                            newSubj.isOwner = false
+                            newSubj.isUncertain = false
+                        }
+                        newSubj.lastRecognitionTime = now
+                    }
+                }
+
                 updatedSubjects.append(newSubj)
             }
         }
@@ -163,11 +265,29 @@ private final class EnhancedPresenceTracker {
         }
 
         self.subjects = updatedSubjects
-        return subjects
-    }
 
-    func clear() {
-        subjects.removeAll()
+        // Determine Overall Presence Status
+        let status: PresenceStatus
+        if updatedSubjects.isEmpty {
+            status = .away
+        } else if updatedSubjects.count > 1 {
+            status = .multipleDetected
+        } else {
+            let s = updatedSubjects[0]
+            if ownerPrints.isEmpty {
+                status = .personDetectedNoOwner
+            } else if s.isOwner {
+                status = .ownerPresent
+            } else if s.isUncertain || s.consecutiveOwnerMatches > 0 {
+                status = .uncertain
+            } else if s.lastRecognitionTime != nil {
+                status = .unknownDetected
+            } else {
+                status = .noFace
+            }
+        }
+
+        return (subjects, status)
     }
 
     private func computeMatchScore(_ r1: CGRect, _ r2: CGRect) -> CGFloat {
@@ -175,8 +295,8 @@ private final class EnhancedPresenceTracker {
         let c1 = CGPoint(x: r1.midX, y: r1.midY)
         let c2 = CGPoint(x: r2.midX, y: r2.midY)
         let dist = hypot(c1.x - c2.x, c1.y - c2.y)
-        let proximityScore = max(0.0, 1.0 - (dist / 0.40))
-        return (iou * 0.55) + (proximityScore * 0.45)
+        let proximityScore = max(0.0, 1.0 - (dist / 0.35))
+        return (iou * 0.60) + (proximityScore * 0.40)
     }
 
     private func computeIoU(_ r1: CGRect, _ r2: CGRect) -> CGFloat {
@@ -192,7 +312,7 @@ private final class EnhancedPresenceTracker {
 // MARK: - Background Video Output Coordinator
 
 private final class PresenceCaptureCoordinator: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
-    var onFrameProcessed: (([(rect: CGRect, isOwner: Bool, isUncertain: Bool, wasRecognized: Bool)], PresenceStatus) -> Void)?
+    var onFrameProcessed: (([TrackedSubject], PresenceStatus) -> Void)?
     var onPreviewFrameReady: ((CGImage) -> Void)?
     var onHeartbeat: (() -> Void)?
 
@@ -208,11 +328,11 @@ private final class PresenceCaptureCoordinator: NSObject, AVCaptureVideoDataOutp
     private var lastPreviewTimestamp: TimeInterval = 0
     private let minPreviewInterval: TimeInterval = 0.12 // Controlled 8 FPS preview cap
 
-    private var ownerFeaturePrint: VNFeaturePrintObservation?
+    private var ownerFeaturePrints: [VNFeaturePrintObservation] = []
     private weak var trackerRef: EnhancedPresenceTracker?
 
-    func setOwnerFeaturePrint(_ print: VNFeaturePrintObservation?) {
-        self.ownerFeaturePrint = print
+    func setOwnerFeaturePrints(_ prints: [VNFeaturePrintObservation]) {
+        self.ownerFeaturePrints = prints
     }
 
     func setTrackerReference(_ tracker: EnhancedPresenceTracker) {
@@ -309,7 +429,8 @@ private final class PresenceCaptureCoordinator: NSObject, AVCaptureVideoDataOutp
             let humanResults = humanRequest.results ?? []
 
             if humanResults.isEmpty {
-                // Zero humans detected -> Publish away state immediately; skip faces, feature prints, and recognition!
+                // Zero humans detected -> Publish away state immediately; skip faces and feature prints!
+                self.trackerRef?.clear()
                 self.onFrameProcessed?([], .away)
                 return
             }
@@ -322,80 +443,15 @@ private final class PresenceCaptureCoordinator: NSObject, AVCaptureVideoDataOutp
             // Step 3: Strict 1-to-1 Bipartite Face Matching
             let matchedPairs = matchFacesToHumans(humans: humanResults, faces: faceResults)
 
-            var detections: [(rect: CGRect, isOwner: Bool, isUncertain: Bool, wasRecognized: Bool)] = []
-            var status: PresenceStatus = .searching
-            let hasEnrolledOwner = self.ownerFeaturePrint != nil
-            let activeSubjects = trackerRef?.currentSubjects() ?? []
-            let now = Date()
-
-            for pair in matchedPairs {
-                let hRect = pair.human.boundingBox
-
-                if let face = pair.face {
-                    if let ownerPrint = self.ownerFeaturePrint {
-                        // Check if an existing tracked subject already has a fresh recognition result (15s cooldown)
-                        let existingSubject = activeSubjects.first(where: {
-                            $0.rect.intersects(hRect) || hypot($0.rect.midX - hRect.midX, $0.rect.midY - hRect.midY) < 0.25
-                        })
-
-                        if let existing = existingSubject,
-                           let lastRec = existing.lastRecognitionTime,
-                           now.timeIntervalSince(lastRec) < 15.0 {
-                            // Reuse cached recognition result! Do NOT generate expensive feature print every cycle!
-                            detections.append((rect: hRect, isOwner: existing.isOwner, isUncertain: existing.isUncertain, wasRecognized: true))
-                            if existing.isOwner {
-                                status = .ownerPresent
-                            } else if existing.isUncertain && status != .ownerPresent {
-                                status = .uncertain
-                            } else if status != .ownerPresent {
-                                status = .unknownDetected
-                            }
-                        } else {
-                            // Recognition needed: Generate feature print for this face
-                            let facePrintReq = VNGenerateImageFeaturePrintRequest()
-                            facePrintReq.regionOfInterest = face.boundingBox
-                            try? handler.perform([facePrintReq])
-
-                            if let obs = facePrintReq.results?.first as? VNFeaturePrintObservation {
-                                var distance: Float = 1.0
-                                try? obs.computeDistance(&distance, to: ownerPrint)
-
-                                if distance < 0.40 {
-                                    detections.append((rect: hRect, isOwner: true, isUncertain: false, wasRecognized: true))
-                                    status = .ownerPresent
-                                } else if distance <= 0.52 {
-                                    detections.append((rect: hRect, isOwner: false, isUncertain: true, wasRecognized: true))
-                                    if status != .ownerPresent { status = .uncertain }
-                                } else {
-                                    detections.append((rect: hRect, isOwner: false, isUncertain: false, wasRecognized: true))
-                                    if status != .ownerPresent { status = .unknownDetected }
-                                }
-                            } else {
-                                detections.append((rect: hRect, isOwner: false, isUncertain: true, wasRecognized: false))
-                                if status != .ownerPresent { status = .uncertain }
-                            }
-                        }
-                    } else {
-                        // Owner profile not configured -> strictly "Person (Owner Not Set)"
-                        detections.append((rect: hRect, isOwner: false, isUncertain: false, wasRecognized: false))
-                        if status != .ownerPresent {
-                            status = .personDetectedNoOwner
-                        }
-                    }
-                } else {
-                    // Human detected but face obscured
-                    detections.append((rect: hRect, isOwner: false, isUncertain: false, wasRecognized: false))
-                    if status != .ownerPresent {
-                        status = hasEnrolledOwner ? .noFace : .personDetectedNoOwner
-                    }
-                }
+            // Step 4: Authoritative Tracker Update with Strict Identity & Multi-Sample Verification
+            if let tracker = self.trackerRef {
+                let (subjects, status) = tracker.update(
+                    matchedPairs: matchedPairs,
+                    ownerPrints: self.ownerFeaturePrints,
+                    handler: handler
+                )
+                self.onFrameProcessed?(subjects, status)
             }
-
-            if detections.count > 1 {
-                status = .multipleDetected
-            }
-
-            self.onFrameProcessed?(detections, status)
         } catch {
             // Ignore temporary Vision exceptions safely
         }
@@ -463,6 +519,7 @@ public final class PresenceMonitor: ObservableObject {
     @Published public var trackedSubjects: [TrackedSubject] = []
     @Published public var latestPreviewImage: NSImage? = nil
     @Published public var isOwnerEnrolled: Bool = false
+    @Published public var enrolledSamplesCount: Int = 0
     @Published public var snapshotCount: Int = 0
     @Published public var performanceMode: MonitoringPerformanceMode = .balanced
 
@@ -479,6 +536,7 @@ public final class PresenceMonitor: ObservableObject {
     private let tracker = EnhancedPresenceTracker()
     private let coordinator = PresenceCaptureCoordinator()
     private var snapshotCooldownUntil: Date = Date.distantPast
+    private var ownerFeaturePrints: [VNFeaturePrintObservation] = []
 
     // Internal Watchdog for Self-Healing (Zero Terminal / killall commands)
     private var watchdogTimer: Timer?
@@ -521,9 +579,9 @@ public final class PresenceMonitor: ObservableObject {
         updateSnapshotCount()
 
         // 1. Detection Results Callback (Runs on controlled analysis schedule)
-        coordinator.onFrameProcessed = { [weak self] detections, status in
+        coordinator.onFrameProcessed = { [weak self] subjects, status in
             Task { @MainActor [weak self] in
-                self?.handleProcessedFrame(detections: detections, status: status)
+                self?.handleProcessedFrame(subjects: subjects, status: status)
             }
         }
 
@@ -691,15 +749,21 @@ public final class PresenceMonitor: ObservableObject {
     // MARK: - Frame & Subject Processing
 
     private func handleProcessedFrame(
-        detections: [(rect: CGRect, isOwner: Bool, isUncertain: Bool, wasRecognized: Bool)],
+        subjects: [TrackedSubject],
         status: PresenceStatus
     ) {
         guard isRunning else { return }
         lastSuccessfulAnalysisTime = Date()
 
-        let subjects = tracker.update(detections: detections)
         self.trackedSubjects = subjects
         self.presenceStatus = status
+
+        // Connect presence status to Pet emotions
+        if status == .ownerPresent {
+            PetState.shared.setTemporaryMood(.happy, duration: 2.5)
+        } else if status == .unknownDetected {
+            PetState.shared.setTemporaryMood(.concerned, duration: 4.0)
+        }
 
         // Dynamically tune sampling frequency based on presence state
         updateSamplingFrequency()
@@ -794,7 +858,7 @@ public final class PresenceMonitor: ObservableObject {
         self.snapshotCount = urls.count
     }
 
-    // MARK: - Guided Owner Enrollment Flow
+    // MARK: - Guided Owner Enrollment Flow (Multi-Sample Support)
 
     public func checkEnrollmentEligibility() -> (eligible: Bool, message: String, faceRect: CGRect?) {
         guard let image = latestPreviewImage,
@@ -832,7 +896,7 @@ public final class PresenceMonitor: ObservableObject {
         return (true, "Good lighting & position! Ready to enroll.", bbox)
     }
 
-    public func enrollCurrentFaceAsOwner() -> (success: Bool, message: String) {
+    public func enrollCurrentFaceAsOwner(sampleIndex: Int? = nil) -> (success: Bool, message: String) {
         guard let image = latestPreviewImage,
               let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
             return (false, "No camera frame available. Please start monitor first.")
@@ -851,9 +915,23 @@ public final class PresenceMonitor: ObservableObject {
         try? handler.perform([featurePrintReq])
 
         if let obs = featurePrintReq.results?.first as? VNFeaturePrintObservation {
-            let data = try? NSKeyedArchiver.archivedData(withRootObject: obs, requiringSecureCoding: true)
+            var currentPrints = self.ownerFeaturePrints
+            if currentPrints.count >= 3 {
+                currentPrints = [obs]
+            } else {
+                currentPrints.append(obs)
+            }
+            self.ownerFeaturePrints = currentPrints
+
+            // Archive array of [VNFeaturePrintObservation]
+            let printsURL = ownerURL.appendingPathComponent("owner_prints.data")
+            let data = try? NSKeyedArchiver.archivedData(withRootObject: currentPrints as NSArray, requiringSecureCoding: true)
+            try? data?.write(to: printsURL)
+
+            // Save legacy single observation for backward compatibility
+            let legacyData = try? NSKeyedArchiver.archivedData(withRootObject: obs, requiringSecureCoding: true)
             let printURL = ownerURL.appendingPathComponent("owner_print.data")
-            try? data?.write(to: printURL)
+            try? legacyData?.write(to: printURL)
 
             // Save owner photo preview for settings confirmation
             let photoURL = ownerURL.appendingPathComponent("owner.jpg")
@@ -862,23 +940,35 @@ public final class PresenceMonitor: ObservableObject {
                 try? jpg.write(to: photoURL)
             }
 
-            self.coordinator.setOwnerFeaturePrint(obs)
+            self.coordinator.setOwnerFeaturePrints(currentPrints)
             self.isOwnerEnrolled = true
-            PetState.shared.showBubble("Owner profile saved! ✨", duration: 3.0)
+            self.enrolledSamplesCount = currentPrints.count
+
+            let sampleNum = currentPrints.count
+            PetState.shared.setTemporaryMood(.proud, duration: 3.0)
+            PetState.shared.showBubble("Owner sample \(sampleNum)/3 enrolled! ✨", duration: 3.0)
             SoundEffect.success.play()
-            return (true, "Owner profile enrolled successfully!")
+
+            let msg = sampleNum < 3
+                ? "Sample \(sampleNum)/3 enrolled! Tilt slightly and click again to add more angles."
+                : "Owner profile fully calibrated with 3 samples!"
+            return (true, msg)
         }
 
         return (false, "Could not generate facial feature print. Try with better lighting.")
     }
 
     public func resetOwnerProfile() {
+        let printsURL = ownerURL.appendingPathComponent("owner_prints.data")
         let printURL = ownerURL.appendingPathComponent("owner_print.data")
         let photoURL = ownerURL.appendingPathComponent("owner.jpg")
+        try? fileManager.removeItem(at: printsURL)
         try? fileManager.removeItem(at: printURL)
         try? fileManager.removeItem(at: photoURL)
-        self.coordinator.setOwnerFeaturePrint(nil)
+        self.ownerFeaturePrints = []
+        self.coordinator.setOwnerFeaturePrints([])
         self.isOwnerEnrolled = false
+        self.enrolledSamplesCount = 0
         PetState.shared.showBubble("Owner profile removed.", duration: 2.0)
     }
 
@@ -888,13 +978,27 @@ public final class PresenceMonitor: ObservableObject {
     }
 
     private func loadOwnerProfile() {
-        let printURL = ownerURL.appendingPathComponent("owner_print.data")
-        if let data = try? Data(contentsOf: printURL),
-           let obs = try? NSKeyedUnarchiver.unarchivedObject(ofClass: VNFeaturePrintObservation.self, from: data) {
-            self.coordinator.setOwnerFeaturePrint(obs)
+        let printsURL = ownerURL.appendingPathComponent("owner_prints.data")
+        let legacyPrintURL = ownerURL.appendingPathComponent("owner_print.data")
+
+        if let data = try? Data(contentsOf: printsURL),
+           let list = try? NSKeyedUnarchiver.unarchivedObject(ofClasses: [NSArray.self, VNFeaturePrintObservation.self], from: data) as? [VNFeaturePrintObservation],
+           !list.isEmpty {
+            self.ownerFeaturePrints = list
+            self.coordinator.setOwnerFeaturePrints(list)
             self.isOwnerEnrolled = true
+            self.enrolledSamplesCount = list.count
+        } else if let data = try? Data(contentsOf: legacyPrintURL),
+                  let single = try? NSKeyedUnarchiver.unarchivedObject(ofClass: VNFeaturePrintObservation.self, from: data) {
+            self.ownerFeaturePrints = [single]
+            self.coordinator.setOwnerFeaturePrints([single])
+            self.isOwnerEnrolled = true
+            self.enrolledSamplesCount = 1
         } else {
+            self.ownerFeaturePrints = []
+            self.coordinator.setOwnerFeaturePrints([])
             self.isOwnerEnrolled = false
+            self.enrolledSamplesCount = 0
         }
     }
 }

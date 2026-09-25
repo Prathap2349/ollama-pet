@@ -149,7 +149,22 @@ public class PetState: ObservableObject {
         }
     }
 
+    private var temporaryMoodOverrideUntil: Date = Date.distantPast
+    private var temporaryMood: PetMood? = nil
+
+    public func setTemporaryMood(_ mood: PetMood, duration: TimeInterval = 4.0) {
+        self.temporaryMood = mood
+        self.temporaryMoodOverrideUntil = Date().addingTimeInterval(duration)
+        self.currentMood = mood
+    }
+
     private func updateMoodDynamically() {
+        if Date() < temporaryMoodOverrideUntil, let temp = temporaryMood {
+            currentMood = temp
+            return
+        }
+        temporaryMood = nil
+
         let cpu = SystemMonitor.shared.cpuPercent
         if animState == .sleep {
             currentMood = .sleepy
@@ -178,7 +193,7 @@ public class PetState: ObservableObject {
         let all = PetMood.allCases
         if let idx = all.firstIndex(of: currentMood) {
             let next = all[(idx + 1) % all.count]
-            currentMood = next
+            setTemporaryMood(next, duration: 4.0)
             showBubble("\(next.rawValue.capitalized) \(currentSpecies.moodEmoji(for: next))", duration: 1.2)
             SoundEffect.click.play()
         }

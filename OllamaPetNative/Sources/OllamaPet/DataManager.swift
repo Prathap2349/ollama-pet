@@ -15,6 +15,7 @@ public class DataManager: ObservableObject {
         if Bundle.main.bundleIdentifier != nil {
             requestNotificationPermission()
         }
+        NotificationScheduler.shared.syncPendingReminders(reminders: savedData.reminders)
     }
 
     public func loadData() {

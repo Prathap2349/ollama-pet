@@ -206,15 +206,21 @@ public struct SettingsCard<Content: View>: View {
 }
 
 public struct SettingsRow<Trailing: View>: View {
+    public let icon: String?
+    public let iconColor: Color
     public let title: String
     public let subtitle: String?
     public let trailing: Trailing
 
     public init(
+        icon: String? = nil,
+        iconColor: Color = .accentColor,
         title: String,
         subtitle: String? = nil,
         @ViewBuilder trailing: () -> Trailing
     ) {
+        self.icon = icon
+        self.iconColor = iconColor
         self.title = title
         self.subtitle = subtitle
         self.trailing = trailing()
@@ -222,6 +228,17 @@ public struct SettingsRow<Trailing: View>: View {
 
     public var body: some View {
         HStack(alignment: .center, spacing: 12) {
+            if let icon = icon {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(iconColor.opacity(0.12))
+                        .frame(width: 28, height: 28)
+                    Image(systemName: icon)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(iconColor)
+                }
+                .frame(width: 28, height: 28)
+            }
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                     .font(.system(size: 13, weight: .medium))
@@ -235,6 +252,7 @@ public struct SettingsRow<Trailing: View>: View {
             Spacer()
             trailing
         }
+        .padding(.vertical, 2)
     }
 }
 
@@ -1620,7 +1638,8 @@ struct PresenceSettingsSection: View {
                     Text("Owner Verification")
                         .font(.system(size: 14, weight: .bold))
                     Spacer()
-                    Text(monitor.isOwnerEnrolled ? "🟢 Enrolled" : "⚪ Not Enrolled")
+                    let count = monitor.enrolledSamplesCount
+                    Text(monitor.isOwnerEnrolled ? "🟢 Enrolled (\(count)/3 samples)" : "⚪ Not Enrolled")
                         .font(.system(size: 11, weight: .bold))
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
@@ -1629,7 +1648,7 @@ struct PresenceSettingsSection: View {
                 }
 
                 Text(monitor.isOwnerEnrolled
-                    ? "Your facial feature print is stored securely on-device. Anyone else in front of your Mac will be treated as an unknown guest."
+                    ? "Up to 3 facial feature prints are stored securely on-device to handle lighting or posture variations. Anyone else in front of your Mac will be treated as an unknown guest."
                     : "No owner profile enrolled yet. Ollama Pet treats anyone present as an unverified person until you register your face.")
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
@@ -1657,7 +1676,8 @@ struct PresenceSettingsSection: View {
                             let res = monitor.enrollCurrentFaceAsOwner()
                             enrollmentStatusText = res.message
                         }) {
-                            Text(monitor.isOwnerEnrolled ? "Replace Owner Profile" : "Enroll Current Face")
+                            let count = monitor.enrolledSamplesCount
+                            Text(monitor.isOwnerEnrolled ? (count < 3 ? "Add Sample (\(count)/3)" : "Replace Profile") : "Enroll Current Face")
                         }
                         .buttonStyle(.borderedProminent)
                         .controlSize(.small)
@@ -2294,14 +2314,14 @@ struct MacControlSettingsSection: View {
 
             // Master Toggle
             VStack(alignment: .leading, spacing: 6) {
-                Toggle(isOn: settingsBinding.macControlEnabled) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Enable Mac Control Assistant")
-                            .font(.system(size: 13, weight: .bold))
-                        Text("Allows Ollama Pet to perform safe, approved actions on your Mac. OFF by default.")
-                            .font(.system(size: 11))
-                            .foregroundColor(.secondary)
-                    }
+                SettingsRow(
+                    icon: "slider.horizontal.3",
+                    iconColor: .blue,
+                    title: "Enable Mac Control Assistant",
+                    subtitle: "Allows Ollama Pet to perform safe, approved actions on your Mac. OFF by default."
+                ) {
+                    Toggle("", isOn: settingsBinding.macControlEnabled)
+                        .labelsHidden()
                 }
 
                 if settingsBinding.wrappedValue.macControlEnabled {
@@ -2313,6 +2333,7 @@ struct MacControlSettingsSection: View {
                             .font(.system(size: 11))
                             .foregroundColor(.secondary)
                     }
+                    .padding(.leading, 40)
                     .padding(.top, 4)
                 }
             }
@@ -2325,20 +2346,82 @@ struct MacControlSettingsSection: View {
                     Text("Allowed Actions")
                         .font(.system(size: 13, weight: .bold))
 
-                    VStack(spacing: 8) {
-                        actionToggle(title: "Open Applications", desc: "Launch apps like Safari, Chrome, Slack, Notes, etc.", binding: settingsBinding.openAppsEnabled)
+                    VStack(spacing: 6) {
+                        SettingsRow(
+                            icon: "app.badge.fill",
+                            iconColor: .blue,
+                            title: "Open Applications",
+                            subtitle: "Launch apps like Safari, Chrome, Slack, Notes, etc."
+                        ) {
+                            Toggle("", isOn: settingsBinding.openAppsEnabled)
+                                .labelsHidden()
+                        }
                         Divider()
-                        actionToggle(title: "Open Websites", desc: "Open safe HTTPS/HTTP URLs in your default browser.", binding: settingsBinding.openURLsEnabled)
+
+                        SettingsRow(
+                            icon: "globe",
+                            iconColor: .teal,
+                            title: "Open Websites",
+                            subtitle: "Open safe HTTPS/HTTP URLs in your default browser."
+                        ) {
+                            Toggle("", isOn: settingsBinding.openURLsEnabled)
+                                .labelsHidden()
+                        }
                         Divider()
-                        actionToggle(title: "Web Search", desc: "Execute web searches on Google or YouTube.", binding: settingsBinding.webSearchEnabled)
+
+                        SettingsRow(
+                            icon: "magnifyingglass",
+                            iconColor: .indigo,
+                            title: "Web Search",
+                            subtitle: "Execute web searches on Google or YouTube."
+                        ) {
+                            Toggle("", isOn: settingsBinding.webSearchEnabled)
+                                .labelsHidden()
+                        }
                         Divider()
-                        actionToggle(title: "Create Reminders", desc: "Add natural language reminders to your schedule.", binding: settingsBinding.remindersEnabled)
+
+                        SettingsRow(
+                            icon: "clock.badge.checkmark",
+                            iconColor: .orange,
+                            title: "Create Reminders",
+                            subtitle: "Add natural language reminders to your schedule."
+                        ) {
+                            Toggle("", isOn: settingsBinding.remindersEnabled)
+                                .labelsHidden()
+                        }
                         Divider()
-                        actionToggle(title: "Open Calendar & Reminders", desc: "Open macOS Calendar and Reminders apps.", binding: settingsBinding.calendarEnabled)
+
+                        SettingsRow(
+                            icon: "calendar",
+                            iconColor: .red,
+                            title: "Open Calendar & Reminders",
+                            subtitle: "Open macOS Calendar and Reminders apps."
+                        ) {
+                            Toggle("", isOn: settingsBinding.calendarEnabled)
+                                .labelsHidden()
+                        }
                         Divider()
-                        actionToggle(title: "Open WhatsApp & Messages", desc: "Open messaging apps and prepare drafts.", binding: settingsBinding.whatsappEnabled)
+
+                        SettingsRow(
+                            icon: "message.fill",
+                            iconColor: .green,
+                            title: "Open WhatsApp & Messages",
+                            subtitle: "Open messaging apps and prepare drafts."
+                        ) {
+                            Toggle("", isOn: settingsBinding.whatsappEnabled)
+                                .labelsHidden()
+                        }
                         Divider()
-                        actionToggle(title: "Run Approved Shortcuts", desc: "Trigger macOS Shortcuts explicitly added below.", binding: settingsBinding.shortcutsEnabled)
+
+                        SettingsRow(
+                            icon: "bolt.fill",
+                            iconColor: .purple,
+                            title: "Run Approved Shortcuts",
+                            subtitle: "Trigger macOS Shortcuts explicitly added below."
+                        ) {
+                            Toggle("", isOn: settingsBinding.shortcutsEnabled)
+                                .labelsHidden()
+                        }
                     }
                 }
                 .padding(14)
@@ -2349,37 +2432,37 @@ struct MacControlSettingsSection: View {
                     Text("Confirmation & Safety")
                         .font(.system(size: 13, weight: .bold))
 
-                    Toggle(isOn: settingsBinding.alwaysConfirmExternalActions) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Always confirm external actions")
-                                .font(.system(size: 12, weight: .medium))
-                            Text("Show an interactive [Cancel] / [Confirm] dialog before sending messages or triggering automations.")
-                                .font(.system(size: 11))
-                                .foregroundColor(.secondary)
+                    VStack(spacing: 6) {
+                        SettingsRow(
+                            icon: "hand.raised.fill",
+                            iconColor: .orange,
+                            title: "Always confirm external actions",
+                            subtitle: "Show an interactive [Cancel] / [Confirm] dialog before sending messages or triggering automations."
+                        ) {
+                            Toggle("", isOn: settingsBinding.alwaysConfirmExternalActions)
+                                .labelsHidden()
                         }
-                    }
+                        Divider()
 
-                    Divider()
-
-                    Toggle(isOn: settingsBinding.showActionStatus) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Show action status in pet")
-                                .font(.system(size: 12, weight: .medium))
-                            Text("Pet displays short status bubbles (e.g. 'Opening Safari...', 'Reminder created.').")
-                                .font(.system(size: 11))
-                                .foregroundColor(.secondary)
+                        SettingsRow(
+                            icon: "bubble.left.and.bubble.right.fill",
+                            iconColor: .blue,
+                            title: "Show action status in pet",
+                            subtitle: "Pet displays short status bubbles (e.g. 'Opening Safari...', 'Reminder created.')."
+                        ) {
+                            Toggle("", isOn: settingsBinding.showActionStatus)
+                                .labelsHidden()
                         }
-                    }
+                        Divider()
 
-                    Divider()
-
-                    Toggle(isOn: settingsBinding.voiceControlEnabled) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Voice Mac Control")
-                                .font(.system(size: 12, weight: .medium))
-                            Text("Allow push-to-talk voice commands (\(ShortcutManager.shared.voiceShortcut.displayString)) to trigger Mac actions.")
-                                .font(.system(size: 11))
-                                .foregroundColor(.secondary)
+                        SettingsRow(
+                            icon: "mic.fill",
+                            iconColor: .pink,
+                            title: "Voice Mac Control",
+                            subtitle: "Allow push-to-talk voice commands (\(ShortcutManager.shared.voiceShortcut.displayString)) to trigger Mac actions."
+                        ) {
+                            Toggle("", isOn: settingsBinding.voiceControlEnabled)
+                                .labelsHidden()
                         }
                     }
                 }
@@ -2443,24 +2526,14 @@ struct MacControlSettingsSection: View {
             }
         }
     }
-
-    private func actionToggle(title: String, desc: String, binding: Binding<Bool>) -> some View {
-        Toggle(isOn: binding) {
-            VStack(alignment: .leading, spacing: 1) {
-                Text(title)
-                    .font(.system(size: 12, weight: .semibold))
-                Text(desc)
-                    .font(.system(size: 10))
-                    .foregroundColor(.secondary)
-            }
-        }
-    }
 }
 
 // MARK: - Permissions & Privacy Center Section
 
 struct PermissionsPrivacySettingsSection: View {
     @ObservedObject var perm = PermissionManager.shared
+    @State private var isTestingNotification: Bool = false
+    @State private var testNotificationMessage: String = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -2489,33 +2562,125 @@ struct PermissionsPrivacySettingsSection: View {
                     .font(.system(size: 13, weight: .bold))
 
                 VStack(spacing: 8) {
-                    permissionRow(
-                        name: "Microphone",
-                        desc: "Required for Push-to-Talk voice assistant.",
-                        status: perm.microphoneStatus,
-                        pane: "Privacy_Microphone"
-                    )
+                    SettingsRow(
+                        icon: "mic.fill",
+                        iconColor: .pink,
+                        title: "Microphone",
+                        subtitle: "Required for Push-to-Talk voice assistant."
+                    ) {
+                        HStack(spacing: 8) {
+                            Text(perm.microphoneStatus.rawValue)
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundColor(perm.microphoneStatus == .granted ? .green : (perm.microphoneStatus == .denied ? .red : .secondary))
+
+                            Button("Settings") {
+                                PermissionManager.shared.openSystemSettings(pane: "Privacy_Microphone")
+                            }
+                            .font(.system(size: 10))
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        }
+                    }
+
                     Divider()
-                    permissionRow(
-                        name: "Speech Recognition",
-                        desc: "Processes speech into text using native macOS APIs.",
-                        status: perm.speechStatus,
-                        pane: "Privacy_SpeechRecognition"
-                    )
+
+                    SettingsRow(
+                        icon: "waveform.badge.magnifyingglass",
+                        iconColor: .blue,
+                        title: "Speech Recognition",
+                        subtitle: "Processes speech into text using native macOS APIs."
+                    ) {
+                        HStack(spacing: 8) {
+                            Text(perm.speechStatus.rawValue)
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundColor(perm.speechStatus == .granted ? .green : (perm.speechStatus == .denied ? .red : .secondary))
+
+                            Button("Settings") {
+                                PermissionManager.shared.openSystemSettings(pane: "Privacy_SpeechRecognition")
+                            }
+                            .font(.system(size: 10))
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        }
+                    }
+
                     Divider()
-                    permissionRow(
-                        name: "Camera",
-                        desc: "Optional posture awareness (Off by default).",
-                        status: perm.cameraStatus,
-                        pane: "Privacy_Camera"
-                    )
+
+                    SettingsRow(
+                        icon: "camera.fill",
+                        iconColor: .teal,
+                        title: "Camera",
+                        subtitle: "Optional posture awareness (Off by default)."
+                    ) {
+                        HStack(spacing: 8) {
+                            Text(perm.cameraStatus.rawValue)
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundColor(perm.cameraStatus == .granted ? .green : (perm.cameraStatus == .denied ? .red : .secondary))
+
+                            Button("Settings") {
+                                PermissionManager.shared.openSystemSettings(pane: "Privacy_Camera")
+                            }
+                            .font(.system(size: 10))
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        }
+                    }
+
                     Divider()
-                    permissionRow(
-                        name: "Notifications",
-                        desc: "Required for reminder alerts and hydration prompts.",
-                        status: perm.notificationsStatus,
-                        pane: nil
-                    )
+
+                    SettingsRow(
+                        icon: "bell.badge.fill",
+                        iconColor: .orange,
+                        title: "Notifications",
+                        subtitle: "Required for reminder alerts, focus milestones, and hydration prompts."
+                    ) {
+                        HStack(spacing: 8) {
+                            Text(perm.notificationsStatus.rawValue)
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundColor(perm.notificationsStatus == .granted ? .green : (perm.notificationsStatus == .denied ? .red : .secondary))
+
+                            Button(action: {
+                                isTestingNotification = true
+                                testNotificationMessage = "Sending test notification..."
+                                NotificationScheduler.shared.sendTestNotification { success in
+                                    Task { @MainActor in
+                                        isTestingNotification = false
+                                        if success {
+                                            testNotificationMessage = "✅ Test notification delivered! Check macOS Notification Center."
+                                        } else {
+                                            testNotificationMessage = "⚠️ Notifications may be muted or disabled in macOS System Settings."
+                                        }
+                                    }
+                                }
+                            }) {
+                                HStack(spacing: 4) {
+                                    if isTestingNotification {
+                                        ProgressView().controlSize(.mini)
+                                    }
+                                    Text("Test Notification")
+                                }
+                            }
+                            .font(.system(size: 10))
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.small)
+                            .disabled(isTestingNotification)
+
+                            Button("Settings") {
+                                PermissionManager.shared.openSystemSettings(pane: nil)
+                            }
+                            .font(.system(size: 10))
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        }
+                    }
+
+                    if !testNotificationMessage.isEmpty {
+                        Text(testNotificationMessage)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(testNotificationMessage.contains("✅") ? .green : .orange)
+                            .padding(.top, 4)
+                            .padding(.leading, 40)
+                    }
                 }
             }
             .padding(14)
@@ -2523,29 +2688,6 @@ struct PermissionsPrivacySettingsSection: View {
         }
         .onAppear {
             perm.checkAllPermissions()
-        }
-    }
-
-    private func permissionRow(name: String, desc: String, status: SystemPermissionStatus, pane: String?) -> some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(name)
-                    .font(.system(size: 12, weight: .semibold))
-                Text(desc)
-                    .font(.system(size: 10))
-                    .foregroundColor(.secondary)
-            }
-            Spacer()
-            Text(status.rawValue)
-                .font(.system(size: 11, weight: .bold))
-                .foregroundColor(status == .granted ? .green : (status == .denied ? .red : .secondary))
-
-            Button("Settings") {
-                PermissionManager.shared.openSystemSettings(pane: pane)
-            }
-            .font(.system(size: 10))
-            .buttonStyle(.bordered)
-            .controlSize(.small)
         }
     }
 }

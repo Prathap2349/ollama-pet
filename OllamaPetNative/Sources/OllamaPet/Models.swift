@@ -182,6 +182,8 @@ public enum PetSpecies: String, CaseIterable, Codable, Identifiable {
         case (.cat, .angry): return "🙈"
         case (.cat, .surprised): return "😲"
         case (.cat, .crying): return "😹"
+        case (.cat, .proud): return "🦁"
+        case (.cat, .concerned): return "😿"
 
         case (.dragon, .happy): return "🔥"
         case (.dragon, .sad): return "💧"
@@ -193,6 +195,8 @@ public enum PetSpecies: String, CaseIterable, Codable, Identifiable {
         case (.dragon, .angry): return "🐲"
         case (.dragon, .surprised): return "😲"
         case (.dragon, .crying): return "😢"
+        case (.dragon, .proud): return "👑"
+        case (.dragon, .concerned): return "🧐"
 
         case (.robot, .happy): return "💻"
         case (.robot, .sad): return "🔴"
@@ -204,6 +208,8 @@ public enum PetSpecies: String, CaseIterable, Codable, Identifiable {
         case (.robot, .angry): return "⚠️"
         case (.robot, .surprised): return "❗"
         case (.robot, .crying): return "🔧"
+        case (.robot, .proud): return "💎"
+        case (.robot, .concerned): return "🛡️"
 
         case (.robotcat, .happy): return "😻"
         case (.robotcat, .sad): return "🙁"
@@ -215,6 +221,8 @@ public enum PetSpecies: String, CaseIterable, Codable, Identifiable {
         case (.robotcat, .angry): return "💢"
         case (.robotcat, .surprised): return "😱"
         case (.robotcat, .crying): return "😭"
+        case (.robotcat, .proud): return "🦾"
+        case (.robotcat, .concerned): return "📡"
 
         case (.ghost, .happy): return "😄"
         case (.ghost, .sad): return "😢"
@@ -226,6 +234,8 @@ public enum PetSpecies: String, CaseIterable, Codable, Identifiable {
         case (.ghost, .angry): return "😠"
         case (.ghost, .surprised): return "🤩"
         case (.ghost, .crying): return "😭"
+        case (.ghost, .proud): return "✨"
+        case (.ghost, .concerned): return "🥺"
 
         case (.fox, .happy): return "🦊"
         case (.fox, .sad): return "😔"
@@ -237,6 +247,8 @@ public enum PetSpecies: String, CaseIterable, Codable, Identifiable {
         case (.fox, .angry): return "😠"
         case (.fox, .surprised): return "😲"
         case (.fox, .crying): return "😭"
+        case (.fox, .proud): return "🏆"
+        case (.fox, .concerned): return "🐾"
 
         case (.bunny, .happy): return "🐰"
         case (.bunny, .sad): return "🥲"
@@ -248,12 +260,14 @@ public enum PetSpecies: String, CaseIterable, Codable, Identifiable {
         case (.bunny, .angry): return "😤"
         case (.bunny, .surprised): return "👀"
         case (.bunny, .crying): return "😭"
+        case (.bunny, .proud): return "🌟"
+        case (.bunny, .concerned): return "🌾"
         }
     }
 }
 
 public enum PetMood: String, CaseIterable, Codable {
-    case happy, excited, love, surprised, hungry, tired, angry, sad, crying, sleepy
+    case happy, excited, love, surprised, hungry, tired, angry, sad, crying, sleepy, proud, concerned
 }
 
 public enum PetAnimState: String, Codable {

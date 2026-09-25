@@ -90,6 +90,15 @@ codesign --force --deep --sign - "${APP_BUNDLE}"
 echo "7. Validating Code Signature..."
 codesign --verify --deep --strict --verbose=4 "${APP_BUNDLE}"
 
+echo "8. Creating Distributable Release Archive..."
+ROOT_DIR="$(pwd)"
+RELEASE_DIR="${ROOT_DIR}/dist-release"
+rm -rf "${RELEASE_DIR}"
+mkdir -p "${RELEASE_DIR}"
+(cd "${BUILD_DIR}" && zip -r -y -q "${RELEASE_DIR}/OllamaPet-macOS.zip" "${APP_NAME}.app")
+
 echo "=== Successfully Built: ${APP_BUNDLE} ==="
 ls -ld "${APP_BUNDLE}"
 file "${MACOS_DIR}/${APP_NAME}"
+echo "=== Release Archive Ready: ${RELEASE_DIR}/OllamaPet-macOS.zip ==="
+ls -lh "${RELEASE_DIR}/OllamaPet-macOS.zip"

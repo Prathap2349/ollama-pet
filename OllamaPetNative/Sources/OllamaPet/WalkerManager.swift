@@ -135,6 +135,7 @@ struct WalkerAnimationView: View {
                     species: species,
                     model: model,
                     animState: .idle,
+                    mood: PetState.shared.currentMood,
                     snapshot: snapshot,
                     perf: perf
                 )

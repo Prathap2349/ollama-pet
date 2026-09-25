@@ -187,6 +187,7 @@ public class CharacterMotionStateMachine: ObservableObject {
     public func evaluateSnapshot(
         at time: Double,
         animState: PetAnimState,
+        mood: PetMood = .happy,
         atmosphere: WeatherAtmosphere? = nil,
         isSafeMode: Bool = false
     ) -> AnimationSnapshot {
@@ -214,6 +215,10 @@ public class CharacterMotionStateMachine: ObservableObject {
         if state == .streamingResponse {
             let saccade = sin(time * 14.0)
             eyeOffset = CGPoint(x: CGFloat(saccade * 3.5), y: CGFloat(cos(time * 8.0) * 1.5))
+        } else if mood == .concerned {
+            eyeOffset = CGPoint(x: CGFloat(sin(time * 1.5) * 1.5), y: -1.0)
+        } else if mood == .sad || mood == .crying {
+            eyeOffset = CGPoint(x: 0.0, y: 2.0)
         } else {
             let gazeCycle = sin(time * 0.8)
             eyeOffset = CGPoint(x: CGFloat(gazeCycle * 2.0), y: CGFloat(sin(time * 0.4) * 1.0))
@@ -226,12 +231,39 @@ public class CharacterMotionStateMachine: ObservableObject {
 
         switch state {
         case .idle:
-            headTiltAngle = Angle(degrees: sin(time * 1.2) * 2.5)
-            levitationOffset = 0.0
-            squashStretch = CGSize(
-                width: 1.0 - (breathOffset * 0.008),
-                height: 1.0 + (breathOffset * 0.010)
-            )
+            switch mood {
+            case .proud:
+                headTiltAngle = Angle(degrees: sin(time * 3.5) * 4.0)
+                levitationOffset = CGFloat(abs(sin(time * 4.0)) * 6.0 + 3.0)
+                squashStretch = CGSize(width: 1.05 + CGFloat(sin(time * 4.0) * 0.02), height: 1.06 - CGFloat(sin(time * 4.0) * 0.02))
+            case .concerned:
+                headTiltAngle = Angle(degrees: -5.0 + sin(time * 2.0) * 2.0)
+                levitationOffset = -2.0
+                squashStretch = CGSize(width: 0.96, height: 0.98)
+            case .angry:
+                headTiltAngle = Angle(degrees: sin(time * 16.0) * 2.0)
+                levitationOffset = 0.0
+                squashStretch = CGSize(width: 1.06, height: 0.94)
+            case .sad, .crying:
+                headTiltAngle = Angle(degrees: 4.5 + sin(time * 1.0) * 1.5)
+                levitationOffset = -4.0
+                squashStretch = CGSize(width: 0.98, height: 0.95)
+            case .excited:
+                headTiltAngle = Angle(degrees: sin(time * 6.0) * 6.0)
+                levitationOffset = CGFloat(abs(sin(time * 6.0)) * 7.0)
+                squashStretch = CGSize(width: 1.0 + CGFloat(sin(time * 8.0) * 0.05), height: 1.0 - CGFloat(sin(time * 8.0) * 0.05))
+            case .love:
+                headTiltAngle = Angle(degrees: sin(time * 1.8) * 5.0)
+                levitationOffset = CGFloat(sin(time * 2.0) * 3.5)
+                squashStretch = CGSize(width: 1.02, height: 1.03)
+            default:
+                headTiltAngle = Angle(degrees: sin(time * 1.2) * 2.5)
+                levitationOffset = 0.0
+                squashStretch = CGSize(
+                    width: 1.0 - (breathOffset * 0.008),
+                    height: 1.0 + (breathOffset * 0.010)
+                )
+            }
 
         case .thinking:
             headTiltAngle = Angle(degrees: sin(time * 2.0) * 5.0)
@@ -272,7 +304,16 @@ public class CharacterMotionStateMachine: ObservableObject {
         }
 
         // 5. Species-Specific Kinematics
-        let tailWagAngle = Angle(degrees: sin(time * 3.6) * 12.0)
+        let tailWagAngle: Angle
+        if mood == .proud || mood == .excited {
+            tailWagAngle = Angle(degrees: sin(time * 6.5) * 18.0)
+        } else if mood == .concerned || mood == .sad {
+            tailWagAngle = Angle(degrees: sin(time * 1.5) * 5.0)
+        } else if mood == .angry {
+            tailWagAngle = Angle(degrees: sin(time * 10.0) * 16.0)
+        } else {
+            tailWagAngle = Angle(degrees: sin(time * 3.6) * 12.0)
+        }
         let walkCyclePhase = (time * 8.0).truncatingRemainder(dividingBy: 2.0 * .pi)
         let hopProgress = max(0.0, sin(time * 6.0))
         let wingFlapAngle = Angle(degrees: sin(time * 8.0) * 24.0)

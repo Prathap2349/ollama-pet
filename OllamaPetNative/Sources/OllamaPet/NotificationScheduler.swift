@@ -98,6 +98,91 @@ public class NotificationScheduler {
         NSLog("[NotificationScheduler] Cancelled timer notification '\(identifier)'")
     }
 
+    public func getAuthorizationStatus(completion: @escaping (UNAuthorizationStatus) -> Void) {
+        checkAuthorization(completion: completion)
+    }
+
+    public func sendTestNotification(completion: ((Bool) -> Void)? = nil) {
+        guard Bundle.main.bundleIdentifier != nil else {
+            postImmediate(title: "🐾 Ollama Pet Test", body: "Notifications are active and working properly!")
+            completion?(true)
+            return
+        }
+
+        UNUserNotificationCenter.current().getNotificationSettings { [weak self] settings in
+            if settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional {
+                self?.postImmediate(title: "🐾 Ollama Pet Test", body: "Notifications are active and working properly!")
+                DispatchQueue.main.async {
+                    SoundEffect.success.play()
+                    completion?(true)
+                }
+            } else if settings.authorizationStatus == .notDetermined {
+                self?.requestAuthorization { granted in
+                    if granted {
+                        self?.postImmediate(title: "🐾 Ollama Pet Test", body: "Notifications are active and working properly!")
+                        DispatchQueue.main.async {
+                            SoundEffect.success.play()
+                            completion?(true)
+                        }
+                    } else {
+                        DispatchQueue.main.async {
+                            completion?(false)
+                        }
+                    }
+                }
+            } else {
+                DispatchQueue.main.async {
+                    completion?(false)
+                }
+            }
+        }
+    }
+
+    // MARK: - Authoritative Focus Session Completion
+
+    public func handleFocusCompleted(durationSeconds: Int) {
+        // 1. Cancel background fallback timer to eliminate double notifications
+        cancelTimer(timerId: "focus-session")
+
+        let mins = max(1, durationSeconds / 60)
+
+        // 2. Trigger Pet expressive emotion, bubble, and audio feedback
+        DispatchQueue.main.async {
+            PetState.shared.setTemporaryMood(.proud, duration: 8.0)
+            PetState.shared.showBubble("🎉 Focus complete! Your \(mins)-minute session is finished. Nice work! ❤️", duration: 5.0)
+            SoundEffect.receive.play()
+        }
+
+        // 3. Dispatch authoritative native notification exactly once
+        postImmediate(
+            title: "🎯 Focus Complete",
+            body: "Great job! Your \(mins)-minute focus session is finished. Take a well-deserved break!"
+        )
+    }
+
+    // MARK: - Reminders Persistence & Restart Sync
+
+    public func syncPendingReminders(reminders: [PetReminder], onOverdue: ((PetReminder) -> Void)? = nil) {
+        guard Bundle.main.bundleIdentifier != nil else { return }
+        let nowMs = Date().timeIntervalSince1970 * 1000
+
+        for rem in reminders where rem.status == "pending" {
+            let diffSecs = Int((rem.due - nowMs) / 1000)
+            if diffSecs > 0 {
+                // Reschedule with native notification center
+                scheduleReminder(
+                    id: rem.id,
+                    text: rem.text,
+                    inSeconds: diffSecs,
+                    notificationId: rem.notificationId
+                )
+            } else {
+                // Reminder matured while app was closed or rebooted
+                onOverdue?(rem)
+            }
+        }
+    }
+
     // MARK: - Immediate Notifications
 
     public func postImmediate(title: String, body: String) {

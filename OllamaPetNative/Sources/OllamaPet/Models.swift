@@ -381,6 +381,8 @@ public struct PetSavedData: Codable {
     public var presenceWidgetEnabled: Bool? = false
     public var presenceIntervalSeconds: Double? = 1.0
     public var monitoringPerformanceMode: String? = "Balanced"
+    public var presenceAutoFramingEnabled: Bool? = true
+    public var presenceCenterStageEnabled: Bool? = true
 
     // Screen Awareness Settings
     public var screenMonitoringEnabled: Bool?

@@ -1572,25 +1572,48 @@ struct PresenceSettingsSection: View {
                 }
 
                 // Camera preview box
-                ZStack {
+                ZStack(alignment: .bottomTrailing) {
                     RoundedRectangle(cornerRadius: 10)
                         .fill(Color.black.opacity(0.85))
                         .frame(height: 190)
 
                     if let img = monitor.latestPreviewImage {
-                        Image(nsImage: img)
-                            .resizable()
-                            .aspectRatio(contentMode: .fit)
-                            .frame(height: 190)
-                            .cornerRadius(10)
+                        ZStack {
+                            Image(nsImage: img)
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .frame(height: 190)
 
-                        // Subject Bounding Boxes
-                        GeometryReader { geo in
-                            ForEach(monitor.trackedSubjects) { subj in
-                                subjectBoundingBox(subj: subj, in: geo)
+                            // Subject Bounding Boxes
+                            GeometryReader { geo in
+                                ForEach(monitor.trackedSubjects) { subj in
+                                    subjectBoundingBox(subj: subj, in: geo)
+                                }
                             }
+                            .frame(height: 190)
                         }
+                        .scaleEffect(
+                            monitor.autoFramingEnabled ? monitor.currentZoomScale : 1.0,
+                            anchor: monitor.autoFramingEnabled ? monitor.currentPanAnchor : .center
+                        )
+                        .animation(.easeInOut(duration: 0.25), value: monitor.currentZoomScale)
+                        .animation(.easeInOut(duration: 0.25), value: monitor.currentPanAnchor)
                         .frame(height: 190)
+                        .cornerRadius(10)
+                        .clipped()
+
+                        if monitor.autoFramingEnabled && monitor.currentZoomScale > 1.05 {
+                            HStack(spacing: 4) {
+                                Image(systemName: "camera.metering.matrix")
+                                Text(String(format: "%.1fx Track", monitor.currentZoomScale))
+                            }
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(Capsule().fill(Color.black.opacity(0.65)))
+                            .padding(8)
+                        }
                     } else {
                         VStack(spacing: 8) {
                             Image(systemName: "camera.viewfinder")
@@ -1600,8 +1623,10 @@ struct PresenceSettingsSection: View {
                                 .font(.system(size: 12))
                                 .foregroundColor(.secondary)
                         }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                 }
+                .frame(height: 190)
 
                 if !monitor.trackedSubjects.isEmpty {
                     VStack(alignment: .leading, spacing: 6) {
@@ -1806,6 +1831,39 @@ struct PresenceSettingsSection: View {
                 Text("When enabled, saves 1 discrete local snapshot per unknown encounter (max 20 FIFO, stored locally). Never uploaded to cloud.")
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
+
+                Divider()
+
+                Toggle("Auto Pan & Zoom (Digital Face Tracking)", isOn: Binding(
+                    get: { monitor.autoFramingEnabled },
+                    set: {
+                        monitor.autoFramingEnabled = $0
+                        dataManager.savedData.presenceAutoFramingEnabled = $0
+                        dataManager.saveData()
+                    }
+                ))
+
+                Text("Dynamically tracks detected faces and pans/zooms smoothly to keep subjects centered in the viewfinder.")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+
+                if #available(macOS 12.3, *) {
+                    Toggle("Hardware Center Stage (Auto-Framing on supported Macs)", isOn: Binding(
+                        get: { dataManager.savedData.presenceCenterStageEnabled ?? true },
+                        set: {
+                            dataManager.savedData.presenceCenterStageEnabled = $0
+                            dataManager.saveData()
+                            if monitor.isRunning {
+                                monitor.stop()
+                                monitor.start()
+                            }
+                        }
+                    ))
+
+                    Text("Enables Apple Silicon / Studio Display ultra-wide hardware Center Stage framing.")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                }
             }
             .padding(14)
             .background(RoundedRectangle(cornerRadius: 12).fill(Color.primary.opacity(0.04)))
@@ -1822,6 +1880,14 @@ struct PresenceSettingsSection: View {
                     }
                     Spacer()
                     if monitor.snapshotCount > 0 {
+                        Button(action: {
+                            _ = monitor.exportAllSnapshotsToDownloads()
+                        }) {
+                            Label("Export All", systemImage: "arrow.down.circle")
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+
                         Button("Delete All") {
                             monitor.clearAllSnapshots()
                         }
@@ -1846,19 +1912,44 @@ struct PresenceSettingsSection: View {
                                             Image(nsImage: img)
                                                 .resizable()
                                                 .aspectRatio(contentMode: .fill)
-                                                .frame(width: 90, height: 68)
+                                                .frame(width: 105, height: 78)
                                                 .cornerRadius(6)
                                                 .clipped()
 
-                                            Button(action: {
-                                                monitor.deleteSnapshot(at: url)
-                                            }) {
-                                                Image(systemName: "trash.circle.fill")
-                                                    .font(.system(size: 16))
-                                                    .foregroundColor(.white)
-                                                    .background(Circle().fill(Color.black.opacity(0.6)))
+                                            HStack(spacing: 3) {
+                                                Button(action: {
+                                                    _ = monitor.exportSnapshotToDownloads(url: url)
+                                                }) {
+                                                    Image(systemName: "arrow.down.circle.fill")
+                                                        .font(.system(size: 15))
+                                                        .foregroundColor(.white)
+                                                        .background(Circle().fill(Color.black.opacity(0.65)))
+                                                }
+                                                .buttonStyle(.plain)
+                                                .help("Download to ~/Downloads")
+
+                                                Button(action: {
+                                                    monitor.revealSnapshotInFinder(url: url)
+                                                }) {
+                                                    Image(systemName: "folder.circle.fill")
+                                                        .font(.system(size: 15))
+                                                        .foregroundColor(.white)
+                                                        .background(Circle().fill(Color.black.opacity(0.65)))
+                                                }
+                                                .buttonStyle(.plain)
+                                                .help("Reveal in Finder")
+
+                                                Button(action: {
+                                                    monitor.deleteSnapshot(at: url)
+                                                }) {
+                                                    Image(systemName: "trash.circle.fill")
+                                                        .font(.system(size: 15))
+                                                        .foregroundColor(.white)
+                                                        .background(Circle().fill(Color.black.opacity(0.65)))
+                                                }
+                                                .buttonStyle(.plain)
+                                                .help("Delete snapshot permanently")
                                             }
-                                            .buttonStyle(.plain)
                                             .padding(3)
                                         }
 

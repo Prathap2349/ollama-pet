@@ -593,7 +593,7 @@ private final class PresenceCaptureCoordinator: NSObject, AVCaptureVideoDataOutp
         self.trackerRef = tracker
     }
 
-    func start(interval: Double, completion: @escaping (Bool) -> Void) {
+    func start(interval: Double, centerStageEnabled: Bool = true, completion: @escaping (Bool) -> Void) {
         self.intervalSeconds = interval
 
         sessionQueue.async { [weak self] in
@@ -609,6 +609,9 @@ private final class PresenceCaptureCoordinator: NSObject, AVCaptureVideoDataOutp
                 session.commitConfiguration()
                 completion(false)
                 return
+            }
+            if #available(macOS 12.3, *) {
+                AVCaptureDevice.isCenterStageEnabled = centerStageEnabled
             }
             session.addInput(input)
 
@@ -778,6 +781,9 @@ public final class PresenceMonitor: ObservableObject {
     @Published public var performanceMode: MonitoringPerformanceMode = .balanced
     @Published public var enrolledAngles: Set<OwnerSampleAngle> = []
     @Published public var lastEnrollmentQuality: EnrollmentQualityReport? = nil
+    @Published public var autoFramingEnabled: Bool = true
+    @Published public var currentZoomScale: CGFloat = 1.0
+    @Published public var currentPanAnchor: UnitPoint = UnitPoint(x: 0.5, y: 0.5)
 
     public let alertController = PresenceAlertController()
 
@@ -834,6 +840,9 @@ public final class PresenceMonitor: ObservableObject {
         }
 
         coordinator.setTrackerReference(tracker)
+        if let framing = DataManager.shared.savedData.presenceAutoFramingEnabled {
+            self.autoFramingEnabled = framing
+        }
         loadOwnerProfile()
         updateSnapshotCount()
 
@@ -919,7 +928,8 @@ public final class PresenceMonitor: ObservableObject {
         lastCameraFrameTime = Date()
         lastSuccessfulAnalysisTime = Date()
 
-        coordinator.start(interval: coordinator.intervalSeconds) { [weak self] success in
+        let centerStage = DataManager.shared.savedData.presenceCenterStageEnabled ?? true
+        coordinator.start(interval: coordinator.intervalSeconds, centerStageEnabled: centerStage) { [weak self] success in
             DispatchQueue.main.async {
                 guard let self = self else { return }
                 if success {
@@ -984,7 +994,8 @@ public final class PresenceMonitor: ObservableObject {
 
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
                 guard let self = self, self.isRunning else { return }
-                self.coordinator.start(interval: self.coordinator.intervalSeconds) { [weak self] success in
+                let centerStage = DataManager.shared.savedData.presenceCenterStageEnabled ?? true
+                self.coordinator.start(interval: self.coordinator.intervalSeconds, centerStageEnabled: centerStage) { [weak self] success in
                     DispatchQueue.main.async {
                         guard let self = self else { return }
                         self.isRecovering = false
@@ -1020,6 +1031,25 @@ public final class PresenceMonitor: ObservableObject {
 
         // Connect presence status transitions to Pet emotions & reactions via Arrival State Machine
         alertController.update(subjects: subjects, status: status, now: Date())
+
+        // Smooth Digital Auto-Framing (Pan & Zoom on detected person)
+        if autoFramingEnabled, let primary = subjects.first {
+            let bbox = primary.rect
+            let targetX = max(0.20, min(0.80, bbox.midX))
+            let targetY = max(0.20, min(0.80, 1.0 - bbox.midY))
+            let targetZoom = subjects.count > 1 ? 1.0 : min(1.80, max(1.0, 0.45 / max(0.18, bbox.width)))
+            currentZoomScale = currentZoomScale * 0.78 + targetZoom * 0.22
+            currentPanAnchor = UnitPoint(
+                x: currentPanAnchor.x * 0.78 + targetX * 0.22,
+                y: currentPanAnchor.y * 0.78 + targetY * 0.22
+            )
+        } else {
+            currentZoomScale = currentZoomScale * 0.78 + 1.0 * 0.22
+            currentPanAnchor = UnitPoint(
+                x: currentPanAnchor.x * 0.78 + 0.5 * 0.22,
+                y: currentPanAnchor.y * 0.78 + 0.5 * 0.22
+            )
+        }
 
         // Dynamically tune sampling frequency based on presence state
         updateSamplingFrequency()
@@ -1096,6 +1126,45 @@ public final class PresenceMonitor: ObservableObject {
             try? fileManager.removeItem(at: f)
         }
         updateSnapshotCount()
+    }
+
+    // MARK: - Snapshot Export & Finder Integration
+
+    @discardableResult
+    public func exportSnapshotToDownloads(url: URL) -> Bool {
+        guard let downloadsURL = fileManager.urls(for: .downloadsDirectory, in: .userDomainMask).first else {
+            return false
+        }
+        let destURL = downloadsURL.appendingPathComponent(url.lastPathComponent)
+        do {
+            if fileManager.fileExists(atPath: destURL.path) {
+                try fileManager.removeItem(at: destURL)
+            }
+            try fileManager.copyItem(at: url, to: destURL)
+            PetState.shared.showBubble("Saved snapshot to Downloads! 📥", duration: 3.0)
+            SoundEffect.success.play()
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    @discardableResult
+    public func exportAllSnapshotsToDownloads() -> Int {
+        let urls = getSnapshotURLs()
+        guard !urls.isEmpty else { return 0 }
+        var count = 0
+        for u in urls {
+            if exportSnapshotToDownloads(url: u) {
+                count += 1
+            }
+        }
+        PetState.shared.showBubble("Exported \(count) snapshots to Downloads! 📥", duration: 3.5)
+        return count
+    }
+
+    public func revealSnapshotInFinder(url: URL) {
+        NSWorkspace.shared.activateFileViewerSelecting([url])
     }
 
     public func getSnapshotURLs() -> [URL] {

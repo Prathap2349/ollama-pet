@@ -391,6 +391,10 @@ public struct PetSavedData: Codable {
     public var hydrationReminderEnabled: Bool?
     public var hydrationIntervalMinutes: Int? // default 60
     public var presenceSpokenAlertsEnabled: Bool? = false
+    public var presenceOwnerGreetingEnabled: Bool? = true
+    public var presenceUnknownAlertVoiceEnabled: Bool? = true
+    public var presenceVoiceCooldownSeconds: Int? = 90
+    public var presenceSpeakDuringVerification: Bool? = false
 
     // Multi-City Climate Vault
     public var weatherLocations: [SavedWeatherLocation] = []

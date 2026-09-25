@@ -39,6 +39,222 @@ public enum PresenceStatus: String {
     }
 }
 
+// MARK: - Presence Encounter Lifecycle & Alert Controller
+
+public enum PresenceEncounterState: Equatable {
+    case noPerson
+    case personArrived(since: Date)
+    case ownerConfirmed(since: Date)
+    case unknownConfirmed(since: Date)
+    case multiplePersons(since: Date)
+}
+
+@MainActor
+public final class PresenceAlertController {
+    public private(set) var state: PresenceEncounterState = .noPerson
+    private var departureStartTime: Date? = nil
+    private var lastSpokenAlertTime: Date = Date.distantPast
+    
+    public func update(
+        subjects: [TrackedSubject],
+        status: PresenceStatus,
+        now: Date = Date()
+    ) {
+        let departureThreshold: TimeInterval = 4.0
+        let verificationGracePeriod: TimeInterval = 2.8
+        
+        let hasPerson = !subjects.isEmpty && status != .away && status != .idle && status != .cameraUnavailable
+        
+        if !hasPerson {
+            if departureStartTime == nil {
+                departureStartTime = now
+            }
+            if let dep = departureStartTime, now.timeIntervalSince(dep) >= departureThreshold {
+                state = .noPerson
+            }
+            return
+        }
+        
+        // A person is present
+        departureStartTime = nil
+        
+        let savedData = DataManager.shared.savedData
+        let masterSpoken = savedData.presenceSpokenAlertsEnabled ?? false
+        let ownerGreeting = savedData.presenceOwnerGreetingEnabled ?? true
+        let unknownVoice = savedData.presenceUnknownAlertVoiceEnabled ?? true
+        let cooldown = TimeInterval(savedData.presenceVoiceCooldownSeconds ?? 90)
+        
+        let anyOwner = subjects.contains(where: { $0.isOwner })
+        let anyUncertain = subjects.contains(where: { $0.isUncertain || $0.consecutiveOwnerMatches > 0 })
+        
+        switch state {
+        case .noPerson:
+            state = .personArrived(since: now)
+            if anyOwner {
+                state = .ownerConfirmed(since: now)
+                triggerOwnerGreeting(now: now, masterSpoken: masterSpoken, ownerGreeting: ownerGreeting, cooldown: cooldown)
+            }
+            
+        case .personArrived(let since):
+            if anyOwner {
+                state = .ownerConfirmed(since: now)
+                triggerOwnerGreeting(now: now, masterSpoken: masterSpoken, ownerGreeting: ownerGreeting, cooldown: cooldown)
+            } else if subjects.count > 1 {
+                if now.timeIntervalSince(since) >= 2.0 {
+                    state = .multiplePersons(since: now)
+                    PetState.shared.setTemporaryMood(.surprised, duration: 4.0)
+                    PetState.shared.showBubble("I see multiple people. 👥", duration: 3.0)
+                }
+            } else if now.timeIntervalSince(since) >= verificationGracePeriod {
+                if !anyUncertain && PresenceMonitor.shared.isOwnerEnrolled {
+                    state = .unknownConfirmed(since: now)
+                    triggerUnknownAlert(now: now, masterSpoken: masterSpoken, unknownVoice: unknownVoice, cooldown: cooldown)
+                } else if !PresenceMonitor.shared.isOwnerEnrolled {
+                    state = .unknownConfirmed(since: now)
+                    PetState.shared.setTemporaryMood(.happy, duration: 4.0)
+                    PetState.shared.showBubble("Hello there! 🐾", duration: 3.0)
+                }
+            }
+            
+        case .ownerConfirmed:
+            // Owner remains in frame. Complete silence, no voice repetitions.
+            if subjects.count > 1 && now.timeIntervalSince(lastSpokenAlertTime) > 60.0 {
+                PetState.shared.setTemporaryMood(.surprised, duration: 3.0)
+                PetState.shared.showBubble("Someone is behind you. 👥", duration: 3.0)
+            }
+            
+        case .unknownConfirmed:
+            // Unknown stays in frame. Do not spam.
+            if anyOwner {
+                state = .ownerConfirmed(since: now)
+                triggerOwnerGreeting(now: now, masterSpoken: masterSpoken, ownerGreeting: ownerGreeting, cooldown: cooldown)
+            }
+            
+        case .multiplePersons:
+            if anyOwner {
+                state = .ownerConfirmed(since: now)
+            }
+        }
+    }
+    
+    private func triggerOwnerGreeting(now: Date, masterSpoken: Bool, ownerGreeting: Bool, cooldown: TimeInterval) {
+        PetState.shared.setTemporaryMood(.happy, duration: 5.0)
+        PetState.shared.triggerCelebration(color: Color.green, duration: 3.0)
+        PetState.shared.showBubble("Welcome back! 🐾", duration: 3.5)
+        
+        if masterSpoken && ownerGreeting && (now.timeIntervalSince(lastSpokenAlertTime) >= cooldown) {
+            lastSpokenAlertTime = now
+            VoiceAssistant.shared.speak(text: "Welcome back.")
+        }
+    }
+    
+    private func triggerUnknownAlert(now: Date, masterSpoken: Bool, unknownVoice: Bool, cooldown: TimeInterval) {
+        PetState.shared.setTemporaryMood(.concerned, duration: 5.0)
+        PetState.shared.triggerCelebration(color: Color.orange, duration: 2.0)
+        PetState.shared.showBubble("Hmm... I don't recognize this person. 👀", duration: 3.5)
+        
+        if masterSpoken && unknownVoice && (now.timeIntervalSince(lastSpokenAlertTime) >= cooldown) {
+            lastSpokenAlertTime = now
+            VoiceAssistant.shared.speak(text: "Unfamiliar person detected.")
+        }
+    }
+    
+    public func reset() {
+        state = .noPerson
+        departureStartTime = nil
+    }
+}
+
+// MARK: - Guided Owner Enrollment Models
+
+public enum OwnerSampleAngle: String, Codable, CaseIterable, Identifiable {
+    case front = "front"
+    case leftProfile = "left"
+    case rightProfile = "right"
+    
+    public var id: String { rawValue }
+    
+    public var stepIndex: Int {
+        switch self {
+        case .front: return 1
+        case .leftProfile: return 2
+        case .rightProfile: return 3
+        }
+    }
+    
+    public var title: String {
+        switch self {
+        case .front: return "Front & Center"
+        case .leftProfile: return "Left Angle"
+        case .rightProfile: return "Right Angle"
+        }
+    }
+    
+    public var instruction: String {
+        switch self {
+        case .front: return "Look straight into camera with good lighting."
+        case .leftProfile: return "Turn your head gently ~25° to your left."
+        case .rightProfile: return "Turn your head gently ~25° to your right."
+        }
+    }
+    
+    public var icon: String {
+        switch self {
+        case .front: return "person.crop.circle"
+        case .leftProfile: return "arrow.turn.up.left"
+        case .rightProfile: return "arrow.turn.up.right"
+        }
+    }
+    
+    public func matches(yaw: Double) -> (matches: Bool, feedback: String) {
+        switch self {
+        case .front:
+            if abs(yaw) <= 0.22 {
+                return (true, "Facing forward ✓")
+            } else if yaw > 0.22 {
+                return (false, "Turn slightly right to center")
+            } else {
+                return (false, "Turn slightly left to center")
+            }
+        case .leftProfile:
+            if yaw >= 0.16 && yaw <= 0.85 {
+                return (true, "Left angle aligned ✓")
+            } else if yaw < 0.16 {
+                return (false, "Turn head more to your left")
+            } else {
+                return (false, "Turned too far left, ease back")
+            }
+        case .rightProfile:
+            if yaw <= -0.16 && yaw >= -0.85 {
+                return (true, "Right angle aligned ✓")
+            } else if yaw > -0.16 {
+                return (false, "Turn head more to your right")
+            } else {
+                return (false, "Turned too far right, ease back")
+            }
+        }
+    }
+}
+
+public struct EnrollmentQualityReport {
+    public let faceDetected: Bool
+    public let multipleFaces: Bool
+    public let isCentered: Bool
+    public let isGoodSize: Bool
+    public let isGoodLighting: Bool
+    public let isGoodQuality: Bool
+    public let angleMatched: Bool
+    public let statusMessage: String
+    public let faceRect: CGRect?
+    public let yaw: Double
+    public let qualityScore: Float
+    public let luminance: Double
+    
+    public var isReadyToCapture: Bool {
+        return faceDetected && !multipleFaces && isCentered && isGoodSize && isGoodLighting && isGoodQuality && angleMatched
+    }
+}
+
 public struct TrackedSubject: Identifiable {
     public let id: UUID
     public var rect: CGRect // Normalized (0...1) in Vision coordinates (origin bottom-left)
@@ -560,6 +776,10 @@ public final class PresenceMonitor: ObservableObject {
     @Published public var enrolledSamplesCount: Int = 0
     @Published public var snapshotCount: Int = 0
     @Published public var performanceMode: MonitoringPerformanceMode = .balanced
+    @Published public var enrolledAngles: Set<OwnerSampleAngle> = []
+    @Published public var lastEnrollmentQuality: EnrollmentQualityReport? = nil
+
+    public let alertController = PresenceAlertController()
 
     /// Whether any UI component (expanded monitor or settings) is actively watching the camera view
     @Published public var isLivePreviewRequested: Bool = false {
@@ -690,6 +910,7 @@ public final class PresenceMonitor: ObservableObject {
         trackedSubjects = []
         latestPreviewImage = nil
         tracker.clear()
+        alertController.reset()
         coordinator.stop()
     }
 
@@ -797,32 +1018,8 @@ public final class PresenceMonitor: ObservableObject {
         self.trackedSubjects = subjects
         self.presenceStatus = status
 
-        // Connect presence status transitions to Pet emotions & reactions
-        if status != previousPresenceStatus {
-            let previous = previousPresenceStatus
-            previousPresenceStatus = status
-
-            let spokenAlerts = DataManager.shared.savedData.presenceSpokenAlertsEnabled ?? false
-
-            if status == .ownerPresent {
-                PetState.shared.setTemporaryMood(.happy, duration: 5.0)
-                PetState.shared.triggerCelebration(color: Color.green, duration: 3.0)
-                PetState.shared.showBubble("Welcome back! 🐾", duration: 3.5)
-                if spokenAlerts {
-                    VoiceAssistant.shared.speak(text: "Welcome back.")
-                }
-            } else if status == .unknownDetected && previous != .uncertain {
-                PetState.shared.setTemporaryMood(.concerned, duration: 5.0)
-                PetState.shared.triggerCelebration(color: Color.orange, duration: 2.0)
-                PetState.shared.showBubble("Hmm... I don't recognize this person. 👀", duration: 3.5)
-                if spokenAlerts {
-                    VoiceAssistant.shared.speak(text: "Unfamiliar person detected.")
-                }
-            } else if status == .multipleDetected {
-                PetState.shared.setTemporaryMood(.surprised, duration: 4.0)
-                PetState.shared.showBubble("I see multiple people. 👥", duration: 3.0)
-            }
-        }
+        // Connect presence status transitions to Pet emotions & reactions via Arrival State Machine
+        alertController.update(subjects: subjects, status: status, now: Date())
 
         // Dynamically tune sampling frequency based on presence state
         updateSamplingFrequency()
@@ -917,117 +1114,295 @@ public final class PresenceMonitor: ObservableObject {
         self.snapshotCount = urls.count
     }
 
-    // MARK: - Guided Owner Enrollment Flow (Multi-Sample Support)
+    // MARK: - Guided Owner Calibration & Quality Analysis
 
-    public func checkEnrollmentEligibility() -> (eligible: Bool, message: String, faceRect: CGRect?) {
+    private func computeFaceLuminance(cgImage: CGImage, faceRect: CGRect) -> Double {
+        let w = CGFloat(cgImage.width)
+        let h = CGFloat(cgImage.height)
+        let cropX = max(0, min(w - 1, faceRect.origin.x * w))
+        let cropY = max(0, min(h - 1, (1.0 - faceRect.origin.y - faceRect.height) * h))
+        let cropW = max(1, min(w - cropX, faceRect.width * w))
+        let cropH = max(1, min(h - cropY, faceRect.height * h))
+        let cropRect = CGRect(x: cropX, y: cropY, width: cropW, height: cropH)
+
+        guard let cropped = cgImage.cropping(to: cropRect) else { return 0.5 }
+        let colorSpace = CGColorSpaceCreateDeviceGray()
+        var rawBytes = [UInt8](repeating: 0, count: 256)
+        guard let ctx = CGContext(
+            data: &rawBytes,
+            width: 16,
+            height: 16,
+            bitsPerComponent: 8,
+            bytesPerRow: 16,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.none.rawValue
+        ) else {
+            return 0.5
+        }
+        ctx.draw(cropped, in: CGRect(x: 0, y: 0, width: 16, height: 16))
+        let total = rawBytes.reduce(0.0) { $0 + Double($1) }
+        return total / (256.0 * 255.0)
+    }
+
+    private func estimateHeadYaw(face: VNFaceObservation) -> Double {
+        if let yawNum = face.yaw {
+            return yawNum.doubleValue
+        }
+        if let landmarks = face.landmarks,
+           let nose = landmarks.nose?.normalizedPoints.first,
+           let leftEye = landmarks.leftEye?.normalizedPoints.first,
+           let rightEye = landmarks.rightEye?.normalizedPoints.first {
+            let span = rightEye.x - leftEye.x
+            if span > 0.02 {
+                let ratio = (nose.x - leftEye.x) / span
+                return Double((ratio - 0.5) * 1.6)
+            }
+        }
+        return 0.0
+    }
+
+    public func evaluateEnrollmentFrame(for angle: OwnerSampleAngle) -> EnrollmentQualityReport {
         guard let image = latestPreviewImage,
               let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
-            return (false, "Camera preview inactive. Start camera to enroll.", nil)
+            return EnrollmentQualityReport(
+                faceDetected: false,
+                multipleFaces: false,
+                isCentered: false,
+                isGoodSize: false,
+                isGoodLighting: false,
+                isGoodQuality: false,
+                angleMatched: false,
+                statusMessage: "Camera preview inactive. Start camera to inspect.",
+                faceRect: nil,
+                yaw: 0,
+                qualityScore: 0,
+                luminance: 0
+            )
         }
 
         let faceReq = VNDetectFaceRectanglesRequest()
+        let qualityReq = VNDetectFaceCaptureQualityRequest()
         let handler = VNImageRequestHandler(cgImage: cgImage, orientation: .up, options: [:])
-        try? handler.perform([faceReq])
+        try? handler.perform([faceReq, qualityReq])
 
         guard let results = faceReq.results, !results.isEmpty else {
-            return (false, "No face detected. Please look directly at the camera.", nil)
+            let rep = EnrollmentQualityReport(
+                faceDetected: false,
+                multipleFaces: false,
+                isCentered: false,
+                isGoodSize: false,
+                isGoodLighting: false,
+                isGoodQuality: false,
+                angleMatched: false,
+                statusMessage: "No face detected. Please face the camera.",
+                faceRect: nil,
+                yaw: 0,
+                qualityScore: 0,
+                luminance: 0
+            )
+            self.lastEnrollmentQuality = rep
+            return rep
         }
 
         if results.count > 1 {
-            return (false, "Multiple faces detected. Please ensure only you are in frame.", nil)
+            let rep = EnrollmentQualityReport(
+                faceDetected: true,
+                multipleFaces: true,
+                isCentered: false,
+                isGoodSize: false,
+                isGoodLighting: false,
+                isGoodQuality: false,
+                angleMatched: false,
+                statusMessage: "Multiple faces detected. Ensure only you are in frame.",
+                faceRect: nil,
+                yaw: 0,
+                qualityScore: 0,
+                luminance: 0
+            )
+            self.lastEnrollmentQuality = rep
+            return rep
         }
 
         let face = results[0]
         let bbox = face.boundingBox
 
-        // Verify face is reasonably centered and adequately sized
-        let centerX = bbox.midX
-        let centerY = bbox.midY
+        let isCentered = bbox.midX >= 0.28 && bbox.midX <= 0.72 && bbox.midY >= 0.25 && bbox.midY <= 0.75
+        let isGoodSize = bbox.width >= 0.15 && bbox.width <= 0.72 && bbox.height >= 0.15 && bbox.height <= 0.72
 
-        if centerX < 0.25 || centerX > 0.75 || centerY < 0.25 || centerY > 0.75 {
-            return (false, "Face not centered. Move closer to the center of the frame.", bbox)
+        let luminance = computeFaceLuminance(cgImage: cgImage, faceRect: bbox)
+        let isGoodLighting = luminance >= 0.18 && luminance <= 0.88
+
+        let qualityScore = (qualityReq.results?.first as? VNFaceObservation)?.faceCaptureQuality ?? 0.5
+        let isGoodQuality = qualityScore >= 0.30
+
+        let yaw = estimateHeadYaw(face: face)
+        let angleCheck = angle.matches(yaw: yaw)
+
+        let message: String
+        if !isCentered {
+            message = "Move your head toward the center of the frame."
+        } else if !isGoodSize {
+            message = bbox.width < 0.15 ? "Move a little closer to the camera." : "Move back slightly from the camera."
+        } else if !isGoodLighting {
+            message = luminance < 0.18 ? "Lighting is too dark. Increase ambient light." : "Lighting is too bright or glare is present."
+        } else if !isGoodQuality {
+            message = "Hold still for a clear capture."
+        } else if !angleCheck.matches {
+            message = angleCheck.feedback
+        } else {
+            message = "Pose and lighting aligned! Ready to capture."
         }
 
-        if bbox.width < 0.15 || bbox.height < 0.15 {
-            return (false, "Face too far. Move a little closer to the camera.", bbox)
-        }
-
-        return (true, "Good lighting & position! Ready to enroll.", bbox)
+        let report = EnrollmentQualityReport(
+            faceDetected: true,
+            multipleFaces: false,
+            isCentered: isCentered,
+            isGoodSize: isGoodSize,
+            isGoodLighting: isGoodLighting,
+            isGoodQuality: isGoodQuality,
+            angleMatched: angleCheck.matches,
+            statusMessage: message,
+            faceRect: bbox,
+            yaw: yaw,
+            qualityScore: qualityScore,
+            luminance: luminance
+        )
+        self.lastEnrollmentQuality = report
+        return report
     }
 
-    public func enrollCurrentFaceAsOwner(sampleIndex: Int? = nil) -> (success: Bool, message: String) {
+    public func checkEnrollmentEligibility() -> (eligible: Bool, message: String, faceRect: CGRect?) {
+        let report = evaluateEnrollmentFrame(for: .front)
+        return (report.isReadyToCapture, report.statusMessage, report.faceRect)
+    }
+
+    public func enrollSample(angle: OwnerSampleAngle) -> (success: Bool, message: String) {
         guard let image = latestPreviewImage,
               let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
             return (false, "No camera frame available. Please start monitor first.")
         }
 
         let faceReq = VNDetectFaceRectanglesRequest()
+        let qualityReq = VNDetectFaceCaptureQualityRequest()
         let handler = VNImageRequestHandler(cgImage: cgImage, orientation: .up, options: [:])
-        try? handler.perform([faceReq])
+        try? handler.perform([faceReq, qualityReq])
 
         guard let face = faceReq.results?.first else {
             return (false, "No face detected in frame. Please face the camera.")
+        }
+
+        if let count = faceReq.results?.count, count > 1 {
+            return (false, "Multiple faces detected. Please ensure only you are in frame.")
         }
 
         let featurePrintReq = VNGenerateImageFeaturePrintRequest()
         featurePrintReq.regionOfInterest = face.boundingBox
         try? handler.perform([featurePrintReq])
 
-        if let obs = featurePrintReq.results?.first as? VNFeaturePrintObservation {
-            var currentPrints = self.ownerFeaturePrints
-            if currentPrints.count >= 3 {
-                currentPrints = [obs]
-            } else {
-                currentPrints.append(obs)
-            }
-            self.ownerFeaturePrints = currentPrints
-
-            // Archive array of [VNFeaturePrintObservation]
-            let printsURL = ownerURL.appendingPathComponent("owner_prints.data")
-            let data = try? NSKeyedArchiver.archivedData(withRootObject: currentPrints as NSArray, requiringSecureCoding: true)
-            try? data?.write(to: printsURL)
-
-            // Save legacy single observation for backward compatibility
-            let legacyData = try? NSKeyedArchiver.archivedData(withRootObject: obs, requiringSecureCoding: true)
-            let printURL = ownerURL.appendingPathComponent("owner_print.data")
-            try? legacyData?.write(to: printURL)
-
-            // Save owner photo preview for settings confirmation
-            let photoURL = ownerURL.appendingPathComponent("owner.jpg")
-            let bitmap = NSBitmapImageRep(cgImage: cgImage)
-            if let jpg = bitmap.representation(using: .jpeg, properties: [:]) {
-                try? jpg.write(to: photoURL)
-            }
-
-            self.coordinator.setOwnerFeaturePrints(currentPrints)
-            self.isOwnerEnrolled = true
-            self.enrolledSamplesCount = currentPrints.count
-
-            let sampleNum = currentPrints.count
-            PetState.shared.setTemporaryMood(.proud, duration: 3.0)
-            PetState.shared.showBubble("Owner sample \(sampleNum)/3 enrolled! ✨", duration: 3.0)
-            SoundEffect.success.play()
-
-            let msg = sampleNum < 3
-                ? "Sample \(sampleNum)/3 enrolled! Tilt slightly and click again to add more angles."
-                : "Owner profile fully calibrated with 3 samples!"
-            return (true, msg)
+        guard let obs = featurePrintReq.results?.first as? VNFeaturePrintObservation else {
+            return (false, "Could not generate facial feature print. Check lighting.")
         }
 
-        return (false, "Could not generate facial feature print. Try with better lighting.")
+        // 1. Save angle observation file
+        let angleFileURL = ownerURL.appendingPathComponent("owner_\(angle.rawValue).data")
+        if let data = try? NSKeyedArchiver.archivedData(withRootObject: obs, requiringSecureCoding: true) {
+            try? data.write(to: angleFileURL)
+        }
+
+        // 2. Save preview photo for this angle
+        let photoURL = ownerURL.appendingPathComponent("owner_\(angle.rawValue).jpg")
+        let bitmap = NSBitmapImageRep(cgImage: cgImage)
+        if let jpg = bitmap.representation(using: .jpeg, properties: [:]) {
+            try? jpg.write(to: photoURL)
+            // If front angle, also save as primary owner.jpg
+            if angle == .front {
+                let mainPhotoURL = ownerURL.appendingPathComponent("owner.jpg")
+                try? jpg.write(to: mainPhotoURL)
+            }
+        }
+
+        // 3. Save metadata
+        let qualityScore = (qualityReq.results?.first as? VNFaceObservation)?.faceCaptureQuality
+        let yaw = estimateHeadYaw(face: face)
+        saveAngleMetadata(angle: angle, quality: qualityScore, yaw: yaw)
+
+        // 4. Reload all angle files and compile aggregated prints
+        loadOwnerProfile()
+
+        // Save aggregate prints archive
+        let printsURL = ownerURL.appendingPathComponent("owner_prints.data")
+        if let data = try? NSKeyedArchiver.archivedData(withRootObject: self.ownerFeaturePrints as NSArray, requiringSecureCoding: true) {
+            try? data.write(to: printsURL)
+        }
+
+        PetState.shared.setTemporaryMood(.proud, duration: 3.0)
+        PetState.shared.showBubble("Enrolled \(angle.title) sample! ✨", duration: 3.0)
+        SoundEffect.success.play()
+
+        return (true, "\(angle.title) sample enrolled successfully!")
+    }
+
+    public func enrollCurrentFaceAsOwner(sampleIndex: Int? = nil) -> (success: Bool, message: String) {
+        // Fallback convenience method: pick next unenrolled angle or front
+        let targetAngle: OwnerSampleAngle
+        if !isSampleEnrolled(angle: .front) {
+            targetAngle = .front
+        } else if !isSampleEnrolled(angle: .leftProfile) {
+            targetAngle = .leftProfile
+        } else if !isSampleEnrolled(angle: .rightProfile) {
+            targetAngle = .rightProfile
+        } else {
+            targetAngle = .front
+        }
+        return enrollSample(angle: targetAngle)
+    }
+
+    public func isSampleEnrolled(angle: OwnerSampleAngle) -> Bool {
+        return enrolledAngles.contains(angle)
+    }
+
+    public func getSamplePhoto(angle: OwnerSampleAngle) -> NSImage? {
+        let photoURL = ownerURL.appendingPathComponent("owner_\(angle.rawValue).jpg")
+        return NSImage(contentsOf: photoURL)
+    }
+
+    public func deleteSample(angle: OwnerSampleAngle) {
+        let fileURL = ownerURL.appendingPathComponent("owner_\(angle.rawValue).data")
+        let photoURL = ownerURL.appendingPathComponent("owner_\(angle.rawValue).jpg")
+        try? fileManager.removeItem(at: fileURL)
+        try? fileManager.removeItem(at: photoURL)
+        loadOwnerProfile()
+
+        // Re-save aggregate prints archive
+        let printsURL = ownerURL.appendingPathComponent("owner_prints.data")
+        if let data = try? NSKeyedArchiver.archivedData(withRootObject: self.ownerFeaturePrints as NSArray, requiringSecureCoding: true) {
+            try? data.write(to: printsURL)
+        }
+        PetState.shared.showBubble("\(angle.title) sample removed.", duration: 2.0)
     }
 
     public func resetOwnerProfile() {
+        for angle in OwnerSampleAngle.allCases {
+            let fileURL = ownerURL.appendingPathComponent("owner_\(angle.rawValue).data")
+            let photoURL = ownerURL.appendingPathComponent("owner_\(angle.rawValue).jpg")
+            try? fileManager.removeItem(at: fileURL)
+            try? fileManager.removeItem(at: photoURL)
+        }
         let printsURL = ownerURL.appendingPathComponent("owner_prints.data")
-        let printURL = ownerURL.appendingPathComponent("owner_print.data")
+        let legacyPrintURL = ownerURL.appendingPathComponent("owner_print.data")
         let photoURL = ownerURL.appendingPathComponent("owner.jpg")
+        let metaURL = ownerURL.appendingPathComponent("owner_metadata.json")
         try? fileManager.removeItem(at: printsURL)
-        try? fileManager.removeItem(at: printURL)
+        try? fileManager.removeItem(at: legacyPrintURL)
         try? fileManager.removeItem(at: photoURL)
+        try? fileManager.removeItem(at: metaURL)
+
         self.ownerFeaturePrints = []
         self.coordinator.setOwnerFeaturePrints([])
         self.isOwnerEnrolled = false
         self.enrolledSamplesCount = 0
+        self.enrolledAngles = []
+        self.alertController.reset()
         PetState.shared.showBubble("Owner profile removed.", duration: 2.0)
     }
 
@@ -1036,9 +1411,48 @@ public final class PresenceMonitor: ObservableObject {
         return NSImage(contentsOf: photoURL)
     }
 
+    private func saveAngleMetadata(angle: OwnerSampleAngle, quality: Float?, yaw: Double?) {
+        let metaURL = ownerURL.appendingPathComponent("owner_metadata.json")
+        var currentMeta: [String: [String: Any]] = [:]
+        if let data = try? Data(contentsOf: metaURL),
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: [String: Any]] {
+            currentMeta = json
+        }
+        currentMeta[angle.rawValue] = [
+            "angle": angle.rawValue,
+            "timestamp": Date().timeIntervalSince1970,
+            "quality": quality ?? 0.5,
+            "yaw": yaw ?? 0.0
+        ]
+        if let outData = try? JSONSerialization.data(withJSONObject: currentMeta, options: [.prettyPrinted]) {
+            try? outData.write(to: metaURL)
+        }
+    }
+
     private func loadOwnerProfile() {
         let printsURL = ownerURL.appendingPathComponent("owner_prints.data")
         let legacyPrintURL = ownerURL.appendingPathComponent("owner_print.data")
+
+        var detectedAngles: Set<OwnerSampleAngle> = []
+        var angleObservations: [VNFeaturePrintObservation] = []
+
+        for angle in OwnerSampleAngle.allCases {
+            let fileURL = ownerURL.appendingPathComponent("owner_\(angle.rawValue).data")
+            if let data = try? Data(contentsOf: fileURL),
+               let obs = try? NSKeyedUnarchiver.unarchivedObject(ofClass: VNFeaturePrintObservation.self, from: data) {
+                detectedAngles.insert(angle)
+                angleObservations.append(obs)
+            }
+        }
+
+        if !angleObservations.isEmpty {
+            self.ownerFeaturePrints = angleObservations
+            self.coordinator.setOwnerFeaturePrints(angleObservations)
+            self.isOwnerEnrolled = true
+            self.enrolledSamplesCount = angleObservations.count
+            self.enrolledAngles = detectedAngles
+            return
+        }
 
         if let data = try? Data(contentsOf: printsURL),
            let list = try? NSKeyedUnarchiver.unarchivedObject(ofClasses: [NSArray.self, VNFeaturePrintObservation.self], from: data) as? [VNFeaturePrintObservation],
@@ -1047,17 +1461,20 @@ public final class PresenceMonitor: ObservableObject {
             self.coordinator.setOwnerFeaturePrints(list)
             self.isOwnerEnrolled = true
             self.enrolledSamplesCount = list.count
+            self.enrolledAngles = [.front]
         } else if let data = try? Data(contentsOf: legacyPrintURL),
                   let single = try? NSKeyedUnarchiver.unarchivedObject(ofClass: VNFeaturePrintObservation.self, from: data) {
             self.ownerFeaturePrints = [single]
             self.coordinator.setOwnerFeaturePrints([single])
             self.isOwnerEnrolled = true
             self.enrolledSamplesCount = 1
+            self.enrolledAngles = [.front]
         } else {
             self.ownerFeaturePrints = []
             self.coordinator.setOwnerFeaturePrints([])
             self.isOwnerEnrolled = false
             self.enrolledSamplesCount = 0
+            self.enrolledAngles = []
         }
     }
 }

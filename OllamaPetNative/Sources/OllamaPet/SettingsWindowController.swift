@@ -1516,6 +1516,7 @@ struct PresenceSettingsSection: View {
     @ObservedObject var monitor = PresenceMonitor.shared
     @ObservedObject var dataManager = DataManager.shared
     @State private var enrollmentStatusText: String = ""
+    @State private var showEnrollmentWizard: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -1667,13 +1668,18 @@ struct PresenceSettingsSection: View {
             .background(RoundedRectangle(cornerRadius: 12).fill(Color.primary.opacity(0.04)))
 
             // Owner Profile Section
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 12) {
                 HStack {
-                    Text("Owner Verification")
-                        .font(.system(size: 14, weight: .bold))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Owner Verification & Calibration")
+                            .font(.system(size: 14, weight: .bold))
+                        Text("3-angle on-device facial feature prints (Front, Left, Right) allow seamless, local owner recognition.")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                    }
                     Spacer()
                     let count = monitor.enrolledSamplesCount
-                    Text(monitor.isOwnerEnrolled ? "🟢 Enrolled (\(count)/3 samples)" : "⚪ Not Enrolled")
+                    Text(monitor.isOwnerEnrolled ? "🟢 \(count)/3 Calibrated" : "⚪ Not Enrolled")
                         .font(.system(size: 11, weight: .bold))
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
@@ -1681,47 +1687,55 @@ struct PresenceSettingsSection: View {
                         .foregroundColor(monitor.isOwnerEnrolled ? .green : .secondary)
                 }
 
-                Text(monitor.isOwnerEnrolled
-                    ? "Up to 3 facial feature prints are stored securely on-device to handle lighting or posture variations. Anyone else in front of your Mac will be treated as an unknown guest."
-                    : "No owner profile enrolled yet. Ollama Pet treats anyone present as an unverified person until you register your face.")
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary)
+                // Sample Status Badges & Photo Preview
+                HStack(spacing: 14) {
+                    if let photo = monitor.getOwnerPhoto() {
+                        Image(nsImage: photo)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: 48, height: 48)
+                            .clipShape(Circle())
+                            .overlay(Circle().stroke(Color.green, lineWidth: 2))
+                    } else {
+                        Image(systemName: "person.crop.circle.badge.plus")
+                            .font(.system(size: 36))
+                            .foregroundColor(.secondary)
+                    }
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 8) {
+                            sampleBadge(title: "Front", enrolled: monitor.isSampleEnrolled(angle: .front))
+                            sampleBadge(title: "Left ~25°", enrolled: monitor.isSampleEnrolled(angle: .leftProfile))
+                            sampleBadge(title: "Right ~25°", enrolled: monitor.isSampleEnrolled(angle: .rightProfile))
+                        }
+
+                        Text(monitor.isOwnerEnrolled
+                            ? "Encrypted on-device feature prints active. Unknown visitors trigger gentle alerts without false positives."
+                            : "Calibrate your face to allow your Pet to recognize you and greet you when you return to your Mac.")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                    }
+                }
 
                 if !enrollmentStatusText.isEmpty {
                     Text(enrollmentStatusText)
                         .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(enrollmentStatusText.contains("Ready") || enrollmentStatusText.contains("successfully") ? .green : .orange)
+                        .foregroundColor(enrollmentStatusText.contains("Ready") || enrollmentStatusText.contains("enrolled") ? .green : .orange)
                         .padding(6)
                         .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.04)))
                 }
 
                 HStack(spacing: 10) {
-                    if monitor.isRunning {
-                        Button(action: {
-                            let check = monitor.checkEnrollmentEligibility()
-                            enrollmentStatusText = check.message
-                        }) {
-                            Text("Check Alignment")
+                    Button(action: {
+                        showEnrollmentWizard = true
+                    }) {
+                        HStack(spacing: 5) {
+                            Image(systemName: "slider.horizontal.3")
+                            Text("Open Calibration Wizard...")
                         }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-
-                        Button(action: {
-                            let res = monitor.enrollCurrentFaceAsOwner()
-                            enrollmentStatusText = res.message
-                        }) {
-                            let count = monitor.enrolledSamplesCount
-                            Text(monitor.isOwnerEnrolled ? (count < 3 ? "Add Sample (\(count)/3)" : "Replace Profile") : "Enroll Current Face")
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.small)
-                    } else {
-                        Text("Start the monitor above to view live frame and enroll your face.")
-                            .font(.system(size: 11))
-                            .foregroundColor(.secondary)
                     }
-
-                    Spacer()
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
 
                     if monitor.isOwnerEnrolled {
                         Button("Remove Profile") {
@@ -1738,7 +1752,7 @@ struct PresenceSettingsSection: View {
 
             // Alert Configuration
             VStack(alignment: .leading, spacing: 12) {
-                Text("Security & Notification Rules")
+                Text("Security & Voice Alert Rules")
                     .font(.system(size: 14, weight: .bold))
 
                 Toggle("Alert when unknown person stays near Mac > 5s", isOn: Binding(
@@ -1746,10 +1760,43 @@ struct PresenceSettingsSection: View {
                     set: { dataManager.savedData.presenceDwellAlertEnabled = $0; dataManager.saveData() }
                 ))
 
-                Toggle("Pet Voice Announcements (Speak companion alerts aloud when presence changes)", isOn: Binding(
+                Toggle("Pet Voice Announcements (Master switch for spoken presence alerts)", isOn: Binding(
                     get: { dataManager.savedData.presenceSpokenAlertsEnabled ?? false },
                     set: { dataManager.savedData.presenceSpokenAlertsEnabled = $0; dataManager.saveData() }
                 ))
+
+                if dataManager.savedData.presenceSpokenAlertsEnabled ?? false {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Toggle("Speak greeting when owner arrives (\"Welcome back.\")", isOn: Binding(
+                            get: { dataManager.savedData.presenceOwnerGreetingEnabled ?? true },
+                            set: { dataManager.savedData.presenceOwnerGreetingEnabled = $0; dataManager.saveData() }
+                        ))
+
+                        Toggle("Speak alert when unknown person arrives (\"Unfamiliar person detected.\")", isOn: Binding(
+                            get: { dataManager.savedData.presenceUnknownAlertVoiceEnabled ?? true },
+                            set: { dataManager.savedData.presenceUnknownAlertVoiceEnabled = $0; dataManager.saveData() }
+                        ))
+
+                        HStack {
+                            Text("Voice Alert Cooldown:")
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+                            Picker("", selection: Binding(
+                                get: { dataManager.savedData.presenceVoiceCooldownSeconds ?? 90 },
+                                set: { dataManager.savedData.presenceVoiceCooldownSeconds = $0; dataManager.saveData() }
+                            )) {
+                                Text("30 seconds").tag(30)
+                                Text("60 seconds").tag(60)
+                                Text("90 seconds").tag(90)
+                                Text("3 minutes").tag(180)
+                            }
+                            .pickerStyle(.menu)
+                            .frame(width: 140)
+                        }
+                    }
+                    .padding(.leading, 18)
+                    .padding(.vertical, 4)
+                }
 
                 Toggle("Save unknown-person security snapshots (OFF by default)", isOn: Binding(
                     get: { dataManager.savedData.presenceUnknownAlertEnabled ?? false },
@@ -1829,12 +1876,29 @@ struct PresenceSettingsSection: View {
             .padding(14)
             .background(RoundedRectangle(cornerRadius: 12).fill(Color.primary.opacity(0.04)))
         }
+        .sheet(isPresented: $showEnrollmentWizard) {
+            OwnerEnrollmentWizardView(isPresented: $showEnrollmentWizard)
+        }
         .onAppear {
             monitor.isLivePreviewRequested = true
         }
         .onDisappear {
             monitor.isLivePreviewRequested = false
         }
+    }
+
+    private func sampleBadge(title: String, enrolled: Bool) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: enrolled ? "checkmark.circle.fill" : "circle")
+                .foregroundColor(enrolled ? .green : .secondary)
+                .font(.system(size: 10))
+            Text(title)
+                .font(.system(size: 11, weight: enrolled ? .bold : .regular))
+                .foregroundColor(enrolled ? .primary : .secondary)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .background(RoundedRectangle(cornerRadius: 6).fill(enrolled ? Color.green.opacity(0.12) : Color.primary.opacity(0.05)))
     }
 
     private var performanceModeDescription: String {
@@ -1887,6 +1951,297 @@ struct PresenceSettingsSection: View {
                 .offset(y: -14)
         }
         .position(x: x, y: y)
+    }
+}
+
+// MARK: - Guided Owner Enrollment Wizard View
+
+struct OwnerEnrollmentWizardView: View {
+    @ObservedObject var monitor = PresenceMonitor.shared
+    @Binding var isPresented: Bool
+
+    @State private var currentAngle: OwnerSampleAngle = .front
+    @State private var statusFeedback: String = ""
+    @State private var qualityReport: EnrollmentQualityReport? = nil
+    @State private var timer: Timer? = nil
+
+    var body: some View {
+        VStack(spacing: 16) {
+            // Header
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Owner Calibration Wizard")
+                        .font(.system(size: 16, weight: .bold))
+                    Text("Calibrate up to 3 facial angles to ensure reliable, zero-prompt recognition under different postures.")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                }
+                Spacer()
+                Button("Done") {
+                    timer?.invalidate()
+                    isPresented = false
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 16)
+
+            // Step Selector Pills (Front, Left, Right)
+            HStack(spacing: 12) {
+                ForEach(OwnerSampleAngle.allCases) { angle in
+                    Button(action: {
+                        currentAngle = angle
+                        statusFeedback = ""
+                    }) {
+                        HStack(spacing: 6) {
+                            if monitor.isSampleEnrolled(angle: angle) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundColor(.green)
+                            } else {
+                                Image(systemName: angle.icon)
+                            }
+                            Text("Step \(angle.stepIndex): \(angle.title)")
+                                .font(.system(size: 12, weight: currentAngle == angle ? .bold : .medium))
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 7)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(currentAngle == angle ? Color.accentColor.opacity(0.18) : Color.primary.opacity(0.05))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(currentAngle == angle ? Color.accentColor : Color.clear, lineWidth: 1.5)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 20)
+
+            // Instruction Box
+            HStack(spacing: 10) {
+                Image(systemName: "info.circle.fill")
+                    .foregroundColor(.accentColor)
+                Text(currentAngle.instruction)
+                    .font(.system(size: 12, weight: .medium))
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(RoundedRectangle(cornerRadius: 8).fill(Color.accentColor.opacity(0.08)))
+            .padding(.horizontal, 20)
+
+            // Live Camera Viewfinder & Alignment Guide
+            HStack(spacing: 16) {
+                // Camera Box
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color.black.opacity(0.9))
+                        .frame(width: 320, height: 240)
+
+                    if let img = monitor.latestPreviewImage {
+                        Image(nsImage: img)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: 320, height: 240)
+                            .cornerRadius(10)
+
+                        // Center Alignment Oval
+                        Ellipse()
+                            .stroke(
+                                (qualityReport?.isReadyToCapture ?? false) ? Color.green : Color.white.opacity(0.4),
+                                style: StrokeStyle(lineWidth: 2, dash: (qualityReport?.isReadyToCapture ?? false) ? [] : [6, 4])
+                            )
+                            .frame(width: 140, height: 180)
+                    } else {
+                        VStack(spacing: 8) {
+                            ProgressView()
+                            Text(monitor.isRunning ? "Initializing Camera..." : "Camera is stopped")
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+                .frame(width: 320, height: 240)
+
+                // Live Quality Checklist
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Alignment & Quality Checks")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(.secondary)
+
+                    qualityCheckRow(
+                        title: "Face Detected",
+                        passed: (qualityReport?.faceDetected ?? false) && !(qualityReport?.multipleFaces ?? false),
+                        detail: qualityReport?.multipleFaces == true ? "Multiple faces" : ((qualityReport?.faceDetected ?? false) ? "1 face" : "No face")
+                    )
+
+                    qualityCheckRow(
+                        title: "Positioning",
+                        passed: qualityReport?.isCentered ?? false,
+                        detail: (qualityReport?.isCentered ?? false) ? "Centered" : "Adjust position"
+                    )
+
+                    qualityCheckRow(
+                        title: "Face Distance",
+                        passed: qualityReport?.isGoodSize ?? false,
+                        detail: (qualityReport?.isGoodSize ?? false) ? "Good size" : "Too far/close"
+                    )
+
+                    qualityCheckRow(
+                        title: "Lighting",
+                        passed: qualityReport?.isGoodLighting ?? false,
+                        detail: (qualityReport?.isGoodLighting ?? false) ? "Good lighting" : "Check illumination"
+                    )
+
+                    qualityCheckRow(
+                        title: "Pose Alignment",
+                        passed: qualityReport?.angleMatched ?? false,
+                        detail: (qualityReport?.angleMatched ?? false) ? "Angle matched" : "Tilt to match"
+                    )
+
+                    qualityCheckRow(
+                        title: "Image Clarity",
+                        passed: qualityReport?.isGoodQuality ?? false,
+                        detail: (qualityReport?.isGoodQuality ?? false) ? "Clear" : "Hold still"
+                    )
+
+                    Spacer()
+
+                    // Saved Snapshot Thumbnail for Current Angle
+                    if let photo = monitor.getSamplePhoto(angle: currentAngle) {
+                        HStack(spacing: 8) {
+                            Image(nsImage: photo)
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(width: 44, height: 36)
+                                .cornerRadius(4)
+                                .clipped()
+
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text("\(currentAngle.title) Enrolled")
+                                    .font(.system(size: 11, weight: .bold))
+                                    .foregroundColor(.green)
+                                Text("Stored securely on-device")
+                                    .font(.system(size: 9))
+                                    .foregroundColor(.secondary)
+                            }
+                            Spacer()
+                            Button("Retake") {
+                                captureCurrentAngle()
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.mini)
+                        }
+                        .padding(6)
+                        .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.04)))
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+            }
+            .padding(.horizontal, 20)
+
+            // Status Feedback Message
+            if let report = qualityReport {
+                Text(report.statusMessage)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(report.isReadyToCapture ? .green : .orange)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(RoundedRectangle(cornerRadius: 6).fill((report.isReadyToCapture ? Color.green : Color.orange).opacity(0.12)))
+                    .padding(.horizontal, 20)
+            }
+
+            // Bottom Action Bar
+            HStack(spacing: 14) {
+                // Previous Step Button
+                if currentAngle != .front {
+                    Button(action: {
+                        if currentAngle == .rightProfile { currentAngle = .leftProfile }
+                        else if currentAngle == .leftProfile { currentAngle = .front }
+                    }) {
+                        Text("← Previous Step")
+                    }
+                    .buttonStyle(.bordered)
+                }
+
+                Spacer()
+
+                // Capture Button
+                Button(action: {
+                    captureCurrentAngle()
+                }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "camera.fill")
+                        Text(monitor.isSampleEnrolled(angle: currentAngle) ? "Re-capture \(currentAngle.title)" : "Capture \(currentAngle.title)")
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+
+                // Next Step Button
+                if currentAngle != .rightProfile {
+                    Button(action: {
+                        if currentAngle == .front { currentAngle = .leftProfile }
+                        else if currentAngle == .leftProfile { currentAngle = .rightProfile }
+                    }) {
+                        Text("Next Step →")
+                    }
+                    .buttonStyle(.bordered)
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 16)
+        }
+        .frame(width: 580, height: 480)
+        .onAppear {
+            monitor.isLivePreviewRequested = true
+            if !monitor.isRunning {
+                monitor.start()
+            }
+            startInspectionLoop()
+        }
+        .onDisappear {
+            timer?.invalidate()
+            timer = nil
+        }
+    }
+
+    private func qualityCheckRow(title: String, passed: Bool, detail: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: passed ? "checkmark.circle.fill" : "exclamationmark.circle")
+                .foregroundColor(passed ? .green : .orange)
+                .font(.system(size: 12))
+            Text(title)
+                .font(.system(size: 11, weight: .medium))
+            Spacer()
+            Text(detail)
+                .font(.system(size: 10))
+                .foregroundColor(.secondary)
+        }
+    }
+
+    private func startInspectionLoop() {
+        timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { _ in
+            Task { @MainActor in
+                self.qualityReport = monitor.evaluateEnrollmentFrame(for: currentAngle)
+            }
+        }
+    }
+
+    private func captureCurrentAngle() {
+        let res = monitor.enrollSample(angle: currentAngle)
+        statusFeedback = res.message
+        if res.success {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                if currentAngle == .front && !monitor.isSampleEnrolled(angle: .leftProfile) {
+                    currentAngle = .leftProfile
+                } else if currentAngle == .leftProfile && !monitor.isSampleEnrolled(angle: .rightProfile) {
+                    currentAngle = .rightProfile
+                }
+            }
+        }
     }
 }
 

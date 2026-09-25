@@ -147,7 +147,7 @@ public struct PetCanvasRenderer {
 
         case .ghost:
             // GHOST (Boo): NO LEGS AT ALL! Floating body, wavy lower sheet/skirt, small arms, floating wave
-            drawGhostAnatomy(context: &context, center: center, primary: primaryColor, snapshot: snapshot)
+            drawGhostAnatomy(context: &context, center: center, primary: primaryColor, mood: mood, snapshot: snapshot)
 
         case .fox:
             // FOX (Kita): Pointed ears with dark rims, elongated muzzle, fox ruff, 4 legs, giant fluffy tail
@@ -155,7 +155,7 @@ public struct PetCanvasRenderer {
 
         case .bunny:
             // BUNNY (Pochi): Very tall ears, chubby round body, short front paws, large hind hopping legs, cotton puff tail
-            drawBunnyAnatomy(context: &context, center: center, primary: primaryColor, snapshot: snapshot)
+            drawBunnyAnatomy(context: &context, center: center, primary: primaryColor, mood: mood, snapshot: snapshot)
         }
     }
 
@@ -584,13 +584,41 @@ public struct PetCanvasRenderer {
     }
 
     // 5. GHOST — BOO (Floating mascot spirit: crest wisp, floating sleeves, 3-fold undulating skirt, zero legs)
-    private static func drawGhostAnatomy(context: inout GraphicsContext, center: CGPoint, primary: Color, snapshot: AnimationSnapshot) {
+    private static func drawGhostAnatomy(context: inout GraphicsContext, center: CGPoint, primary: Color, mood: PetMood, snapshot: AnimationSnapshot) {
         let wave = CGFloat(snapshot.ghostWaveOffset)
         let crestSway = CGFloat(sin(snapshot.time * 2.8) * 4.0)
 
         // Incorporate curious companion drift kinematics
         let ghostX = center.x + snapshot.curiousDriftOffset.x
         let ghostY = center.y + snapshot.curiousDriftOffset.y
+
+        // Dynamic spectral color palette based on mood
+        let spectralTint: Color
+        let auraGlow: Color
+        switch mood {
+        case .happy:
+            spectralTint = Color(red: 0.94, green: 0.90, blue: 1.0)
+            auraGlow = Color(red: 0.88, green: 0.82, blue: 1.0)
+        case .excited:
+            spectralTint = Color(red: 0.98, green: 0.94, blue: 1.0)
+            auraGlow = Color(red: 1.0, green: 0.88, blue: 0.50)
+        case .sad, .concerned:
+            spectralTint = Color(red: 0.80, green: 0.86, blue: 0.96)
+            auraGlow = Color(red: 0.65, green: 0.75, blue: 0.94)
+        case .sleepy:
+            spectralTint = Color(red: 0.78, green: 0.76, blue: 0.88)
+            auraGlow = Color(red: 0.55, green: 0.52, blue: 0.72)
+        case .proud:
+            spectralTint = Color(red: 0.96, green: 0.92, blue: 0.98)
+            auraGlow = Color(red: 1.0, green: 0.86, blue: 0.40)
+        default:
+            spectralTint = primary
+            auraGlow = Color(red: 0.82, green: 0.78, blue: 0.98)
+        }
+
+        // 0. Soft Ethereal Outer Aura Glow
+        let auraRect = CGRect(x: ghostX - 38, y: ghostY - 44, width: 76, height: 76)
+        context.fill(Circle().path(in: auraRect), with: .color(auraGlow.opacity(0.18)))
 
         // 1. Ghost Cowl Crest Wisp / Ethereal Flame atop the head
         var crest = Path()
@@ -603,7 +631,7 @@ public struct PetCanvasRenderer {
                        control1: CGPoint(x: ghostX + 13 + crestSway, y: ghostY - 44),
                        control2: CGPoint(x: ghostX + 9, y: ghostY - 38))
         crest.closeSubpath()
-        context.fill(crest, with: .color(primary.opacity(0.92)))
+        context.fill(crest, with: .color(spectralTint.opacity(0.92)))
         context.stroke(crest, with: .color(Color.white.opacity(0.75)), lineWidth: 1.2)
 
         // 2. Main Ghost Cowl & Flowing Body (Dome head, tapered waist, flowing outward)
@@ -790,8 +818,10 @@ public struct PetCanvasRenderer {
     }
 
     // 7. BUNNY — POCHI (Very tall curved ears, chubby cheeks, soft muzzle, tucked front paws, large hind hopping legs, cotton puff tail)
-    private static func drawBunnyAnatomy(context: inout GraphicsContext, center: CGPoint, primary: Color, snapshot: AnimationSnapshot) {
+    private static func drawBunnyAnatomy(context: inout GraphicsContext, center: CGPoint, primary: Color, mood: PetMood, snapshot: AnimationSnapshot) {
         let earTwitch = snapshot.earTwitchAngle.degrees
+        let isDroopy = mood == .sleepy || mood == .sad
+        let isPerky = mood == .happy || mood == .excited
 
         // 1. Round Cotton Puff Tail (Multi-lobed fluffy pom-pom behind left hip)
         let tailBaseX = center.x - 30 + CGFloat(snapshot.tailWagAngle.degrees * 0.25)
@@ -803,40 +833,59 @@ public struct PetCanvasRenderer {
         context.fill(p2, with: .color(Color.white.opacity(0.95)))
         context.fill(p3, with: .color(Color.white.opacity(0.95)))
 
-        // 2. Very Tall Upright Curved Rabbit Ears (Curved bezier with independent twitch kinematics)
+        // 2. Very Tall Curved Rabbit Ears (With mood-reactive droop and independent twitch kinematics)
+        let earHeightOffset: CGFloat = isDroopy ? 24.0 : (isPerky ? -4.0 : 0.0)
+        let earCurveSpread: CGFloat = isDroopy ? 16.0 : 0.0
+
         // Left Ear
         var lEar = Path()
-        let lTip = CGPoint(x: center.x - 22 + CGFloat(earTwitch * 0.6), y: center.y - 66)
+        let lTip = CGPoint(x: center.x - 22 - earCurveSpread + CGFloat(earTwitch * 0.6), y: center.y - 66 + earHeightOffset)
         lEar.move(to: CGPoint(x: center.x - 17, y: center.y - 28))
-        lEar.addCurve(to: lTip, control1: CGPoint(x: center.x - 28, y: center.y - 42), control2: CGPoint(x: center.x - 30, y: center.y - 58))
-        lEar.addCurve(to: CGPoint(x: center.x - 7, y: center.y - 28), control1: CGPoint(x: center.x - 14, y: center.y - 60), control2: CGPoint(x: center.x - 6, y: center.y - 44))
+        lEar.addCurve(to: lTip,
+                      control1: CGPoint(x: center.x - 28 - earCurveSpread * 0.5, y: center.y - 42 + earHeightOffset * 0.5),
+                      control2: CGPoint(x: center.x - 30 - earCurveSpread, y: center.y - 58 + earHeightOffset * 0.8))
+        lEar.addCurve(to: CGPoint(x: center.x - 7, y: center.y - 28),
+                      control1: CGPoint(x: center.x - 14, y: center.y - 60 + earHeightOffset * 0.8),
+                      control2: CGPoint(x: center.x - 6, y: center.y - 44))
         lEar.closeSubpath()
         context.fill(lEar, with: .color(primary))
 
         // Left Inner Ear Channel (soft blush pink)
         var lInner = Path()
-        let lInnerTip = CGPoint(x: center.x - 21 + CGFloat(earTwitch * 0.6), y: center.y - 62)
+        let lInnerTip = CGPoint(x: center.x - 21 - earCurveSpread + CGFloat(earTwitch * 0.6), y: center.y - 62 + earHeightOffset)
         lInner.move(to: CGPoint(x: center.x - 15, y: center.y - 30))
-        lInner.addCurve(to: lInnerTip, control1: CGPoint(x: center.x - 24, y: center.y - 42), control2: CGPoint(x: center.x - 26, y: center.y - 56))
-        lInner.addCurve(to: CGPoint(x: center.x - 9, y: center.y - 30), control1: CGPoint(x: center.x - 16, y: center.y - 58), control2: CGPoint(x: center.x - 10, y: center.y - 44))
+        lInner.addCurve(to: lInnerTip,
+                        control1: CGPoint(x: center.x - 24 - earCurveSpread * 0.5, y: center.y - 42 + earHeightOffset * 0.5),
+                        control2: CGPoint(x: center.x - 26 - earCurveSpread, y: center.y - 56 + earHeightOffset * 0.8))
+        lInner.addCurve(to: CGPoint(x: center.x - 9, y: center.y - 30),
+                        control1: CGPoint(x: center.x - 16, y: center.y - 58 + earHeightOffset * 0.8),
+                        control2: CGPoint(x: center.x - 10, y: center.y - 44))
         lInner.closeSubpath()
         context.fill(lInner, with: .color(Color.pink.opacity(0.55)))
 
         // Right Ear
         var rEar = Path()
-        let rTip = CGPoint(x: center.x + 22 - CGFloat(earTwitch * 0.4), y: center.y - 66)
+        let rTip = CGPoint(x: center.x + 22 + earCurveSpread - CGFloat(earTwitch * 0.4), y: center.y - 66 + earHeightOffset)
         rEar.move(to: CGPoint(x: center.x + 7, y: center.y - 28))
-        rEar.addCurve(to: rTip, control1: CGPoint(x: center.x + 6, y: center.y - 44), control2: CGPoint(x: center.x + 14, y: center.y - 60))
-        rEar.addCurve(to: CGPoint(x: center.x + 17, y: center.y - 28), control1: CGPoint(x: center.x + 30, y: center.y - 58), control2: CGPoint(x: center.x + 28, y: center.y - 42))
+        rEar.addCurve(to: rTip,
+                      control1: CGPoint(x: center.x + 6, y: center.y - 44),
+                      control2: CGPoint(x: center.x + 14, y: center.y - 60 + earHeightOffset * 0.8))
+        rEar.addCurve(to: CGPoint(x: center.x + 17, y: center.y - 28),
+                      control1: CGPoint(x: center.x + 30 + earCurveSpread, y: center.y - 58 + earHeightOffset * 0.8),
+                      control2: CGPoint(x: center.x + 28 + earCurveSpread * 0.5, y: center.y - 42 + earHeightOffset * 0.5))
         rEar.closeSubpath()
         context.fill(rEar, with: .color(primary))
 
         // Right Inner Ear Channel
         var rInner = Path()
-        let rInnerTip = CGPoint(x: center.x + 21 - CGFloat(earTwitch * 0.4), y: center.y - 62)
+        let rInnerTip = CGPoint(x: center.x + 21 + earCurveSpread - CGFloat(earTwitch * 0.4), y: center.y - 62 + earHeightOffset)
         rInner.move(to: CGPoint(x: center.x + 9, y: center.y - 30))
-        rInner.addCurve(to: rInnerTip, control1: CGPoint(x: center.x + 10, y: center.y - 44), control2: CGPoint(x: center.x + 16, y: center.y - 58))
-        rInner.addCurve(to: CGPoint(x: center.x + 15, y: center.y - 30), control1: CGPoint(x: center.x + 26, y: center.y - 56), control2: CGPoint(x: center.x + 24, y: center.y - 42))
+        rInner.addCurve(to: rInnerTip,
+                        control1: CGPoint(x: center.x + 10, y: center.y - 44),
+                        control2: CGPoint(x: center.x + 16, y: center.y - 58 + earHeightOffset * 0.8))
+        rInner.addCurve(to: CGPoint(x: center.x + 15, y: center.y - 30),
+                        control1: CGPoint(x: center.x + 26 + earCurveSpread, y: center.y - 56 + earHeightOffset * 0.8),
+                        control2: CGPoint(x: center.x + 24 + earCurveSpread * 0.5, y: center.y - 42 + earHeightOffset * 0.5))
         rInner.closeSubpath()
         context.fill(rInner, with: .color(Color.pink.opacity(0.55)))
 
@@ -860,6 +909,26 @@ public struct PetCanvasRenderer {
                           control2: CGPoint(x: center.x - 27, y: center.y - 26))
         headPath.closeSubpath()
         context.fill(headPath, with: .color(primary))
+
+        // Fluffy White Cheek Highlights / Ruffs
+        let lCheek = Circle().path(in: CGRect(x: center.x - 25, y: center.y - 18, width: 14, height: 12))
+        let rCheek = Circle().path(in: CGRect(x: center.x + 11, y: center.y - 18, width: 14, height: 12))
+        context.fill(lCheek, with: .color(Color.white.opacity(0.22)))
+        context.fill(rCheek, with: .color(Color.white.opacity(0.22)))
+
+        // Delicate Whiskers (3 on each cheek)
+        for i in -1...1 {
+            let wy = center.y - 14 + CGFloat(i * 3)
+            var lWhisker = Path()
+            lWhisker.move(to: CGPoint(x: center.x - 14, y: wy))
+            lWhisker.addLine(to: CGPoint(x: center.x - 28, y: wy + CGFloat(i * 2)))
+            context.stroke(lWhisker, with: .color(Color.white.opacity(0.70)), lineWidth: 1.0)
+
+            var rWhisker = Path()
+            rWhisker.move(to: CGPoint(x: center.x + 14, y: wy))
+            rWhisker.addLine(to: CGPoint(x: center.x + 28, y: wy + CGFloat(i * 2)))
+            context.stroke(rWhisker, with: .color(Color.white.opacity(0.70)), lineWidth: 1.0)
+        }
 
         // 5. Short front bunny paws held near chest (reacts to pawOffset)
         let pawY = center.y + 8 + snapshot.pawOffset * 0.5

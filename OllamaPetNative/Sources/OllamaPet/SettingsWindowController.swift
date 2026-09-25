@@ -1735,7 +1735,7 @@ struct PresenceSettingsSection: View {
                         }
 
                         Text(monitor.isOwnerEnrolled
-                            ? "Encrypted on-device feature prints active. Unknown visitors trigger gentle alerts without false positives."
+                            ? "On-device facial feature prints stored locally on this Mac using secure serialization. Unknown visitors trigger gentle alerts without false positives."
                             : "Calibrate your face to allow your Pet to recognize you and greet you when you return to your Mac.")
                             .font(.system(size: 11))
                             .foregroundColor(.secondary)
@@ -2055,6 +2055,9 @@ struct OwnerEnrollmentWizardView: View {
     @State private var statusFeedback: String = ""
     @State private var qualityReport: EnrollmentQualityReport? = nil
     @State private var timer: Timer? = nil
+    @State private var stableHoldSeconds: Double = 0.0
+    @State private var isAutoCapturing: Bool = false
+    @State private var justCaptured: Bool = false
 
     var body: some View {
         VStack(spacing: 16) {
@@ -2084,6 +2087,9 @@ struct OwnerEnrollmentWizardView: View {
                     Button(action: {
                         currentAngle = angle
                         statusFeedback = ""
+                        stableHoldSeconds = 0.0
+                        justCaptured = false
+                        isAutoCapturing = false
                     }) {
                         HStack(spacing: 6) {
                             if monitor.isSampleEnrolled(angle: angle) {
@@ -2234,15 +2240,41 @@ struct OwnerEnrollmentWizardView: View {
             }
             .padding(.horizontal, 20)
 
-            // Status Feedback Message
-            if let report = qualityReport {
-                Text(report.statusMessage)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(report.isReadyToCapture ? .green : .orange)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(RoundedRectangle(cornerRadius: 6).fill((report.isReadyToCapture ? Color.green : Color.orange).opacity(0.12)))
-                    .padding(.horizontal, 20)
+            // Status Feedback Message & Hold Progress Bar
+            if justCaptured {
+                HStack(spacing: 8) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundColor(.green)
+                    Text("Captured ✓ \(currentAngle.title) calibrated successfully")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(.green)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Color.green.opacity(0.15)))
+                .padding(.horizontal, 20)
+            } else if let report = qualityReport {
+                HStack(spacing: 12) {
+                    if report.isReadyToCapture {
+                        Image(systemName: "timer")
+                            .foregroundColor(.green)
+                        ProgressView(value: min(1.0, stableHoldSeconds / 0.5))
+                            .frame(width: 80)
+                        Text("Hold still... (\(Int(min(1.0, stableHoldSeconds / 0.5) * 100))%)")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(.green)
+                    } else {
+                        Image(systemName: "exclamationmark.circle.fill")
+                            .foregroundColor(.orange)
+                        Text(report.statusMessage)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(.orange)
+                    }
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(RoundedRectangle(cornerRadius: 8).fill((report.isReadyToCapture ? Color.green : Color.orange).opacity(0.12)))
+                .padding(.horizontal, 20)
             }
 
             // Bottom Action Bar
@@ -2252,6 +2284,9 @@ struct OwnerEnrollmentWizardView: View {
                     Button(action: {
                         if currentAngle == .rightProfile { currentAngle = .leftProfile }
                         else if currentAngle == .leftProfile { currentAngle = .front }
+                        stableHoldSeconds = 0.0
+                        justCaptured = false
+                        isAutoCapturing = false
                     }) {
                         Text("← Previous Step")
                     }
@@ -2276,6 +2311,9 @@ struct OwnerEnrollmentWizardView: View {
                     Button(action: {
                         if currentAngle == .front { currentAngle = .leftProfile }
                         else if currentAngle == .leftProfile { currentAngle = .rightProfile }
+                        stableHoldSeconds = 0.0
+                        justCaptured = false
+                        isAutoCapturing = false
                     }) {
                         Text("Next Step →")
                     }
@@ -2314,10 +2352,46 @@ struct OwnerEnrollmentWizardView: View {
     }
 
     private func startInspectionLoop() {
-        timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { _ in
+        timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
             Task { @MainActor in
-                self.qualityReport = monitor.evaluateEnrollmentFrame(for: currentAngle)
+                let report = monitor.evaluateEnrollmentFrame(for: currentAngle)
+                self.qualityReport = report
+
+                if self.justCaptured {
+                    return
+                }
+
+                if report.isReadyToCapture {
+                    self.stableHoldSeconds += 0.1
+                    if self.stableHoldSeconds >= 0.5 && !self.isAutoCapturing {
+                        self.isAutoCapturing = true
+                        self.triggerAutoCapture()
+                    }
+                } else {
+                    self.stableHoldSeconds = 0.0
+                }
             }
+        }
+    }
+
+    private func triggerAutoCapture() {
+        let res = monitor.enrollSample(angle: currentAngle)
+        statusFeedback = res.message
+        if res.success {
+            justCaptured = true
+            stableHoldSeconds = 0.0
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                self.justCaptured = false
+                self.isAutoCapturing = false
+                if currentAngle == .front && !monitor.isSampleEnrolled(angle: .leftProfile) {
+                    currentAngle = .leftProfile
+                } else if currentAngle == .leftProfile && !monitor.isSampleEnrolled(angle: .rightProfile) {
+                    currentAngle = .rightProfile
+                }
+            }
+        } else {
+            isAutoCapturing = false
+            stableHoldSeconds = 0.0
         }
     }
 
@@ -2325,7 +2399,11 @@ struct OwnerEnrollmentWizardView: View {
         let res = monitor.enrollSample(angle: currentAngle)
         statusFeedback = res.message
         if res.success {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+            justCaptured = true
+            stableHoldSeconds = 0.0
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                self.justCaptured = false
+                self.isAutoCapturing = false
                 if currentAngle == .front && !monitor.isSampleEnrolled(angle: .leftProfile) {
                     currentAngle = .leftProfile
                 } else if currentAngle == .leftProfile && !monitor.isSampleEnrolled(angle: .rightProfile) {
@@ -3486,7 +3564,23 @@ struct NotificationSettingsSection: View {
     }
 
     private func notificationTypeRow(icon: String, iconColor: Color, title: String, subtitle: String, isActive: Bool) -> some View {
-        HStack(spacing: 12) {
+        let badgeText: String
+        let badgeColor: Color
+        if authStatus == .denied {
+            badgeText = "Blocked by System"
+            badgeColor = .red
+        } else if authStatus == .notDetermined {
+            badgeText = "Permission Needed"
+            badgeColor = .orange
+        } else if isActive {
+            badgeText = "Active"
+            badgeColor = .green
+        } else {
+            badgeText = "Disabled"
+            badgeColor = .secondary
+        }
+
+        return HStack(spacing: 12) {
             ZStack {
                 RoundedRectangle(cornerRadius: 6)
                     .fill(iconColor.opacity(0.12))
@@ -3505,12 +3599,12 @@ struct NotificationSettingsSection: View {
                     .foregroundColor(.secondary)
             }
             Spacer()
-            Text(isActive ? "Active" : "Disabled")
+            Text(badgeText)
                 .font(.system(size: 10, weight: .semibold))
-                .foregroundColor(isActive ? .green : .secondary)
+                .foregroundColor(badgeColor)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 3)
-                .background(Capsule().fill(isActive ? Color.green.opacity(0.12) : Color.secondary.opacity(0.12)))
+                .background(Capsule().fill(badgeColor.opacity(0.12)))
         }
         .padding(.vertical, 2)
     }

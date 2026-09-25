@@ -2,6 +2,8 @@ import Foundation
 import SwiftUI
 import AppKit
 
+/// Legacy SVG renderer. Deprecated: `PetCanvasRenderer` is the sole active visual source of truth.
+@available(*, deprecated, message: "Legacy SVG renderer. PetCanvasRenderer is the sole active visual source of truth.")
 public struct PetSVGProvider {
     public static func svgString(for species: PetSpecies, state: PetAnimState, t: Double = 0.0) -> String {
         switch species {
@@ -843,6 +845,7 @@ public struct PetSVGProvider {
     }
 }
 
+@available(*, deprecated, message: "Legacy SVG view. PetCanvasRenderer is the sole active visual source of truth.")
 public struct PetSVGView: View {
     public let species: PetSpecies
     public let state: PetAnimState

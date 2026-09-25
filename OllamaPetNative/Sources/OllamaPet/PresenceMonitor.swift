@@ -39,20 +39,30 @@ public enum PresenceStatus: String {
     }
 }
 
-// MARK: - Presence Encounter Lifecycle & Alert Controller
+// MARK: - Per-Person Presence State & Arrival-Based Alert Controller
 
-public enum PresenceEncounterState: Equatable {
-    case noPerson
-    case personArrived(since: Date)
-    case ownerConfirmed(since: Date)
-    case unknownConfirmed(since: Date)
-    case multiplePersons(since: Date)
+public enum SubjectClassification: Equatable {
+    case verifying(firstSeen: Date)
+    case ownerConfirmed(confirmedAt: Date)
+    case faceUnavailable(since: Date)
+    case unknownConfirmed(confirmedAt: Date)
+}
+
+public struct TrackedPresenceState {
+    public let subjectID: UUID
+    public var firstSeen: Date
+    public var lastSeen: Date
+    public var classification: SubjectClassification
+    public var arrivalAlertSent: Bool
+    public var ownerGreetingSent: Bool
+    public var unknownAlertSent: Bool
+    public var hasCapturedSnapshot: Bool
+    public var departureDetected: Bool
 }
 
 @MainActor
 public final class PresenceAlertController {
-    public private(set) var state: PresenceEncounterState = .noPerson
-    private var departureStartTime: Date? = nil
+    public private(set) var subjectStates: [UUID: TrackedPresenceState] = [:]
     private var lastSpokenAlertTime: Date = Date.distantPast
     
     public func update(
@@ -61,79 +71,125 @@ public final class PresenceAlertController {
         now: Date = Date()
     ) {
         let departureThreshold: TimeInterval = 4.0
-        let verificationGracePeriod: TimeInterval = 2.8
-        
-        let hasPerson = !subjects.isEmpty && status != .away && status != .idle && status != .cameraUnavailable
-        
-        if !hasPerson {
-            if departureStartTime == nil {
-                departureStartTime = now
-            }
-            if let dep = departureStartTime, now.timeIntervalSince(dep) >= departureThreshold {
-                state = .noPerson
-            }
-            return
-        }
-        
-        // A person is present
-        departureStartTime = nil
+        let verificationGracePeriod: TimeInterval = 5.0
         
         let savedData = DataManager.shared.savedData
         let masterSpoken = savedData.presenceSpokenAlertsEnabled ?? false
         let ownerGreeting = savedData.presenceOwnerGreetingEnabled ?? true
         let unknownVoice = savedData.presenceUnknownAlertVoiceEnabled ?? true
         let cooldown = TimeInterval(savedData.presenceVoiceCooldownSeconds ?? 90)
+        let isOwnerEnrolled = PresenceMonitor.shared.isOwnerEnrolled
         
-        let anyOwner = subjects.contains(where: { $0.isOwner })
-        let anyUncertain = subjects.contains(where: { $0.isUncertain || $0.consecutiveOwnerMatches > 0 })
+        let currentIDs = Set(subjects.map { $0.id })
         
-        switch state {
-        case .noPerson:
-            state = .personArrived(since: now)
-            if anyOwner {
-                state = .ownerConfirmed(since: now)
-                triggerOwnerGreeting(now: now, masterSpoken: masterSpoken, ownerGreeting: ownerGreeting, cooldown: cooldown)
+        // 1. Prune departed subjects (missing >= 4.0s) so next entry is treated as a clean new arrival
+        var toRemove: [UUID] = []
+        for (id, pState) in subjectStates {
+            if !currentIDs.contains(id) {
+                if now.timeIntervalSince(pState.lastSeen) >= departureThreshold {
+                    toRemove.append(id)
+                }
+            }
+        }
+        for id in toRemove {
+            subjectStates.removeValue(forKey: id)
+        }
+        
+        guard !subjects.isEmpty, status != .away, status != .idle, status != .cameraUnavailable else {
+            return
+        }
+        
+        // 2. Process each subject strictly independently
+        for subj in subjects {
+            if subjectStates[subj.id] == nil {
+                subjectStates[subj.id] = TrackedPresenceState(
+                    subjectID: subj.id,
+                    firstSeen: now,
+                    lastSeen: now,
+                    classification: .verifying(firstSeen: now),
+                    arrivalAlertSent: false,
+                    ownerGreetingSent: false,
+                    unknownAlertSent: false,
+                    hasCapturedSnapshot: false,
+                    departureDetected: false
+                )
             }
             
-        case .personArrived(let since):
-            if anyOwner {
-                state = .ownerConfirmed(since: now)
-                triggerOwnerGreeting(now: now, masterSpoken: masterSpoken, ownerGreeting: ownerGreeting, cooldown: cooldown)
-            } else if subjects.count > 1 {
-                if now.timeIntervalSince(since) >= 2.0 {
-                    state = .multiplePersons(since: now)
-                    PetState.shared.setTemporaryMood(.surprised, duration: 4.0)
-                    PetState.shared.showBubble("I see multiple people. 👥", duration: 3.0)
+            guard var pState = subjectStates[subj.id] else { continue }
+            pState.lastSeen = now
+            
+            if subj.isOwner {
+                // Owner Verified
+                switch pState.classification {
+                case .ownerConfirmed:
+                    // Owner is staying in frame: COMPLETE SILENCE. Zero voice repetitions.
+                    if subj.isFaceObscured {
+                        pState.classification = .faceUnavailable(since: now)
+                    }
+                case .faceUnavailable:
+                    // Owner's face returned: keep owner confirmed, DO NOT re-greet!
+                    if !subj.isFaceObscured {
+                        pState.classification = .ownerConfirmed(confirmedAt: now)
+                    }
+                default:
+                    // New owner arrival confirmed!
+                    pState.classification = .ownerConfirmed(confirmedAt: now)
+                    if !pState.ownerGreetingSent {
+                        pState.ownerGreetingSent = true
+                        triggerOwnerGreeting(now: now, masterSpoken: masterSpoken, ownerGreeting: ownerGreeting, cooldown: cooldown)
+                    }
                 }
-            } else if now.timeIntervalSince(since) >= verificationGracePeriod {
-                if !anyUncertain && PresenceMonitor.shared.isOwnerEnrolled {
-                    state = .unknownConfirmed(since: now)
-                    triggerUnknownAlert(now: now, masterSpoken: masterSpoken, unknownVoice: unknownVoice, cooldown: cooldown)
-                } else if !PresenceMonitor.shared.isOwnerEnrolled {
-                    state = .unknownConfirmed(since: now)
+            } else if subj.isFaceObscured {
+                // Face obscured: hold state, never prematurely classify as unknown!
+                switch pState.classification {
+                case .ownerConfirmed:
+                    pState.classification = .faceUnavailable(since: now)
+                case .faceUnavailable:
+                    break
+                case .verifying:
+                    // Keep verifying while face is obscured
+                    break
+                case .unknownConfirmed:
+                    break
+                }
+            } else if isOwnerEnrolled {
+                // Face visible & owner enrolled, but no match with owner prints
+                let dwell = now.timeIntervalSince(pState.firstSeen)
+                
+                if subj.isUncertain || dwell < verificationGracePeriod {
+                    // Legitimate verification grace period: PET REMAINS COMPLETELY SILENT
+                    pState.classification = .verifying(firstSeen: pState.firstSeen)
+                } else {
+                    // Stable unknown confirmed after full bounded grace period (>= 5.0s)
+                    switch pState.classification {
+                    case .unknownConfirmed:
+                        // Already announced, stay completely silent
+                        break
+                    default:
+                        pState.classification = .unknownConfirmed(confirmedAt: now)
+                        if !pState.unknownAlertSent {
+                            pState.unknownAlertSent = true
+                            let ownerAlsoPresent = subjects.contains(where: { $0.id != subj.id && $0.isOwner })
+                            triggerUnknownAlert(
+                                now: now,
+                                masterSpoken: masterSpoken,
+                                unknownVoice: unknownVoice,
+                                cooldown: cooldown,
+                                ownerAlsoPresent: ownerAlsoPresent
+                            )
+                        }
+                    }
+                }
+            } else {
+                // No owner enrolled: friendly general greeting once per arrival
+                if !pState.arrivalAlertSent {
+                    pState.arrivalAlertSent = true
                     PetState.shared.setTemporaryMood(.happy, duration: 4.0)
                     PetState.shared.showBubble("Hello there! 🐾", duration: 3.0)
                 }
             }
             
-        case .ownerConfirmed:
-            // Owner remains in frame. Complete silence, no voice repetitions.
-            if subjects.count > 1 && now.timeIntervalSince(lastSpokenAlertTime) > 60.0 {
-                PetState.shared.setTemporaryMood(.surprised, duration: 3.0)
-                PetState.shared.showBubble("Someone is behind you. 👥", duration: 3.0)
-            }
-            
-        case .unknownConfirmed:
-            // Unknown stays in frame. Do not spam.
-            if anyOwner {
-                state = .ownerConfirmed(since: now)
-                triggerOwnerGreeting(now: now, masterSpoken: masterSpoken, ownerGreeting: ownerGreeting, cooldown: cooldown)
-            }
-            
-        case .multiplePersons:
-            if anyOwner {
-                state = .ownerConfirmed(since: now)
-            }
+            subjectStates[subj.id] = pState
         }
     }
     
@@ -148,20 +204,22 @@ public final class PresenceAlertController {
         }
     }
     
-    private func triggerUnknownAlert(now: Date, masterSpoken: Bool, unknownVoice: Bool, cooldown: TimeInterval) {
+    private func triggerUnknownAlert(now: Date, masterSpoken: Bool, unknownVoice: Bool, cooldown: TimeInterval, ownerAlsoPresent: Bool) {
         PetState.shared.setTemporaryMood(.concerned, duration: 5.0)
-        PetState.shared.triggerCelebration(color: Color.orange, duration: 2.0)
-        PetState.shared.showBubble("Hmm... I don't recognize this person. 👀", duration: 3.5)
+        PetState.shared.triggerCelebration(color: Color.orange, duration: 2.5)
+        
+        let bubbleText = ownerAlsoPresent ? "I see an unfamiliar guest nearby. 👀" : "Hmm... I don't recognize this person. 👀"
+        PetState.shared.showBubble(bubbleText, duration: 4.0)
         
         if masterSpoken && unknownVoice && (now.timeIntervalSince(lastSpokenAlertTime) >= cooldown) {
             lastSpokenAlertTime = now
-            VoiceAssistant.shared.speak(text: "Unfamiliar person detected.")
+            let spokenText = ownerAlsoPresent ? "Unfamiliar person nearby." : "Unfamiliar person detected."
+            VoiceAssistant.shared.speak(text: spokenText)
         }
     }
     
     public func reset() {
-        state = .noPerson
-        departureStartTime = nil
+        subjectStates.removeAll()
     }
 }
 
@@ -220,17 +278,17 @@ public enum OwnerSampleAngle: String, Codable, CaseIterable, Identifiable {
             if yaw >= 0.16 && yaw <= 0.85 {
                 return (true, "Left angle aligned ✓")
             } else if yaw < 0.16 {
-                return (false, "Turn head more to your left")
+                return (false, "Turn head gently to your left (towards your left shoulder)")
             } else {
-                return (false, "Turned too far left, ease back")
+                return (false, "Turned too far left, ease back toward center")
             }
         case .rightProfile:
             if yaw <= -0.16 && yaw >= -0.85 {
                 return (true, "Right angle aligned ✓")
             } else if yaw > -0.16 {
-                return (false, "Turn head more to your right")
+                return (false, "Turn head gently to your right (towards your right shoulder)")
             } else {
-                return (false, "Turned too far right, ease back")
+                return (false, "Turned too far right, ease back toward center")
             }
         }
     }
@@ -262,10 +320,12 @@ public struct TrackedSubject: Identifiable {
     public var lastSeen: Date
     public var isOwner: Bool
     public var isUncertain: Bool
+    public var isFaceObscured: Bool
     public var consecutiveOwnerMatches: Int
     public var lastRecognitionTime: Date?
     public var hasCapturedSnapshot: Bool
     public var missedFramesCount: Int
+    public var matchDistance: Float?
 
     public var dwellDuration: TimeInterval {
         return lastSeen.timeIntervalSince(firstSeen)
@@ -273,7 +333,9 @@ public struct TrackedSubject: Identifiable {
 
     public var recognitionBadge: String {
         if isOwner {
-            return "🟢 Owner Verified"
+            return isFaceObscured ? "🟢 Owner (Away-Facing)" : "🟢 Owner Verified"
+        } else if isFaceObscured {
+            return "⚪ Face Obscured"
         } else if consecutiveOwnerMatches > 0 || isUncertain {
             return "🟡 Checking Face"
         } else {
@@ -283,11 +345,13 @@ public struct TrackedSubject: Identifiable {
 
     public var statusDescription: String {
         if isOwner {
-            return "Strong match · \(consecutiveOwnerMatches) confirmations"
+            return isFaceObscured ? "Owner present · Face angled away" : "Strong match · \(consecutiveOwnerMatches) confirmations"
+        } else if isFaceObscured {
+            return "Person detected · Face obscured/turned"
         } else if consecutiveOwnerMatches > 0 {
             return "Possible match · \(consecutiveOwnerMatches) confirmation"
         } else if isUncertain {
-            return "Checking face alignment..."
+            return "Verifying facial features..."
         } else {
             return "No owner match"
         }
@@ -298,8 +362,10 @@ public struct TrackedSubject: Identifiable {
         rect: CGRect,
         isOwner: Bool = false,
         isUncertain: Bool = false,
+        isFaceObscured: Bool = false,
         consecutiveOwnerMatches: Int = 0,
-        lastRecognitionTime: Date? = nil
+        lastRecognitionTime: Date? = nil,
+        matchDistance: Float? = nil
     ) {
         self.id = id
         self.rect = rect
@@ -307,10 +373,12 @@ public struct TrackedSubject: Identifiable {
         self.lastSeen = Date()
         self.isOwner = isOwner
         self.isUncertain = isUncertain
+        self.isFaceObscured = isFaceObscured
         self.consecutiveOwnerMatches = consecutiveOwnerMatches
         self.lastRecognitionTime = lastRecognitionTime
         self.hasCapturedSnapshot = false
         self.missedFramesCount = 0
+        self.matchDistance = matchDistance
     }
 }
 
@@ -400,6 +468,7 @@ private final class EnhancedPresenceTracker {
 
                 // Face Recognition & Verification
                 if let face = pair.face, !ownerPrints.isEmpty {
+                    subj.isFaceObscured = false
                     let timeSinceLastRec = subj.lastRecognitionTime != nil ? now.timeIntervalSince(subj.lastRecognitionTime!) : 999.0
 
                     // If verified owner and within recent cooldown (12s), keep verification to save CPU
@@ -413,17 +482,22 @@ private final class EnhancedPresenceTracker {
 
                         if let obs = facePrintReq.results?.first as? VNFeaturePrintObservation {
                             var minDistance: Float = 1.0
+                            var strongMatches = 0
+                            var possibleMatches = 0
                             for op in ownerPrints {
                                 var d: Float = 1.0
                                 if (try? obs.computeDistance(&d, to: op)) != nil {
                                     minDistance = min(minDistance, d)
+                                    if d < 0.38 { strongMatches += 1 }
+                                    else if d <= 0.46 { possibleMatches += 1 }
                                 }
                             }
+                            subj.matchDistance = minDistance
 
-                            // Strict conservative thresholds
-                            if minDistance < 0.38 {
+                            // Multi-sample evidence evaluation
+                            if strongMatches >= 1 || possibleMatches >= 2 {
                                 subj.consecutiveOwnerMatches += 1
-                                if subj.consecutiveOwnerMatches >= 2 {
+                                if subj.consecutiveOwnerMatches >= 2 || subj.isOwner {
                                     subj.isOwner = true
                                     subj.isUncertain = false
                                 } else {
@@ -432,42 +506,48 @@ private final class EnhancedPresenceTracker {
                                     subj.isUncertain = true
                                 }
                             } else if minDistance <= 0.48 {
+                                // Ambiguous borderline: hold as uncertain, DO NOT declare unknown!
                                 subj.consecutiveOwnerMatches = 0
-                                subj.isOwner = false
                                 subj.isUncertain = true
                             } else {
+                                // Clear non-match
                                 subj.consecutiveOwnerMatches = 0
                                 subj.isOwner = false
                                 subj.isUncertain = false
                             }
                             subj.lastRecognitionTime = now
                         } else {
-                            if timeSinceLastRec > 8.0 {
-                                subj.isOwner = false
+                            if timeSinceLastRec > 8.0 && !subj.isOwner {
                                 subj.isUncertain = true
                             }
                         }
                     }
                 } else if pair.face == nil {
-                    // Face obscured
+                    // Face obscured or turned away
+                    subj.isFaceObscured = true
                     let timeSinceLastRec = subj.lastRecognitionTime != nil ? now.timeIntervalSince(subj.lastRecognitionTime!) : 999.0
-                    if timeSinceLastRec > 6.0 {
-                        subj.isOwner = false
+                    // If owner was verified, retain owner status for up to 15s while body remains tracked!
+                    if subj.isOwner && timeSinceLastRec < 15.0 {
+                        // Owner remains owner, never switch to unknown because head turned
                         subj.isUncertain = false
+                    } else if !subj.isOwner {
+                        subj.isUncertain = true
                     }
                 } else {
                     // Owner prints empty (no owner enrolled)
+                    subj.isFaceObscured = (pair.face == nil)
                     subj.isOwner = false
                     subj.isUncertain = false
                 }
 
                 updatedSubjects.append(subj)
             } else {
-                // New subject entering frame — NEVER inherits previous owner status!
+                // New subject entering frame — starts in verifying/uncertain grace state!
                 var newSubj = TrackedSubject(
                     rect: hRect,
                     isOwner: false,
-                    isUncertain: false,
+                    isUncertain: true,
+                    isFaceObscured: (pair.face == nil),
                     consecutiveOwnerMatches: 0
                 )
                 newSubj.lastSeen = now
@@ -479,15 +559,20 @@ private final class EnhancedPresenceTracker {
 
                     if let obs = facePrintReq.results?.first as? VNFeaturePrintObservation {
                         var minDistance: Float = 1.0
+                        var strongMatches = 0
+                        var possibleMatches = 0
                         for op in ownerPrints {
                             var d: Float = 1.0
                             if (try? obs.computeDistance(&d, to: op)) != nil {
                                 minDistance = min(minDistance, d)
+                                if d < 0.38 { strongMatches += 1 }
+                                else if d <= 0.46 { possibleMatches += 1 }
                             }
                         }
+                        newSubj.matchDistance = minDistance
 
-                        if minDistance < 0.38 {
-                            newSubj.consecutiveOwnerMatches = 1 // Sample 1 of 2 -> NOT owner yet!
+                        if strongMatches >= 1 || possibleMatches >= 2 {
+                            newSubj.consecutiveOwnerMatches = 1 // Sample 1 of 2
                             newSubj.isOwner = false
                             newSubj.isUncertain = true
                         } else if minDistance <= 0.48 {
@@ -497,7 +582,7 @@ private final class EnhancedPresenceTracker {
                         } else {
                             newSubj.consecutiveOwnerMatches = 0
                             newSubj.isOwner = false
-                            newSubj.isUncertain = false
+                            newSubj.isUncertain = true // Held in verifying state by grace period
                         }
                         newSubj.lastRecognitionTime = now
                     }
@@ -541,7 +626,7 @@ private final class EnhancedPresenceTracker {
             }
         }
 
-        return (subjects, status)
+        return (updatedSubjects, status)
     }
 
     private func computeMatchScore(_ r1: CGRect, _ r2: CGRect) -> CGFloat {
@@ -569,6 +654,8 @@ private final class PresenceCaptureCoordinator: NSObject, AVCaptureVideoDataOutp
     var onFrameProcessed: (([TrackedSubject], PresenceStatus) -> Void)?
     var onPreviewFrameReady: ((CGImage) -> Void)?
     var onHeartbeat: (() -> Void)?
+
+    public private(set) var latestAnalysisFrame: CGImage? = nil
 
     private let sharedCIContext = CIContext(options: [.useSoftwareRenderer: false])
     private var captureSession: AVCaptureSession?
@@ -676,6 +763,11 @@ private final class PresenceCaptureCoordinator: NSObject, AVCaptureVideoDataOutp
 
     private func processVisionFrame(pixelBuffer: CVPixelBuffer) {
         defer { isAnalyzing = false }
+
+        // Cache analysis frame for snapshots even when live preview is not requested
+        if let cg = renderCGImage(from: pixelBuffer) {
+            self.latestAnalysisFrame = cg
+        }
 
         // Step 1: Human Detection First (Lightweight filter)
         let humanRequest = VNDetectHumanRectanglesRequest()
@@ -1032,8 +1124,18 @@ public final class PresenceMonitor: ObservableObject {
         // Connect presence status transitions to Pet emotions & reactions via Arrival State Machine
         alertController.update(subjects: subjects, status: status, now: Date())
 
-        // Smooth Digital Auto-Framing (Pan & Zoom on detected person)
-        if autoFramingEnabled, let primary = subjects.first {
+        // Smooth Digital Auto-Framing (Prioritize: 1. Owner, 2. Verifying subject, 3. Largest visible subject)
+        if autoFramingEnabled, !subjects.isEmpty {
+            let primary: TrackedSubject = {
+                if let owner = subjects.first(where: { $0.isOwner }) {
+                    return owner
+                }
+                if let verifying = subjects.first(where: { $0.isUncertain || $0.consecutiveOwnerMatches > 0 }) {
+                    return verifying
+                }
+                return subjects.max(by: { ($0.rect.width * $0.rect.height) < ($1.rect.width * $1.rect.height) }) ?? subjects[0]
+            }()
+
             let bbox = primary.rect
             let targetX = max(0.20, min(0.80, bbox.midX))
             let targetY = max(0.20, min(0.80, 1.0 - bbox.midY))
@@ -1062,13 +1164,14 @@ public final class PresenceMonitor: ObservableObject {
         if snapshotsEnabled && now >= snapshotCooldownUntil {
             for i in 0..<trackedSubjects.count {
                 var subj = trackedSubjects[i]
-                if !subj.isOwner && !subj.isUncertain && subj.dwellDuration >= 5.0 && !subj.hasCapturedSnapshot {
+                if !subj.isOwner && !subj.isUncertain && !subj.isFaceObscured && subj.dwellDuration >= 5.0 && !subj.hasCapturedSnapshot {
                     subj.hasCapturedSnapshot = true
                     trackedSubjects[i] = subj
                     snapshotCooldownUntil = now.addingTimeInterval(60.0) // 1 minute cooldown per unknown encounter
 
-                    if let preview = latestPreviewImage,
-                       let cg = preview.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+                    // Independently capture current analysis frame even when live preview is not open
+                    let cgToSave: CGImage? = latestPreviewImage?.cgImage(forProposedRect: nil, context: nil, hints: nil) ?? coordinator.latestAnalysisFrame
+                    if let cg = cgToSave {
                         saveSnapshotLocally(cgImage: cg)
                     }
                     if dwellAlertEnabled {

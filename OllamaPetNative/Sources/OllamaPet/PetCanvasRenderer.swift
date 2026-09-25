@@ -355,15 +355,15 @@ public struct PetCanvasRenderer {
         context.fill(spade, with: .color(hornColor))
         context.stroke(spade, with: .color(wingColor), lineWidth: 1.2)
 
-        // 3. Robust Fantasy Dragon Body (Muscular torso)
-        let bodyRect = CGRect(x: center.x - 26, y: center.y - 12, width: 52, height: 44)
-        context.fill(RoundedRectangle(cornerRadius: 18).path(in: bodyRect), with: .color(bodyColor))
+        // 3. Robust Fantasy Dragon Body (Muscular, compact torso)
+        let bodyRect = CGRect(x: center.x - 26, y: center.y - 12, width: 52, height: 38)
+        context.fill(RoundedRectangle(cornerRadius: 16).path(in: bodyRect), with: .color(bodyColor))
 
         // 4. Segmented Dragon Ventral Belly Plates (Warm golden amber scutes)
         for i in 0..<4 {
-            let scuteY = center.y - 2 + CGFloat(i * 8)
+            let scuteY = center.y - 2 + CGFloat(i * 7)
             let scuteWidth: CGFloat = CGFloat(24 - i * 2)
-            let scuteRect = CGRect(x: center.x - scuteWidth / 2, y: scuteY, width: scuteWidth, height: 6)
+            let scuteRect = CGRect(x: center.x - scuteWidth / 2, y: scuteY, width: scuteWidth, height: 5.5)
             context.fill(RoundedRectangle(cornerRadius: 3).path(in: scuteRect), with: .color(hornColor.opacity(0.85)))
             context.stroke(RoundedRectangle(cornerRadius: 3).path(in: scuteRect), with: .color(Color.black.opacity(0.15)), lineWidth: 0.8)
         }
@@ -381,26 +381,26 @@ public struct PetCanvasRenderer {
         let coreGlow = Circle().path(in: CGRect(x: center.x - 10, y: coreY - 10, width: 20, height: 20))
         context.fill(coreGlow, with: .color(coreColor.opacity(0.35)))
 
-        // 6. Arched Dragon Neck & Head with Snout
+        // 6. Arched Dragon Neck & Sculpted Dragon Head
         var neck = Path()
-        neck.move(to: CGPoint(x: center.x - 16, y: center.y - 8))
-        neck.addLine(to: CGPoint(x: center.x - 20, y: center.y - 28))
-        neck.addLine(to: CGPoint(x: center.x + 20, y: center.y - 28))
-        neck.addLine(to: CGPoint(x: center.x + 16, y: center.y - 8))
+        neck.move(to: CGPoint(x: center.x - 15, y: center.y - 8))
+        neck.addLine(to: CGPoint(x: center.x - 18, y: center.y - 28))
+        neck.addLine(to: CGPoint(x: center.x + 18, y: center.y - 28))
+        neck.addLine(to: CGPoint(x: center.x + 15, y: center.y - 8))
         neck.closeSubpath()
         context.fill(neck, with: .color(bodyColor))
 
-        // Sculpted Dragon Head
-        let headRect = CGRect(x: center.x - 22, y: center.y - 38, width: 44, height: 28)
-        context.fill(RoundedRectangle(cornerRadius: 12).path(in: headRect), with: .color(bodyColor))
+        // Sculpted Dragon Head (Slightly larger head for expressive fantasy dragon silhouette)
+        let headRect = CGRect(x: center.x - 24, y: center.y - 40, width: 48, height: 30)
+        context.fill(RoundedRectangle(cornerRadius: 13).path(in: headRect), with: .color(bodyColor))
 
         // Elongated Dragon Snout & Muzzle
-        let snoutRect = CGRect(x: center.x - 14, y: center.y - 22, width: 28, height: 14)
+        let snoutRect = CGRect(x: center.x - 15, y: center.y - 23, width: 30, height: 14)
         context.fill(RoundedRectangle(cornerRadius: 7).path(in: snoutRect), with: .color(bodyColor))
 
         // Dragon Nostrils
-        let lNostril = Ellipse().path(in: CGRect(x: center.x - 8, y: center.y - 14, width: 3, height: 2.5))
-        let rNostril = Ellipse().path(in: CGRect(x: center.x + 5, y: center.y - 14, width: 3, height: 2.5))
+        let lNostril = Ellipse().path(in: CGRect(x: center.x - 8, y: center.y - 15, width: 3, height: 2.5))
+        let rNostril = Ellipse().path(in: CGRect(x: center.x + 5, y: center.y - 15, width: 3, height: 2.5))
         context.fill(lNostril, with: .color(Color.black.opacity(0.6)))
         context.fill(rNostril, with: .color(Color.black.opacity(0.6)))
 
@@ -455,29 +455,54 @@ public struct PetCanvasRenderer {
             context.fill(spike, with: .color(hornColor))
         }
 
-        // 9. Four Limbs with Sharp Talons
-        // Front Arms & Claws
+        // 9. Four Limbs with Integrated Dragon Talons
+        // Front Forearms & Claws
         let pawY = center.y + 16 + snapshot.pawOffset * 0.35
-        let lForearm = RoundedRectangle(cornerRadius: 3).path(in: CGRect(x: center.x - 22, y: pawY, width: 10, height: 12))
-        let rForearm = RoundedRectangle(cornerRadius: 3).path(in: CGRect(x: center.x + 12, y: pawY, width: 10, height: 12))
+        let lForearm = RoundedRectangle(cornerRadius: 3).path(in: CGRect(x: center.x - 22, y: pawY, width: 11, height: 12))
+        let rForearm = RoundedRectangle(cornerRadius: 3).path(in: CGRect(x: center.x + 11, y: pawY, width: 11, height: 12))
         context.fill(lForearm, with: .color(bodyColor))
         context.fill(rForearm, with: .color(bodyColor))
 
-        // Claws (3 sharp dark talons on each foot)
+        // Integrated sharp talons (curved triangular dragon claws)
         for i in 0..<3 {
-            let lx = center.x - 22 + CGFloat(i * 3)
-            let rx = center.x + 13 + CGFloat(i * 3)
-            let lTalon = Rectangle().path(in: CGRect(x: lx, y: pawY + 10, width: 2, height: 4))
-            let rTalon = Rectangle().path(in: CGRect(x: rx, y: pawY + 10, width: 2, height: 4))
-            context.fill(lTalon, with: .color(Color.black.opacity(0.85)))
-            context.fill(rTalon, with: .color(Color.black.opacity(0.85)))
+            let lx = center.x - 22 + CGFloat(i) * 3.5
+            let rx = center.x + 12 + CGFloat(i) * 3.5
+            var lTalon = Path()
+            lTalon.move(to: CGPoint(x: lx, y: pawY + 11))
+            lTalon.addLine(to: CGPoint(x: lx + 1.5, y: pawY + 16))
+            lTalon.addLine(to: CGPoint(x: lx + 3, y: pawY + 11))
+            lTalon.closeSubpath()
+            context.fill(lTalon, with: .color(hornColor))
+            context.stroke(lTalon, with: .color(Color.black.opacity(0.5)), lineWidth: 0.8)
+
+            var rTalon = Path()
+            rTalon.move(to: CGPoint(x: rx, y: pawY + 11))
+            rTalon.addLine(to: CGPoint(x: rx + 1.5, y: pawY + 16))
+            rTalon.addLine(to: CGPoint(x: rx + 3, y: pawY + 11))
+            rTalon.closeSubpath()
+            context.fill(rTalon, with: .color(hornColor))
+            context.stroke(rTalon, with: .color(Color.black.opacity(0.5)), lineWidth: 0.8)
         }
 
-        // Rear Crouching Haunches
-        let lHaunch = Capsule().path(in: CGRect(x: center.x - 28, y: center.y + 20, width: 12, height: 14))
-        let rHaunch = Capsule().path(in: CGRect(x: center.x + 16, y: center.y + 20, width: 12, height: 14))
+        // Rear Crouching Haunches with Hind Claws
+        let lHaunch = Capsule().path(in: CGRect(x: center.x - 28, y: center.y + 18, width: 13, height: 14))
+        let rHaunch = Capsule().path(in: CGRect(x: center.x + 15, y: center.y + 18, width: 13, height: 14))
         context.fill(lHaunch, with: .color(bodyColor.opacity(0.95)))
         context.fill(rHaunch, with: .color(bodyColor.opacity(0.95)))
+
+        var lRearClaw = Path()
+        lRearClaw.move(to: CGPoint(x: center.x - 27, y: center.y + 30))
+        lRearClaw.addLine(to: CGPoint(x: center.x - 24, y: center.y + 34))
+        lRearClaw.addLine(to: CGPoint(x: center.x - 21, y: center.y + 30))
+        lRearClaw.closeSubpath()
+        context.fill(lRearClaw, with: .color(hornColor))
+
+        var rRearClaw = Path()
+        rRearClaw.move(to: CGPoint(x: center.x + 21, y: center.y + 30))
+        rRearClaw.addLine(to: CGPoint(x: center.x + 24, y: center.y + 34))
+        rRearClaw.addLine(to: CGPoint(x: center.x + 27, y: center.y + 30))
+        rRearClaw.closeSubpath()
+        context.fill(rRearClaw, with: .color(hornColor))
     }
 
     // 3. ROBOT — ARIA (Mechanical rectangular head & body, articulated limbs with joints, chest core)
@@ -889,12 +914,22 @@ public struct PetCanvasRenderer {
         rInner.closeSubpath()
         context.fill(rInner, with: .color(Color.pink.opacity(0.55)))
 
-        // 3. Chubby Round Rabbit Body (Plump pear-like base)
-        let bodyRect = CGRect(x: center.x - 29, y: center.y - 8, width: 58, height: 44)
-        context.fill(RoundedRectangle(cornerRadius: 22).path(in: bodyRect), with: .color(primary))
+        // 3. Pear-Shaped Rabbit Body (Narrower chest curving smoothly into plump, rounded hips)
+        var pearBody = Path()
+        pearBody.move(to: CGPoint(x: center.x - 16, y: center.y - 8))
+        pearBody.addQuadCurve(to: CGPoint(x: center.x + 16, y: center.y - 8), control: CGPoint(x: center.x, y: center.y - 11))
+        pearBody.addCurve(to: CGPoint(x: center.x + 29, y: center.y + 24),
+                          control1: CGPoint(x: center.x + 20, y: center.y + 4),
+                          control2: CGPoint(x: center.x + 30, y: center.y + 14))
+        pearBody.addQuadCurve(to: CGPoint(x: center.x - 29, y: center.y + 24), control: CGPoint(x: center.x, y: center.y + 32))
+        pearBody.addCurve(to: CGPoint(x: center.x - 16, y: center.y - 8),
+                          control1: CGPoint(x: center.x - 30, y: center.y + 14),
+                          control2: CGPoint(x: center.x - 20, y: center.y + 4))
+        pearBody.closeSubpath()
+        context.fill(pearBody, with: .color(primary))
 
-        // Tummy patch (soft warm white)
-        let tummyRect = CGRect(x: center.x - 16, y: center.y, width: 32, height: 28)
+        // Tummy patch (soft warm white pear highlight)
+        let tummyRect = CGRect(x: center.x - 18, y: center.y - 2, width: 36, height: 30)
         context.fill(Ellipse().path(in: tummyRect), with: .color(Color.white.opacity(0.35)))
 
         // 4. Bunny Head with Chubby Fluffy Cheeks (Wider at bottom cheeks)
@@ -902,19 +937,19 @@ public struct PetCanvasRenderer {
         headPath.move(to: CGPoint(x: center.x - 18, y: center.y - 34))
         headPath.addQuadCurve(to: CGPoint(x: center.x + 18, y: center.y - 34), control: CGPoint(x: center.x, y: center.y - 38))
         headPath.addCurve(to: CGPoint(x: center.x, y: center.y - 6),
-                          control1: CGPoint(x: center.x + 27, y: center.y - 26),
-                          control2: CGPoint(x: center.x + 26, y: center.y - 10))
+                          control1: CGPoint(x: center.x + 26, y: center.y - 26),
+                          control2: CGPoint(x: center.x + 25, y: center.y - 10))
         headPath.addCurve(to: CGPoint(x: center.x - 18, y: center.y - 34),
-                          control1: CGPoint(x: center.x - 26, y: center.y - 10),
-                          control2: CGPoint(x: center.x - 27, y: center.y - 26))
+                          control1: CGPoint(x: center.x - 25, y: center.y - 10),
+                          control2: CGPoint(x: center.x - 26, y: center.y - 26))
         headPath.closeSubpath()
         context.fill(headPath, with: .color(primary))
 
-        // Fluffy White Cheek Highlights / Ruffs
-        let lCheek = Circle().path(in: CGRect(x: center.x - 25, y: center.y - 18, width: 14, height: 12))
-        let rCheek = Circle().path(in: CGRect(x: center.x + 11, y: center.y - 18, width: 14, height: 12))
-        context.fill(lCheek, with: .color(Color.white.opacity(0.22)))
-        context.fill(rCheek, with: .color(Color.white.opacity(0.22)))
+        // Subtle Soft Cheek Blush
+        let lCheek = Circle().path(in: CGRect(x: center.x - 23, y: center.y - 16, width: 11, height: 9))
+        let rCheek = Circle().path(in: CGRect(x: center.x + 12, y: center.y - 16, width: 11, height: 9))
+        context.fill(lCheek, with: .color(Color.pink.opacity(0.24)))
+        context.fill(rCheek, with: .color(Color.pink.opacity(0.24)))
 
         // Delicate Whiskers (3 on each cheek)
         for i in -1...1 {
@@ -939,9 +974,9 @@ public struct PetCanvasRenderer {
         context.fill(rFront, with: .color(primary.opacity(0.92)))
         context.stroke(rFront, with: .color(Color.white.opacity(0.3)), lineWidth: 1.0)
 
-        // 6. Large Hind Hopping Feet (Signature rabbit silhouette)
-        let lFoot = Capsule().path(in: CGRect(x: center.x - 30, y: center.y + 24, width: 22, height: 11))
-        let rFoot = Capsule().path(in: CGRect(x: center.x + 8, y: center.y + 24, width: 22, height: 11))
+        // 6. Large Hind Hopping Feet (Signature rabbit silhouette, well-integrated with base)
+        let lFoot = Capsule().path(in: CGRect(x: center.x - 30, y: center.y + 23, width: 22, height: 11))
+        let rFoot = Capsule().path(in: CGRect(x: center.x + 8, y: center.y + 23, width: 22, height: 11))
         context.fill(lFoot, with: .color(primary))
         context.stroke(lFoot, with: .color(Color.black.opacity(0.12)), lineWidth: 1.0)
         context.fill(rFoot, with: .color(primary))
@@ -1067,15 +1102,15 @@ public struct PetCanvasRenderer {
             )
 
         case .dragon:
-            // Head: [-36, -4], Snout: [-22, -6]
+            // Head: [-40, -10], Snout: [-23, -9]
             return CharacterFaceLayout(
-                eyeCenterY: -24,
+                eyeCenterY: -26,
                 eyeSpacing: 13,
-                eyeWidth: 7.5,
-                eyeHeight: 8.5,
+                eyeWidth: 8.0,
+                eyeHeight: 9.0,
                 eyeStyle: .reptilian,
-                noseOffsetY: -13,
-                mouthOffsetY: -8,
+                noseOffsetY: -15,
+                mouthOffsetY: -9,
                 mouthWidth: 10.0,
                 hasBlush: false,
                 blushOffsetY: 0,

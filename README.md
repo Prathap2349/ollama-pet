@@ -1,7 +1,7 @@
 # 🐾 Ollama Pet
 
 <p align="center">
-  <img src="banner.png" alt="Ollama Pet Banner" width="100%">
+  <img src="assets/banner.png" alt="Ollama Pet Banner" width="100%">
 </p>
 
 <p align="center">

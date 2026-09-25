@@ -115,6 +115,8 @@ public struct AnimationSnapshot {
     public let ghostWaveOffset: CGFloat
     public let earTwitchAngle: Angle
     public let pawOffset: CGFloat
+    public let curiousDriftOffset: CGPoint
+    public let armGestureOffset: CGPoint
     public let thoughtSparks: [ThoughtSpark]
     public let confettiList: [ConfettiParticle]
     public let weatherParticles: [WeatherAtmosphereParticle]
@@ -134,6 +136,8 @@ public struct AnimationSnapshot {
         ghostWaveOffset: 0,
         earTwitchAngle: .zero,
         pawOffset: 0,
+        curiousDriftOffset: .zero,
+        armGestureOffset: .zero,
         thoughtSparks: [],
         confettiList: [],
         weatherParticles: []
@@ -295,7 +299,34 @@ public class CharacterMotionStateMachine: ObservableObject {
             pawOffset = CGFloat(sin(time * 2.6) * 1.0)
         }
 
-        // 6. Thought Sparks (Only if not in Safe Mode and in thinking state)
+        // 6. Ghost signature curious drift kinematics
+        let ghostCycle = time.truncatingRemainder(dividingBy: 7.2)
+        let curiousDriftOffset: CGPoint
+        if ghostCycle > 1.8 && ghostCycle < 4.8 {
+            let t = (ghostCycle - 1.8) / 3.0
+            let driftX = CGFloat(sin(t * .pi) * 3.5)
+            let driftY = CGFloat(sin(t * .pi * 2.0) * -1.8)
+            curiousDriftOffset = CGPoint(x: driftX, y: driftY)
+        } else {
+            curiousDriftOffset = .zero
+        }
+
+        // 7. Arm gesture kinematics
+        let armGestureOffset: CGPoint
+        var isDancing = animState == .dance
+        if case .dancing = state { isDancing = true }
+
+        if animState == .thinking || state == .thinking {
+            armGestureOffset = CGPoint(x: 3.5, y: -6.0)
+        } else if isDancing {
+            armGestureOffset = CGPoint(x: 0, y: CGFloat(sin(time * 6.0) * 3.5 - 3.5))
+        } else if animState == .sleep {
+            armGestureOffset = CGPoint(x: 0, y: 3.0)
+        } else {
+            armGestureOffset = .zero
+        }
+
+        // 8. Thought Sparks (Only if not in Safe Mode and in thinking state)
         var sparks: [ThoughtSpark] = []
         if !isSafeMode && (state == .thinking || animState == .thinking) {
             for i in 0..<5 {
@@ -314,7 +345,7 @@ public class CharacterMotionStateMachine: ObservableObject {
             }
         }
 
-        // 7. Confetti (Only during dancing and if particles enabled)
+        // 9. Confetti (Only during dancing and if particles enabled)
         var confetti: [ConfettiParticle] = []
         if !isSafeMode && animState == .dance {
             let colors: [Color] = [.pink, .yellow, .cyan, .purple, .green, .orange]
@@ -335,7 +366,7 @@ public class CharacterMotionStateMachine: ObservableObject {
             }
         }
 
-        // 8. Weather Overlay (Only if enabled and active)
+        // 10. Weather Overlay (Only if enabled and active)
         var weatherParts: [WeatherAtmosphereParticle] = []
         if !isSafeMode, let atmo = atmosphere, atmo == .rain || atmo == .snow {
             let isRain = atmo == .rain
@@ -370,6 +401,8 @@ public class CharacterMotionStateMachine: ObservableObject {
             ghostWaveOffset: ghostWaveOffset,
             earTwitchAngle: earTwitchAngle,
             pawOffset: pawOffset,
+            curiousDriftOffset: curiousDriftOffset,
+            armGestureOffset: armGestureOffset,
             thoughtSparks: sparks,
             confettiList: confetti,
             weatherParticles: weatherParts

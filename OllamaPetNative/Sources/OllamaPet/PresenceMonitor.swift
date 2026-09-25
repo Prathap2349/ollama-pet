@@ -4,7 +4,24 @@ import Vision
 import AppKit
 import Combine
 
-// MARK: - Models
+// MARK: - Presence State & Models
+
+public enum PresenceStatus: String {
+    case idle = "Camera Off"
+    case searching = "Scanning..."
+    case ownerPresent = "Owner Verified 👤"
+    case personDetectedNoOwner = "Person (Owner Not Set) 👤"
+    case uncertain = "Checking Face 🔍"
+    case noFace = "Face Obscured"
+    case unknownDetected = "Unknown Subject 👀"
+    case multipleDetected = "Multiple People 👥"
+    case away = "No Person Detected 💤"
+    case cameraUnavailable = "Camera Unavailable"
+
+    public var isPositive: Bool {
+        return self == .ownerPresent
+    }
+}
 
 public struct TrackedSubject: Identifiable {
     public let id: UUID
@@ -12,42 +29,66 @@ public struct TrackedSubject: Identifiable {
     public var firstSeen: Date
     public var lastSeen: Date
     public var isOwner: Bool
+    public var isUncertain: Bool
+    public var lastRecognitionTime: Date?
     public var hasCapturedSnapshot: Bool
 
     public var dwellDuration: TimeInterval {
         return lastSeen.timeIntervalSince(firstSeen)
     }
 
-    public init(id: UUID = UUID(), rect: CGRect, isOwner: Bool = false) {
+    public init(id: UUID = UUID(), rect: CGRect, isOwner: Bool = false, isUncertain: Bool = false) {
         self.id = id
         self.rect = rect
         self.firstSeen = Date()
         self.lastSeen = Date()
         self.isOwner = isOwner
+        self.isUncertain = isUncertain
         self.hasCapturedSnapshot = false
     }
 }
 
-public enum PresenceStatus: String {
-    case idle = "Idle"
-    case searching = "Scanning..."
-    case ownerPresent = "Owner Verified 👤"
-    case unknownDetected = "Unknown Subject 👀"
-    case multipleDetected = "Multiple People 👥"
-    case away = "User Away 💤"
-    case cameraUnavailable = "Camera Inactive"
+public enum MonitoringPerformanceMode: String, CaseIterable, Codable, Identifiable {
+    case lowPower = "Low Power"
+    case balanced = "Balanced"
+    case responsive = "Responsive"
+
+    public var id: String { rawValue }
+
+    public var baseInterval: Double {
+        switch self {
+        case .lowPower: return 2.2
+        case .balanced: return 1.4
+        case .responsive: return 0.9
+        }
+    }
+
+    public var activeInterval: Double {
+        switch self {
+        case .lowPower: return 1.2
+        case .balanced: return 0.7
+        case .responsive: return 0.4
+        }
+    }
+
+    public var ownerRelaxedInterval: Double {
+        switch self {
+        case .lowPower: return 3.5
+        case .balanced: return 2.4
+        case .responsive: return 1.6
+        }
+    }
 }
 
 // MARK: - Lightweight IoU Tracker
 
 private final class LightweightIoUTracker {
     private var subjects: [TrackedSubject] = []
-    private let iouThreshold: CGFloat = 0.30
+    private let iouThreshold: CGFloat = 0.28
     private let maxTimeWithoutUpdate: TimeInterval = 3.5
 
-    func update(detections: [(rect: CGRect, isOwner: Bool)]) -> [TrackedSubject] {
+    func update(detections: [(rect: CGRect, isOwner: Bool, isUncertain: Bool, wasRecognized: Bool)]) -> [TrackedSubject] {
         let now = Date()
-
         var matchedIndices = Set<Int>()
         var updatedSubjects: [TrackedSubject] = []
 
@@ -69,16 +110,22 @@ private final class LightweightIoUTracker {
                 var subj = subjects[matchedIdx]
                 subj.rect = det.rect
                 subj.lastSeen = now
-                if det.isOwner { subj.isOwner = true }
+                if det.wasRecognized {
+                    subj.isOwner = det.isOwner
+                    subj.isUncertain = det.isUncertain
+                    subj.lastRecognitionTime = now
+                }
                 updatedSubjects.append(subj)
             } else {
-                // New subject track
-                let newSubj = TrackedSubject(rect: det.rect, isOwner: det.isOwner)
+                var newSubj = TrackedSubject(rect: det.rect, isOwner: det.isOwner, isUncertain: det.isUncertain)
+                if det.wasRecognized {
+                    newSubj.lastRecognitionTime = now
+                }
                 updatedSubjects.append(newSubj)
             }
         }
 
-        // Keep surviving subjects that were seen recently
+        // Retain surviving recent tracks
         for (idx, subj) in subjects.enumerated() {
             if !matchedIndices.contains(idx) && now.timeIntervalSince(subj.lastSeen) < maxTimeWithoutUpdate {
                 updatedSubjects.append(subj)
@@ -87,6 +134,10 @@ private final class LightweightIoUTracker {
 
         self.subjects = updatedSubjects
         return subjects
+    }
+
+    func clear() {
+        subjects.removeAll()
     }
 
     private func computeIoU(_ r1: CGRect, _ r2: CGRect) -> CGFloat {
@@ -99,15 +150,21 @@ private final class LightweightIoUTracker {
     }
 }
 
-// MARK: - Video Output Delegate Coordinator
+// MARK: - Background Video Output Coordinator
 
 private final class PresenceCaptureCoordinator: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
-    var onFrameProcessed: (([(rect: CGRect, isOwner: Bool)], CGImage?, CVPixelBuffer) -> Void)?
-    var intervalSeconds: Double = 1.0
+    var onFrameProcessed: (([(rect: CGRect, isOwner: Bool, isUncertain: Bool, wasRecognized: Bool)], CGImage?, PresenceStatus) -> Void)?
+
+    // Shared reusable CIContext to prevent memory/GPU churn
+    private let sharedCIContext = CIContext(options: [.useSoftwareRenderer: false])
+
+    private var captureSession: AVCaptureSession?
+    private let sessionQueue = DispatchQueue(label: "com.ollamapet.presence.sessionQueue", qos: .userInitiated)
+
+    var intervalSeconds: Double = 1.4
+    var isLivePreviewRequested: Bool = false
     private var lastAnalysisTimestamp: TimeInterval = 0
     private var ownerFeaturePrint: VNFeaturePrintObservation?
-    private var captureSession: AVCaptureSession?
-    private let sessionQueue = DispatchQueue(label: "com.ollamapet.presence.session")
 
     func setOwnerFeaturePrint(_ print: VNFeaturePrintObservation?) {
         self.ownerFeaturePrint = print
@@ -138,7 +195,7 @@ private final class PresenceCaptureCoordinator: NSObject, AVCaptureVideoDataOutp
                 kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_32BGRA)
             ]
 
-            let outputQueue = DispatchQueue(label: "com.ollamapet.presence.videoQueue")
+            let outputQueue = DispatchQueue(label: "com.ollamapet.presence.videoQueue", qos: .userInteractive)
             output.setSampleBufferDelegate(self, queue: outputQueue)
 
             if session.canAddOutput(output) {
@@ -172,58 +229,100 @@ private final class PresenceCaptureCoordinator: NSObject, AVCaptureVideoDataOutp
 
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
 
-        // Convert to CGImage for snapshot or preview if needed
-        let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
-        let context = CIContext(options: nil)
-        let cgImage = context.createCGImage(ciImage, from: ciImage.extent)
-
-        // Run Apple Vision Human and Face Detection Requests
+        // Step 1: Detect Human Rectangles first (Fastest filter)
         let humanRequest = VNDetectHumanRectanglesRequest()
-        let faceRequest = VNDetectFaceRectanglesRequest()
         let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: .up, options: [:])
 
         do {
-            try handler.perform([humanRequest, faceRequest])
+            try handler.perform([humanRequest])
+            let humanResults = humanRequest.results ?? []
 
-            var detections: [(rect: CGRect, isOwner: Bool)] = []
-
-            // Process humans
-            if let humanResults = humanRequest.results {
-                for human in humanResults {
-                    detections.append((rect: human.boundingBox, isOwner: false))
-                }
+            if humanResults.isEmpty {
+                // Zero humans detected -> Publish away state immediately without further Vision or preview work!
+                let cgPreview: CGImage? = self.isLivePreviewRequested ? self.renderCGImage(from: pixelBuffer) : nil
+                self.onFrameProcessed?([], cgPreview, .away)
+                return
             }
 
-            // If owner print is available, check faces for verification
-            if let ownerPrint = self.ownerFeaturePrint, let faceResults = faceRequest.results, !faceResults.isEmpty {
-                for face in faceResults {
-                    let facePrintReq = VNGenerateImageFeaturePrintRequest()
-                    facePrintReq.regionOfInterest = face.boundingBox
-                    try? handler.perform([facePrintReq])
-                    if let obs = facePrintReq.results?.first as? VNFeaturePrintObservation {
-                        var distance: Float = 1.0
-                        try? obs.computeDistance(&distance, to: ownerPrint)
-                        if distance < 0.45 {
-                            // Verified owner face: mark nearby detection as owner
-                            for i in 0..<detections.count {
-                                if detections[i].rect.intersects(face.boundingBox) || face.boundingBox.intersects(detections[i].rect) {
-                                    detections[i].isOwner = true
-                                }
+            // Step 2: Humans are present -> Detect Faces for Identification
+            let faceRequest = VNDetectFaceRectanglesRequest()
+            try handler.perform([faceRequest])
+            let faceResults = faceRequest.results ?? []
+
+            var detections: [(rect: CGRect, isOwner: Bool, isUncertain: Bool, wasRecognized: Bool)] = []
+            var status: PresenceStatus = .searching
+
+            let hasEnrolledOwner = self.ownerFeaturePrint != nil
+
+            for human in humanResults {
+                let hRect = human.boundingBox
+                // Check if any face overlaps this human body
+                let matchingFace = faceResults.first { face in
+                    face.boundingBox.intersects(hRect) || hRect.intersects(face.boundingBox)
+                }
+
+                if let face = matchingFace {
+                    if let ownerPrint = self.ownerFeaturePrint {
+                        // Compare feature print
+                        let facePrintReq = VNGenerateImageFeaturePrintRequest()
+                        facePrintReq.regionOfInterest = face.boundingBox
+                        try? handler.perform([facePrintReq])
+
+                        if let obs = facePrintReq.results?.first as? VNFeaturePrintObservation {
+                            var distance: Float = 1.0
+                            try? obs.computeDistance(&distance, to: ownerPrint)
+
+                            if distance < 0.40 {
+                                detections.append((rect: hRect, isOwner: true, isUncertain: false, wasRecognized: true))
+                                status = .ownerPresent
+                            } else if distance <= 0.52 {
+                                detections.append((rect: hRect, isOwner: false, isUncertain: true, wasRecognized: true))
+                                if status != .ownerPresent { status = .uncertain }
+                            } else {
+                                detections.append((rect: hRect, isOwner: false, isUncertain: false, wasRecognized: true))
+                                if status != .ownerPresent { status = .unknownDetected }
                             }
+                        } else {
+                            detections.append((rect: hRect, isOwner: false, isUncertain: true, wasRecognized: false))
+                            if status != .ownerPresent { status = .uncertain }
                         }
+                    } else {
+                        // Owner profile not configured
+                        detections.append((rect: hRect, isOwner: false, isUncertain: false, wasRecognized: false))
+                        status = .personDetectedNoOwner
+                    }
+                } else {
+                    // Human detected but face obscured
+                    detections.append((rect: hRect, isOwner: false, isUncertain: false, wasRecognized: false))
+                    if status != .ownerPresent {
+                        status = hasEnrolledOwner ? .noFace : .personDetectedNoOwner
                     }
                 }
-            } else if self.ownerFeaturePrint == nil && !detections.isEmpty {
-                // If no owner is enrolled yet, treat single detection as owner by default
-                if detections.count == 1 {
-                    detections[0].isOwner = true
-                }
             }
 
-            onFrameProcessed?(detections, cgImage, pixelBuffer)
+            if detections.count > 1 {
+                status = .multipleDetected
+            }
+
+            // Only render preview image if user requested it!
+            let cgPreview: CGImage? = self.isLivePreviewRequested ? self.renderCGImage(from: pixelBuffer) : nil
+
+            self.onFrameProcessed?(detections, cgPreview, status)
         } catch {
             // Ignore frame processing errors safely
         }
+    }
+
+    /// Reusable CIContext image rendering
+    private func renderCGImage(from pixelBuffer: CVPixelBuffer) -> CGImage? {
+        let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
+        return sharedCIContext.createCGImage(ciImage, from: ciImage.extent)
+    }
+
+    /// Instant snapshot capture of a single frame
+    func captureSingleSnapshot(from sampleBuffer: CMSampleBuffer) -> CGImage? {
+        guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return nil }
+        return renderCGImage(from: pixelBuffer)
     }
 }
 
@@ -239,9 +338,21 @@ public final class PresenceMonitor: ObservableObject {
     @Published public var latestPreviewImage: NSImage? = nil
     @Published public var isOwnerEnrolled: Bool = false
     @Published public var snapshotCount: Int = 0
+    @Published public var performanceMode: MonitoringPerformanceMode = .balanced
+
+    /// Whether any UI component (expanded monitor or settings) is actively watching the camera view
+    @Published public var isLivePreviewRequested: Bool = false {
+        didSet {
+            coordinator.isLivePreviewRequested = isLivePreviewRequested
+            if !isLivePreviewRequested {
+                latestPreviewImage = nil // Free preview image memory immediately
+            }
+        }
+    }
 
     private let tracker = LightweightIoUTracker()
     private let coordinator = PresenceCaptureCoordinator()
+    private var snapshotCooldownUntil: Date = Date.distantPast
 
     private let fileManager = FileManager.default
     private var appSupportURL: URL {
@@ -264,14 +375,38 @@ public final class PresenceMonitor: ObservableObject {
     }
 
     private init() {
+        if let modeStr = DataManager.shared.savedData.monitoringPerformanceMode,
+           let mode = MonitoringPerformanceMode(rawValue: modeStr) {
+            self.performanceMode = mode
+        }
+
         loadOwnerProfile()
         updateSnapshotCount()
 
-        coordinator.onFrameProcessed = { [weak self] detections, cgImage, pixelBuffer in
+        coordinator.onFrameProcessed = { [weak self] detections, cgImage, status in
             Task { @MainActor [weak self] in
-                self?.handleProcessedFrame(detections: detections, cgImage: cgImage)
+                self?.handleProcessedFrame(detections: detections, cgImage: cgImage, status: status)
             }
         }
+    }
+
+    public func setPerformanceMode(_ mode: MonitoringPerformanceMode) {
+        self.performanceMode = mode
+        DataManager.shared.savedData.monitoringPerformanceMode = mode.rawValue
+        DataManager.shared.saveData()
+        updateSamplingFrequency()
+    }
+
+    private func updateSamplingFrequency() {
+        let interval: Double
+        if presenceStatus == .ownerPresent {
+            interval = performanceMode.ownerRelaxedInterval
+        } else if presenceStatus == .away || presenceStatus == .idle {
+            interval = performanceMode.baseInterval
+        } else {
+            interval = performanceMode.activeInterval
+        }
+        coordinator.intervalSeconds = interval
     }
 
     // MARK: - Session Control
@@ -303,12 +438,13 @@ public final class PresenceMonitor: ObservableObject {
         presenceStatus = .idle
         trackedSubjects = []
         latestPreviewImage = nil
+        tracker.clear()
         coordinator.stop()
     }
 
     private func setupAndStartCapture() {
-        let interval = DataManager.shared.savedData.presenceIntervalSeconds ?? 1.0
-        coordinator.start(interval: interval) { [weak self] success in
+        updateSamplingFrequency()
+        coordinator.start(interval: coordinator.intervalSeconds) { [weak self] success in
             DispatchQueue.main.async {
                 guard let self = self else { return }
                 if success {
@@ -323,38 +459,38 @@ public final class PresenceMonitor: ObservableObject {
 
     // MARK: - Frame & Subject Processing
 
-    private func handleProcessedFrame(detections: [(rect: CGRect, isOwner: Bool)], cgImage: CGImage?) {
+    private func handleProcessedFrame(
+        detections: [(rect: CGRect, isOwner: Bool, isUncertain: Bool, wasRecognized: Bool)],
+        cgImage: CGImage?,
+        status: PresenceStatus
+    ) {
         guard isRunning else { return }
 
         let subjects = tracker.update(detections: detections)
         self.trackedSubjects = subjects
+        self.presenceStatus = status
 
-        // Update preview image
-        if let cg = cgImage {
-            let nsImage = NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
-            self.latestPreviewImage = nsImage
+        // Update preview image only if requested
+        if isLivePreviewRequested, let cg = cgImage {
+            self.latestPreviewImage = NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
         }
 
-        // Determine Overall Presence Status
-        if subjects.isEmpty {
-            presenceStatus = .away
-        } else if subjects.count > 1 {
-            presenceStatus = .multipleDetected
-        } else if let first = subjects.first {
-            presenceStatus = first.isOwner ? .ownerPresent : .unknownDetected
-        }
+        // Dynamically tune sampling frequency based on presence state
+        updateSamplingFrequency()
 
-        // Handle Unknown Subject Alerts & Snapshots
+        // Event-Based Unknown Person Snapshots (OFF BY DEFAULT)
+        let snapshotsEnabled = DataManager.shared.savedData.presenceUnknownAlertEnabled ?? false
         let dwellAlertEnabled = DataManager.shared.savedData.presenceDwellAlertEnabled ?? true
-        let unknownAlertEnabled = DataManager.shared.savedData.presenceUnknownAlertEnabled ?? true
+        let now = Date()
 
-        for i in 0..<trackedSubjects.count {
-            var subj = trackedSubjects[i]
-            if !subj.isOwner {
-                // Unknown person detected
-                if unknownAlertEnabled && subj.dwellDuration >= 5.0 && !subj.hasCapturedSnapshot {
+        if snapshotsEnabled && now >= snapshotCooldownUntil {
+            for i in 0..<trackedSubjects.count {
+                var subj = trackedSubjects[i]
+                if !subj.isOwner && !subj.isUncertain && subj.dwellDuration >= 5.0 && !subj.hasCapturedSnapshot {
                     subj.hasCapturedSnapshot = true
                     trackedSubjects[i] = subj
+                    snapshotCooldownUntil = now.addingTimeInterval(60.0) // 1 minute cooldown per unknown subject
+
                     if let cg = cgImage {
                         saveSnapshotLocally(cgImage: cg)
                     }
@@ -362,6 +498,7 @@ public final class PresenceMonitor: ObservableObject {
                         PetState.shared.showBubble("Unfamiliar person detected near Mac! 👀", duration: 3.5)
                         SoundEffect.alert.play()
                     }
+                    break
                 }
             }
         }
@@ -401,6 +538,11 @@ public final class PresenceMonitor: ObservableObject {
         }
     }
 
+    public func deleteSnapshot(at url: URL) {
+        try? fileManager.removeItem(at: url)
+        updateSnapshotCount()
+    }
+
     public func clearAllSnapshots() {
         guard let files = try? fileManager.contentsOfDirectory(at: snapshotsURL, includingPropertiesForKeys: nil) else { return }
         for f in files {
@@ -425,11 +567,48 @@ public final class PresenceMonitor: ObservableObject {
         self.snapshotCount = urls.count
     }
 
-    // MARK: - Owner Enrollment
+    // MARK: - Guided Owner Enrollment Flow
 
-    public func enrollCurrentFaceAsOwner() {
-        guard let image = latestPreviewImage, let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
-            return
+    public func checkEnrollmentEligibility() -> (eligible: Bool, message: String, faceRect: CGRect?) {
+        guard let image = latestPreviewImage,
+              let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            return (false, "Camera preview inactive. Start camera to enroll.", nil)
+        }
+
+        let faceReq = VNDetectFaceRectanglesRequest()
+        let handler = VNImageRequestHandler(cgImage: cgImage, orientation: .up, options: [:])
+        try? handler.perform([faceReq])
+
+        guard let results = faceReq.results, !results.isEmpty else {
+            return (false, "No face detected. Please look directly at the camera.", nil)
+        }
+
+        if results.count > 1 {
+            return (false, "Multiple faces detected. Please ensure only you are in frame.", nil)
+        }
+
+        let face = results[0]
+        let bbox = face.boundingBox
+
+        // Verify face is reasonably centered and adequately sized
+        let centerX = bbox.midX
+        let centerY = bbox.midY
+
+        if centerX < 0.25 || centerX > 0.75 || centerY < 0.25 || centerY > 0.75 {
+            return (false, "Face not centered. Move closer to the center of the frame.", bbox)
+        }
+
+        if bbox.width < 0.15 || bbox.height < 0.15 {
+            return (false, "Face too far. Move a little closer to the camera.", bbox)
+        }
+
+        return (true, "Good lighting & position! Ready to enroll.", bbox)
+    }
+
+    public func enrollCurrentFaceAsOwner() -> (success: Bool, message: String) {
+        guard let image = latestPreviewImage,
+              let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            return (false, "No camera frame available. Please start monitor first.")
         }
 
         let faceReq = VNDetectFaceRectanglesRequest()
@@ -437,8 +616,7 @@ public final class PresenceMonitor: ObservableObject {
         try? handler.perform([faceReq])
 
         guard let face = faceReq.results?.first else {
-            PetState.shared.showBubble("No face seen to enroll. Look at camera! 📷", duration: 3.0)
-            return
+            return (false, "No face detected in frame. Please face the camera.")
         }
 
         let featurePrintReq = VNGenerateImageFeaturePrintRequest()
@@ -450,7 +628,7 @@ public final class PresenceMonitor: ObservableObject {
             let printURL = ownerURL.appendingPathComponent("owner_print.data")
             try? data?.write(to: printURL)
 
-            // Save owner photo preview
+            // Save owner photo preview for settings confirmation
             let photoURL = ownerURL.appendingPathComponent("owner.jpg")
             let bitmap = NSBitmapImageRep(cgImage: cgImage)
             if let jpg = bitmap.representation(using: .jpeg, properties: [:]) {
@@ -459,9 +637,12 @@ public final class PresenceMonitor: ObservableObject {
 
             self.coordinator.setOwnerFeaturePrint(obs)
             self.isOwnerEnrolled = true
-            PetState.shared.showBubble("Owner face enrolled successfully! ✨", duration: 3.0)
+            PetState.shared.showBubble("Owner profile saved! ✨", duration: 3.0)
             SoundEffect.success.play()
+            return (true, "Owner profile enrolled successfully!")
         }
+
+        return (false, "Could not generate facial feature print. Try with better lighting.")
     }
 
     public func resetOwnerProfile() {
@@ -471,6 +652,12 @@ public final class PresenceMonitor: ObservableObject {
         try? fileManager.removeItem(at: photoURL)
         self.coordinator.setOwnerFeaturePrint(nil)
         self.isOwnerEnrolled = false
+        PetState.shared.showBubble("Owner profile removed.", duration: 2.0)
+    }
+
+    public func getOwnerPhoto() -> NSImage? {
+        let photoURL = ownerURL.appendingPathComponent("owner.jpg")
+        return NSImage(contentsOf: photoURL)
     }
 
     private func loadOwnerProfile() {

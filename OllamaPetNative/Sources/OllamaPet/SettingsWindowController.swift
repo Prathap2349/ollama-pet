@@ -1710,6 +1710,7 @@ struct OllamaSettingsSection: View {
 struct PresenceSettingsSection: View {
     @ObservedObject var monitor = PresenceMonitor.shared
     @ObservedObject var dataManager = DataManager.shared
+    @State private var enrollmentStatusText: String = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -1799,32 +1800,95 @@ struct PresenceSettingsSection: View {
             .padding(14)
             .background(RoundedRectangle(cornerRadius: 12).fill(Color.primary.opacity(0.04)))
 
-            // Owner Profile Section
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Owner Verification")
+            // Performance Profile
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Monitoring Performance Profile")
                     .font(.system(size: 14, weight: .bold))
 
+                Picker("Performance Mode", selection: Binding(
+                    get: { monitor.performanceMode },
+                    set: { newMode in
+                        monitor.performanceMode = newMode
+                        dataManager.savedData.monitoringPerformanceMode = newMode.rawValue
+                        dataManager.saveData()
+                    }
+                )) {
+                    Text("Low Power").tag(MonitoringPerformanceMode.lowPower)
+                    Text("Balanced").tag(MonitoringPerformanceMode.balanced)
+                    Text("Responsive").tag(MonitoringPerformanceMode.responsive)
+                }
+                .pickerStyle(.segmented)
+
+                Text(performanceModeDescription)
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+            }
+            .padding(14)
+            .background(RoundedRectangle(cornerRadius: 12).fill(Color.primary.opacity(0.04)))
+
+            // Owner Profile Section
+            VStack(alignment: .leading, spacing: 10) {
                 HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(monitor.isOwnerEnrolled ? "🟢 Owner Enrolled" : "⚪ No Owner Enrolled")
-                            .font(.system(size: 12, weight: .semibold))
-                        Text(monitor.isOwnerEnrolled ? "Your facial feature print is stored locally. Unknown faces trigger presence alerts." : "Enroll your face so Ollama Pet recognizes you and distinguishes guests.")
+                    Text("Owner Verification")
+                        .font(.system(size: 14, weight: .bold))
+                    Spacer()
+                    Text(monitor.isOwnerEnrolled ? "🟢 Enrolled" : "⚪ Not Enrolled")
+                        .font(.system(size: 11, weight: .bold))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Capsule().fill(monitor.isOwnerEnrolled ? Color.green.opacity(0.15) : Color.secondary.opacity(0.15)))
+                        .foregroundColor(monitor.isOwnerEnrolled ? .green : .secondary)
+                }
+
+                Text(monitor.isOwnerEnrolled
+                    ? "Your facial feature print is stored securely on-device. Anyone else in front of your Mac will be treated as an unknown guest."
+                    : "No owner profile enrolled yet. Ollama Pet treats anyone present as an unverified person until you register your face.")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+
+                if !enrollmentStatusText.isEmpty {
+                    Text(enrollmentStatusText)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(enrollmentStatusText.contains("Ready") || enrollmentStatusText.contains("successfully") ? .green : .orange)
+                        .padding(6)
+                        .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.04)))
+                }
+
+                HStack(spacing: 10) {
+                    if monitor.isRunning {
+                        Button(action: {
+                            let check = monitor.checkEnrollmentEligibility()
+                            enrollmentStatusText = check.message
+                        }) {
+                            Text("Check Alignment")
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+
+                        Button(action: {
+                            let res = monitor.enrollCurrentFaceAsOwner()
+                            enrollmentStatusText = res.message
+                        }) {
+                            Text(monitor.isOwnerEnrolled ? "Replace Owner Profile" : "Enroll Current Face")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                    } else {
+                        Text("Start the monitor above to view live frame and enroll your face.")
                             .font(.system(size: 11))
                             .foregroundColor(.secondary)
                     }
+
                     Spacer()
+
                     if monitor.isOwnerEnrolled {
-                        Button("Reset Profile") {
+                        Button("Remove Profile") {
                             monitor.resetOwnerProfile()
+                            enrollmentStatusText = "Owner profile removed."
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
                     }
-                    Button("Enroll Current Face") {
-                        monitor.enrollCurrentFaceAsOwner()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
                 }
             }
             .padding(14)
@@ -1840,10 +1904,14 @@ struct PresenceSettingsSection: View {
                     set: { dataManager.savedData.presenceDwellAlertEnabled = $0; dataManager.saveData() }
                 ))
 
-                Toggle("Capture security snapshot of unknown person", isOn: Binding(
-                    get: { dataManager.savedData.presenceUnknownAlertEnabled ?? true },
+                Toggle("Save unknown-person security snapshots (OFF by default)", isOn: Binding(
+                    get: { dataManager.savedData.presenceUnknownAlertEnabled ?? false },
                     set: { dataManager.savedData.presenceUnknownAlertEnabled = $0; dataManager.saveData() }
                 ))
+
+                Text("When enabled, saves 1 discrete local snapshot per unknown encounter (max 20 FIFO, stored locally). Never uploaded to cloud.")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
             }
             .padding(14)
             .background(RoundedRectangle(cornerRadius: 12).fill(Color.primary.opacity(0.04)))
@@ -1860,7 +1928,7 @@ struct PresenceSettingsSection: View {
                     }
                     Spacer()
                     if monitor.snapshotCount > 0 {
-                        Button("Clear All") {
+                        Button("Delete All") {
                             monitor.clearAllSnapshots()
                         }
                         .buttonStyle(.bordered)
@@ -1876,16 +1944,30 @@ struct PresenceSettingsSection: View {
                         .padding(.vertical, 8)
                 } else {
                     ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
+                        HStack(spacing: 10) {
                             ForEach(snapshotURLs, id: \.self) { url in
                                 if let img = NSImage(contentsOf: url) {
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Image(nsImage: img)
-                                            .resizable()
-                                            .aspectRatio(contentMode: .fill)
-                                            .frame(width: 80, height: 60)
-                                            .cornerRadius(6)
-                                            .clipped()
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        ZStack(alignment: .topTrailing) {
+                                            Image(nsImage: img)
+                                                .resizable()
+                                                .aspectRatio(contentMode: .fill)
+                                                .frame(width: 90, height: 68)
+                                                .cornerRadius(6)
+                                                .clipped()
+
+                                            Button(action: {
+                                                monitor.deleteSnapshot(at: url)
+                                            }) {
+                                                Image(systemName: "trash.circle.fill")
+                                                    .font(.system(size: 16))
+                                                    .foregroundColor(.white)
+                                                    .background(Circle().fill(Color.black.opacity(0.6)))
+                                            }
+                                            .buttonStyle(.plain)
+                                            .padding(3)
+                                        }
+
                                         Text(url.lastPathComponent.replacingOccurrences(of: "snapshot_", with: "").replacingOccurrences(of: ".jpg", with: ""))
                                             .font(.system(size: 8, design: .monospaced))
                                             .foregroundColor(.secondary)
@@ -1900,16 +1982,35 @@ struct PresenceSettingsSection: View {
             .padding(14)
             .background(RoundedRectangle(cornerRadius: 12).fill(Color.primary.opacity(0.04)))
         }
+        .onAppear {
+            monitor.isLivePreviewRequested = true
+        }
+        .onDisappear {
+            monitor.isLivePreviewRequested = false
+        }
+    }
+
+    private var performanceModeDescription: String {
+        switch monitor.performanceMode {
+        case .lowPower:
+            return "Minimizes CPU/battery impact. Checks presence every 1.2–3.5s with maximum thermal throttling."
+        case .balanced:
+            return "Recommended. Balances reaction time with energy efficiency (0.7–2.5s adaptive interval)."
+        case .responsive:
+            return "Fastest reaction time (0.4–1.2s adaptive interval). Useful if you want immediate wake/sleep triggers."
+        }
     }
 
     private var statusColor: Color {
         switch monitor.presenceStatus {
         case .ownerPresent: return .green
+        case .personDetectedNoOwner: return .blue
+        case .uncertain, .noFace: return .yellow
         case .unknownDetected: return .orange
-        case .multipleDetected: return .yellow
+        case .multipleDetected: return .purple
         case .searching: return .cyan
         case .away: return .gray
-        case .cameraUnavailable, .idle: return .red
+        case .cameraUnavailable, .idle: return .secondary
         }
     }
 
@@ -1921,9 +2022,9 @@ struct PresenceSettingsSection: View {
         let x = r.minX * geo.size.width + w / 2.0
         let y = (1.0 - r.maxY) * geo.size.height + h / 2.0
         let isOwner = subj.isOwner
-        let color = isOwner ? Color.green : Color.orange
         let dwellSec = Int(subj.dwellDuration)
-        let label = isOwner ? "Owner 👤" : "Unknown (\(dwellSec)s)"
+        let label = !monitor.isOwnerEnrolled ? "Person (\(dwellSec)s)" : (isOwner ? "Owner 👤" : "Unknown (\(dwellSec)s)")
+        let color: Color = !monitor.isOwnerEnrolled ? .blue : (isOwner ? .green : .orange)
 
         ZStack(alignment: .top) {
             RoundedRectangle(cornerRadius: 6)

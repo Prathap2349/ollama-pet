@@ -8,7 +8,7 @@ public final class PresenceMonitorWindowController: NSWindowController, NSWindow
 
     private init() {
         let panel = NSPanel(
-            contentRect: NSRect(x: 100, y: 100, width: 180, height: 140),
+            contentRect: NSRect(x: 100, y: 100, width: 154, height: 146),
             styleMask: [.titled, .nonactivatingPanel, .hudWindow, .utilityWindow],
             backing: .buffered,
             defer: false
@@ -20,7 +20,7 @@ public final class PresenceMonitorWindowController: NSWindowController, NSWindow
         panel.hidesOnDeactivate = false
         panel.becomesKeyOnlyIfNeeded = true
         panel.isReleasedWhenClosed = false
-        panel.backgroundColor = NSColor(red: 15/255, green: 17/255, blue: 26/255, alpha: 0.95)
+        panel.backgroundColor = NSColor(red: 15/255, green: 17/255, blue: 26/255, alpha: 0.96)
         panel.hasShadow = true
 
         let rootView = PresenceWidgetView()
@@ -38,7 +38,7 @@ public final class PresenceMonitorWindowController: NSWindowController, NSWindow
 
     public func toggleWidget() {
         if window?.isVisible == true {
-            window?.orderOut(nil)
+            hideWidget()
         } else {
             showWidget()
         }
@@ -54,10 +54,24 @@ public final class PresenceMonitorWindowController: NSWindowController, NSWindow
 
     public func hideWidget() {
         window?.orderOut(nil)
+        PresenceMonitor.shared.isLivePreviewRequested = false
+    }
+
+    public func setExpanded(_ expanded: Bool) {
+        guard let window = self.window else { return }
+        let currentOrigin = window.frame.origin
+        let newSize = expanded ? NSSize(width: 250, height: 320) : NSSize(width: 154, height: 146)
+        let newFrame = NSRect(
+            x: currentOrigin.x,
+            y: currentOrigin.y - (newSize.height - window.frame.height),
+            width: newSize.width,
+            height: newSize.height
+        )
+        window.setFrame(newFrame, display: true, animate: true)
     }
 
     public func windowWillClose(_ notification: Notification) {
-        // Keep running in background if enabled in settings
+        PresenceMonitor.shared.isLivePreviewRequested = false
     }
 }
 
@@ -65,19 +79,36 @@ public final class PresenceMonitorWindowController: NSWindowController, NSWindow
 
 struct PresenceWidgetView: View {
     @ObservedObject var monitor = PresenceMonitor.shared
+    @State private var isExpanded: Bool = false
 
     var body: some View {
-        VStack(spacing: 6) {
-            // Header
+        VStack(spacing: 8) {
+            // Header bar
             HStack {
-                Circle()
-                    .fill(statusColor)
-                    .frame(width: 8, height: 8)
-                Text(monitor.presenceStatus.rawValue)
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
-                    .foregroundColor(.white)
-                    .lineLimit(1)
+                HStack(spacing: 5) {
+                    Circle()
+                        .fill(statusColor)
+                        .frame(width: 7, height: 7)
+                    Text(monitor.isRunning ? "LIVE" : "OFF")
+                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                        .foregroundColor(statusColor)
+                }
+
                 Spacer()
+
+                Button(action: {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        isExpanded.toggle()
+                        monitor.isLivePreviewRequested = isExpanded
+                        PresenceMonitorWindowController.shared.setExpanded(isExpanded)
+                    }
+                }) {
+                    Image(systemName: isExpanded ? "chevron.up.circle.fill" : "chevron.down.circle.fill")
+                        .font(.system(size: 12))
+                        .foregroundColor(Color.white.opacity(0.6))
+                }
+                .buttonStyle(.plain)
+
                 Button(action: {
                     PresenceMonitorWindowController.shared.hideWidget()
                 }) {
@@ -87,49 +118,57 @@ struct PresenceWidgetView: View {
                 }
                 .buttonStyle(.plain)
             }
-            .padding(.horizontal, 8)
-            .padding(.top, 6)
+            .padding(.horizontal, 10)
+            .padding(.top, 8)
 
-            // Mini Camera Frame Preview or Radar View
-            ZStack {
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(Color.black.opacity(0.6))
-                    .frame(height: 70)
-
-                if let img = monitor.latestPreviewImage {
-                    Image(nsImage: img)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .frame(height: 70)
-                        .clipped()
-                        .cornerRadius(8)
-                        .opacity(0.85)
-
-                    // Bounding boxes overlay
-                    GeometryReader { geo in
-                        ForEach(monitor.trackedSubjects) { subj in
-                            widgetBoundingBox(subj: subj, in: geo)
-                        }
-                    }
-                    .frame(height: 70)
-                } else {
-                    VStack(spacing: 3) {
-                        Image(systemName: "eye.fill")
-                            .font(.system(size: 16))
-                            .foregroundColor(statusColor)
-                        Text(monitor.isRunning ? "Scanning zone..." : "Monitor Inactive")
-                            .font(.system(size: 9))
-                            .foregroundColor(Color.white.opacity(0.5))
-                    }
-                }
+            if !isExpanded {
+                // COLLAPSED COMPANION SQUARE
+                collapsedBodyView
+            } else {
+                // EXPANDED CAMERA VIEW
+                expandedBodyView
             }
-            .padding(.horizontal, 8)
+        }
+        .padding(.bottom, 8)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(red: 15/255, green: 17/255, blue: 26/255))
+        .onDisappear {
+            monitor.isLivePreviewRequested = false
+        }
+    }
 
-            // Footer info: Subject count & Controls
+    // MARK: - Collapsed View (Zero Video Conversion Overhead)
+
+    private var collapsedBodyView: some View {
+        VStack(spacing: 6) {
+            Spacer(minLength: 0)
+
+            ZStack {
+                Circle()
+                    .stroke(statusColor.opacity(0.35), lineWidth: 3)
+                    .frame(width: 44, height: 44)
+
+                Image(systemName: centralStatusIcon)
+                    .font(.system(size: 20))
+                    .foregroundColor(statusColor)
+            }
+
+            Text(centralStatusTitle)
+                .font(.system(size: 10, weight: .bold, design: .rounded))
+                .foregroundColor(.white)
+                .lineLimit(1)
+
+            Text(centralStatusSubtitle)
+                .font(.system(size: 8, design: .rounded))
+                .foregroundColor(Color.white.opacity(0.6))
+                .lineLimit(1)
+
+            Spacer(minLength: 0)
+
             HStack {
-                Text("\(monitor.trackedSubjects.count) Subject\(monitor.trackedSubjects.count == 1 ? "" : "s")")
-                    .font(.system(size: 9, design: .monospaced))
-                    .foregroundColor(Color.white.opacity(0.7))
+                Text("\(monitor.trackedSubjects.count) Present")
+                    .font(.system(size: 8, design: .monospaced))
+                    .foregroundColor(Color.white.opacity(0.5))
 
                 Spacer()
 
@@ -141,31 +180,175 @@ struct PresenceWidgetView: View {
                     }
                 }) {
                     Text(monitor.isRunning ? "Pause" : "Start")
-                        .font(.system(size: 9, weight: .bold))
+                        .font(.system(size: 8, weight: .bold))
                         .foregroundColor(.white)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
-                        .background(
-                            Capsule().fill(monitor.isRunning ? Color.red.opacity(0.7) : Color.green.opacity(0.7))
-                        )
+                        .background(Capsule().fill(monitor.isRunning ? Color.orange.opacity(0.8) : Color.green.opacity(0.8)))
                 }
                 .buttonStyle(.plain)
             }
-            .padding(.horizontal, 8)
-            .padding(.bottom, 6)
+            .padding(.horizontal, 10)
         }
-        .frame(width: 180, height: 140)
-        .background(Color(red: 15/255, green: 17/255, blue: 26/255))
+    }
+
+    // MARK: - Expanded Detailed View
+
+    private var expandedBodyView: some View {
+        VStack(spacing: 8) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color.black.opacity(0.75))
+                    .frame(height: 140)
+
+                if let img = monitor.latestPreviewImage {
+                    Image(nsImage: img)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(height: 140)
+                        .cornerRadius(10)
+
+                    GeometryReader { geo in
+                        ForEach(monitor.trackedSubjects) { subj in
+                            widgetBoundingBox(subj: subj, in: geo)
+                        }
+                    }
+                    .frame(height: 140)
+                } else {
+                    VStack(spacing: 4) {
+                        ProgressView()
+                            .scaleEffect(0.7)
+                        Text("Activating camera feed...")
+                            .font(.system(size: 9))
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+            .padding(.horizontal, 10)
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text("Status:")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(.secondary)
+                    Text(monitor.presenceStatus.rawValue)
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(statusColor)
+                    Spacer()
+                }
+
+                HStack {
+                    Text("People nearby:")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(.secondary)
+                    Text("\(monitor.trackedSubjects.count)")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(.white)
+                    Spacer()
+                    if monitor.isOwnerEnrolled {
+                        Text("Profile Active ✓")
+                            .font(.system(size: 9))
+                            .foregroundColor(.green)
+                    } else {
+                        Text("Profile Not Set")
+                            .font(.system(size: 9))
+                            .foregroundColor(.orange)
+                    }
+                }
+            }
+            .padding(.horizontal, 12)
+
+            Spacer(minLength: 0)
+
+            HStack {
+                Button(action: {
+                    SettingsWindowController.shared.showTab(.presenceMonitor)
+                }) {
+                    Text("Settings...")
+                        .font(.system(size: 9))
+                        .foregroundColor(Color.white.opacity(0.8))
+                }
+                .buttonStyle(.plain)
+
+                Spacer()
+
+                Button(action: {
+                    if monitor.isRunning {
+                        monitor.stop()
+                    } else {
+                        monitor.start()
+                    }
+                }) {
+                    Text(monitor.isRunning ? "Stop Monitor" : "Resume Monitor")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Capsule().fill(monitor.isRunning ? Color.red.opacity(0.8) : Color.green.opacity(0.8)))
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 10)
+        }
+    }
+
+    // MARK: - UI Helpers
+
+    private var centralStatusIcon: String {
+        switch monitor.presenceStatus {
+        case .ownerPresent: return "person.crop.circle.badge.checkmark"
+        case .unknownDetected: return "person.crop.circle.badge.exclamationmark"
+        case .uncertain: return "person.crop.circle.badge.questionmark"
+        case .personDetectedNoOwner: return "person.crop.circle"
+        case .noFace: return "eye.slash.fill"
+        case .multipleDetected: return "person.2.fill"
+        case .searching: return "viewfinder"
+        case .away: return "moon.zzz.fill"
+        case .idle, .cameraUnavailable: return "video.slash.fill"
+        }
+    }
+
+    private var centralStatusTitle: String {
+        switch monitor.presenceStatus {
+        case .ownerPresent: return "OWNER"
+        case .unknownDetected: return "UNKNOWN"
+        case .uncertain: return "CHECKING"
+        case .personDetectedNoOwner: return "PERSON"
+        case .noFace: return "OBSCURED"
+        case .multipleDetected: return "MULTIPLE"
+        case .searching: return "SCANNING"
+        case .away: return "AWAY"
+        case .idle: return "PAUSED"
+        case .cameraUnavailable: return "CAMERA OFF"
+        }
+    }
+
+    private var centralStatusSubtitle: String {
+        switch monitor.presenceStatus {
+        case .ownerPresent: return "Verified Face"
+        case .unknownDetected: return "Unrecognized"
+        case .uncertain: return "Analyzing..."
+        case .personDetectedNoOwner: return "No Profile Set"
+        case .noFace: return "Turn toward camera"
+        case .multipleDetected: return "Group nearby"
+        case .searching: return "Looking for user"
+        case .away: return "No person seen"
+        case .idle: return "Monitoring off"
+        case .cameraUnavailable: return "Check permission"
+        }
     }
 
     private var statusColor: Color {
         switch monitor.presenceStatus {
         case .ownerPresent: return .green
         case .unknownDetected: return .orange
+        case .uncertain: return .yellow
+        case .personDetectedNoOwner: return .cyan
+        case .noFace: return .purple
         case .multipleDetected: return .yellow
         case .searching: return .cyan
         case .away: return .gray
-        case .cameraUnavailable, .idle: return .red
+        case .idle, .cameraUnavailable: return .red
         }
     }
 
@@ -176,7 +359,7 @@ struct PresenceWidgetView: View {
         let h = max(16.0, r.height * geo.size.height)
         let x = r.minX * geo.size.width + w / 2.0
         let y = (1.0 - r.maxY) * geo.size.height + h / 2.0
-        let color = subj.isOwner ? Color.green : Color.orange
+        let color = subj.isOwner ? Color.green : (subj.isUncertain ? Color.yellow : Color.orange)
 
         RoundedRectangle(cornerRadius: 4)
             .stroke(color, lineWidth: 2)

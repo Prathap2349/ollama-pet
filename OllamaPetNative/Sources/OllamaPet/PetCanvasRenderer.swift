@@ -422,54 +422,58 @@ public struct PetCanvasRenderer {
         let wave = CGFloat(snapshot.ghostWaveOffset)
         let crestSway = CGFloat(sin(snapshot.time * 2.8) * 4.0)
 
+        // Incorporate curious companion drift kinematics
+        let ghostX = center.x + snapshot.curiousDriftOffset.x
+        let ghostY = center.y + snapshot.curiousDriftOffset.y
+
         // 1. Ghost Cowl Crest Wisp / Ethereal Flame atop the head
         var crest = Path()
-        let crestTip = CGPoint(x: center.x + 6 + crestSway, y: center.y - 50)
-        crest.move(to: CGPoint(x: center.x - 7, y: center.y - 32))
+        let crestTip = CGPoint(x: ghostX + 7 + crestSway, y: ghostY - 50)
+        crest.move(to: CGPoint(x: ghostX - 8, y: ghostY - 32))
         crest.addCurve(to: crestTip,
-                       control1: CGPoint(x: center.x - 10, y: center.y - 42),
-                       control2: CGPoint(x: center.x - 2, y: center.y - 48))
-        crest.addCurve(to: CGPoint(x: center.x + 7, y: center.y - 32),
-                       control1: CGPoint(x: center.x + 12 + crestSway, y: center.y - 44),
-                       control2: CGPoint(x: center.x + 8, y: center.y - 38))
+                       control1: CGPoint(x: ghostX - 11, y: ghostY - 42),
+                       control2: CGPoint(x: ghostX - 2, y: ghostY - 49))
+        crest.addCurve(to: CGPoint(x: ghostX + 8, y: ghostY - 32),
+                       control1: CGPoint(x: ghostX + 13 + crestSway, y: ghostY - 44),
+                       control2: CGPoint(x: ghostX + 9, y: ghostY - 38))
         crest.closeSubpath()
         context.fill(crest, with: .color(primary.opacity(0.92)))
-        context.stroke(crest, with: .color(Color.white.opacity(0.7)), lineWidth: 1.2)
+        context.stroke(crest, with: .color(Color.white.opacity(0.75)), lineWidth: 1.2)
 
         // 2. Main Ghost Cowl & Flowing Body (Dome head, tapered waist, flowing outward)
         var ghost = Path()
-        let topCenter = CGPoint(x: center.x, y: center.y - 36)
+        let topCenter = CGPoint(x: ghostX, y: ghostY - 36)
 
         // Start left shoulder
-        ghost.move(to: CGPoint(x: center.x - 26, y: center.y - 8))
+        ghost.move(to: CGPoint(x: ghostX - 26, y: ghostY - 8))
         // Rounded Head Dome
-        ghost.addCurve(to: CGPoint(x: center.x + 26, y: center.y - 8),
-                       control1: CGPoint(x: center.x - 26, y: topCenter.y - 2),
-                       control2: CGPoint(x: center.x + 26, y: topCenter.y - 2))
+        ghost.addCurve(to: CGPoint(x: ghostX + 26, y: ghostY - 8),
+                       control1: CGPoint(x: ghostX - 26, y: topCenter.y - 2),
+                       control2: CGPoint(x: ghostX + 26, y: topCenter.y - 2))
         // Right flank extending downward into skirt
-        ghost.addCurve(to: CGPoint(x: center.x + 28, y: center.y + 18),
-                       control1: CGPoint(x: center.x + 27, y: center.y + 2),
-                       control2: CGPoint(x: center.x + 29, y: center.y + 10))
+        ghost.addCurve(to: CGPoint(x: ghostX + 28, y: ghostY + 18),
+                       control1: CGPoint(x: ghostX + 27, y: ghostY + 2),
+                       control2: CGPoint(x: ghostX + 29, y: ghostY + 10))
 
         // 3-Fold Flowing Scalloped Liquid Skirt (Left, Center, Right ripples)
-        let bY = center.y + 22
+        let bY = ghostY + 22
         // Right ripple fold
-        ghost.addCurve(to: CGPoint(x: center.x + 10, y: bY + wave * 0.8),
-                       control1: CGPoint(x: center.x + 25, y: bY + 8 + wave),
-                       control2: CGPoint(x: center.x + 16, y: bY + 4))
+        ghost.addCurve(to: CGPoint(x: ghostX + 10, y: bY + wave * 0.8),
+                       control1: CGPoint(x: ghostX + 25, y: bY + 8 + wave),
+                       control2: CGPoint(x: ghostX + 16, y: bY + 4))
         // Center ripple fold
-        ghost.addCurve(to: CGPoint(x: center.x - 10, y: bY - wave * 0.8),
-                       control1: CGPoint(x: center.x + 4, y: bY - 6),
-                       control2: CGPoint(x: center.x - 4, y: bY + 8 - wave))
+        ghost.addCurve(to: CGPoint(x: ghostX - 10, y: bY - wave * 0.8),
+                       control1: CGPoint(x: ghostX + 4, y: bY - 6),
+                       control2: CGPoint(x: ghostX - 4, y: bY + 8 - wave))
         // Left ripple fold
-        ghost.addCurve(to: CGPoint(x: center.x - 28, y: center.y + 18),
-                       control1: CGPoint(x: center.x - 18, y: bY + 4),
-                       control2: CGPoint(x: center.x - 26, y: bY + 7 - wave))
+        ghost.addCurve(to: CGPoint(x: ghostX - 28, y: ghostY + 18),
+                       control1: CGPoint(x: ghostX - 18, y: bY + 4),
+                       control2: CGPoint(x: ghostX - 26, y: bY + 7 - wave))
 
         // Left flank returning upward
-        ghost.addCurve(to: CGPoint(x: center.x - 26, y: center.y - 8),
-                       control1: CGPoint(x: center.x - 29, y: center.y + 10),
-                       control2: CGPoint(x: center.x - 27, y: center.y + 2))
+        ghost.addCurve(to: CGPoint(x: ghostX - 26, y: ghostY - 8),
+                       control1: CGPoint(x: ghostX - 29, y: ghostY + 10),
+                       control2: CGPoint(x: ghostX - 27, y: ghostY + 2))
         ghost.closeSubpath()
 
         // Ghost Base fill with subtle ethereal translucent gradient
@@ -478,44 +482,46 @@ public struct PetCanvasRenderer {
 
         // 3. Inner Ethereal Glow Core (Gives 3D volumetric depth)
         var innerCore = Path()
-        innerCore.move(to: CGPoint(x: center.x - 18, y: center.y - 6))
-        innerCore.addCurve(to: CGPoint(x: center.x + 18, y: center.y - 6),
-                           control1: CGPoint(x: center.x - 18, y: center.y - 28),
-                           control2: CGPoint(x: center.x + 18, y: center.y - 28))
-        innerCore.addQuadCurve(to: CGPoint(x: center.x, y: center.y + 14),
-                               control: CGPoint(x: center.x + 16, y: center.y + 10))
-        innerCore.addQuadCurve(to: CGPoint(x: center.x - 18, y: center.y - 6),
-                               control: CGPoint(x: center.x - 16, y: center.y + 10))
+        innerCore.move(to: CGPoint(x: ghostX - 18, y: ghostY - 6))
+        innerCore.addCurve(to: CGPoint(x: ghostX + 18, y: ghostY - 6),
+                           control1: CGPoint(x: ghostX - 18, y: ghostY - 28),
+                           control2: CGPoint(x: ghostX + 18, y: ghostY - 28))
+        innerCore.addQuadCurve(to: CGPoint(x: ghostX, y: ghostY + 14),
+                               control: CGPoint(x: ghostX + 16, y: ghostY + 10))
+        innerCore.addQuadCurve(to: CGPoint(x: ghostX - 18, y: ghostY - 6),
+                               control: CGPoint(x: ghostX - 16, y: ghostY + 10))
         innerCore.closeSubpath()
         context.fill(innerCore, with: .color(Color.white.opacity(0.22)))
 
-        // 4. Floating Wispy Arms / Mittens (Kinematic floating with wave offset)
+        // 4. Floating Wispy Arms / Mittens (Kinematic floating with wave offset & arm gestures)
         let armFloat = CGFloat(cos(snapshot.time * 2.5) * 3.0)
 
         // Left Arm Wisp
         var lArm = Path()
-        let lArmCenter = CGPoint(x: center.x - 30, y: center.y + 4 + armFloat)
-        lArm.move(to: CGPoint(x: center.x - 24, y: center.y))
+        let lArmCenter = CGPoint(x: ghostX - 30 + snapshot.armGestureOffset.x,
+                                 y: ghostY + 4 + armFloat + snapshot.armGestureOffset.y)
+        lArm.move(to: CGPoint(x: ghostX - 24, y: ghostY))
         lArm.addCurve(to: CGPoint(x: lArmCenter.x - 7, y: lArmCenter.y + 4),
-                      control1: CGPoint(x: center.x - 32, y: center.y - 2),
+                      control1: CGPoint(x: ghostX - 32, y: ghostY - 2),
                       control2: CGPoint(x: lArmCenter.x - 10, y: lArmCenter.y - 2))
-        lArm.addCurve(to: CGPoint(x: center.x - 22, y: center.y + 8),
+        lArm.addCurve(to: CGPoint(x: ghostX - 22, y: ghostY + 8),
                       control1: CGPoint(x: lArmCenter.x - 2, y: lArmCenter.y + 8),
-                      control2: CGPoint(x: center.x - 22, y: center.y + 8))
+                      control2: CGPoint(x: ghostX - 22, y: ghostY + 8))
         lArm.closeSubpath()
         context.fill(lArm, with: .color(primary.opacity(0.92)))
         context.stroke(lArm, with: .color(Color.white.opacity(0.75)), lineWidth: 1.2)
 
         // Right Arm Wisp
         var rArm = Path()
-        let rArmCenter = CGPoint(x: center.x + 30, y: center.y + 4 - armFloat)
-        rArm.move(to: CGPoint(x: center.x + 24, y: center.y))
+        let rArmCenter = CGPoint(x: ghostX + 30 - snapshot.armGestureOffset.x,
+                                 y: ghostY + 4 - armFloat + snapshot.armGestureOffset.y)
+        rArm.move(to: CGPoint(x: ghostX + 24, y: ghostY))
         rArm.addCurve(to: CGPoint(x: rArmCenter.x + 7, y: rArmCenter.y + 4),
-                      control1: CGPoint(x: center.x + 32, y: center.y - 2),
+                      control1: CGPoint(x: ghostX + 32, y: ghostY - 2),
                       control2: CGPoint(x: rArmCenter.x + 10, y: rArmCenter.y - 2))
-        rArm.addCurve(to: CGPoint(x: center.x + 22, y: center.y + 8),
+        rArm.addCurve(to: CGPoint(x: ghostX + 22, y: ghostY + 8),
                       control1: CGPoint(x: rArmCenter.x + 2, y: rArmCenter.y + 8),
-                      control2: CGPoint(x: center.x + 22, y: center.y + 8))
+                      control2: CGPoint(x: ghostX + 22, y: ghostY + 8))
         rArm.closeSubpath()
         context.fill(rArm, with: .color(primary.opacity(0.92)))
         context.stroke(rArm, with: .color(Color.white.opacity(0.75)), lineWidth: 1.2)
@@ -1066,29 +1072,48 @@ public struct PetCanvasRenderer {
                 var rArc = Path()
                 rArc.addArc(center: CGPoint(x: rightEyeX, y: eyeY), radius: 4.5, startAngle: .degrees(0), endAngle: .degrees(180), clockwise: false)
                 context.stroke(rArc, with: .color(Color(white: 0.15)), lineWidth: 2.0)
+            } else if animState == .dance {
+                // Happy curved squint arcs (^ ^)
+                var lArc = Path()
+                lArc.addArc(center: CGPoint(x: leftEyeX, y: eyeY + 1.5), radius: 4.5, startAngle: .degrees(180), endAngle: .degrees(360), clockwise: false)
+                context.stroke(lArc, with: .color(Color(white: 0.15)), lineWidth: 2.2)
+
+                var rArc = Path()
+                rArc.addArc(center: CGPoint(x: rightEyeX, y: eyeY + 1.5), radius: 4.5, startAngle: .degrees(180), endAngle: .degrees(360), clockwise: false)
+                context.stroke(rArc, with: .color(Color(white: 0.15)), lineWidth: 2.2)
             } else {
                 let openHeight = animState == .shock ? layout.eyeHeight * 1.3 : layout.eyeHeight
                 let h = max(1.5, openHeight * (1.0 - snapshot.blinkProgress))
                 let w = layout.eyeWidth
 
-                let lEye = Ellipse().path(in: CGRect(x: leftEyeX - w/2, y: gazeY - h/2, width: w, height: h))
-                let rEye = Ellipse().path(in: CGRect(x: rightEyeX - w/2, y: gazeY - h/2, width: w, height: h))
+                // Upward curious gaze during thinking
+                let finalGazeY = animState == .thinking ? gazeY - 2.0 : gazeY
+
+                let lEye = Ellipse().path(in: CGRect(x: leftEyeX - w/2, y: finalGazeY - h/2, width: w, height: h))
+                let rEye = Ellipse().path(in: CGRect(x: rightEyeX - w/2, y: finalGazeY - h/2, width: w, height: h))
                 context.fill(lEye, with: .color(Color(white: 0.12)))
                 context.fill(rEye, with: .color(Color(white: 0.12)))
 
                 // Inner spectral blue-cyan glow
                 if !isGrayscale && h > 4 {
-                    let lGlow = Ellipse().path(in: CGRect(x: leftEyeX - (w - 3)/2, y: gazeY - (h - 3)/2, width: w - 3, height: h - 3))
-                    let rGlow = Ellipse().path(in: CGRect(x: rightEyeX - (w - 3)/2, y: gazeY - (h - 3)/2, width: w - 3, height: h - 3))
+                    let lGlow = Ellipse().path(in: CGRect(x: leftEyeX - (w - 3)/2, y: finalGazeY - (h - 3)/2, width: w - 3, height: h - 3))
+                    let rGlow = Ellipse().path(in: CGRect(x: rightEyeX - (w - 3)/2, y: finalGazeY - (h - 3)/2, width: w - 3, height: h - 3))
                     context.fill(lGlow, with: .color(Color.cyan.opacity(0.25)))
                     context.fill(rGlow, with: .color(Color.cyan.opacity(0.25)))
                 }
 
                 if h > 3.5 {
-                    let lSpark = Circle().path(in: CGRect(x: leftEyeX - 1.5, y: gazeY - 2.5, width: 3, height: 3))
-                    let rSpark = Circle().path(in: CGRect(x: rightEyeX - 1.5, y: gazeY - 2.5, width: 3, height: 3))
+                    // Primary specular sparkle
+                    let lSpark = Circle().path(in: CGRect(x: leftEyeX - 1.5, y: finalGazeY - 2.5, width: 3, height: 3))
+                    let rSpark = Circle().path(in: CGRect(x: rightEyeX - 1.5, y: finalGazeY - 2.5, width: 3, height: 3))
                     context.fill(lSpark, with: .color(Color.white))
                     context.fill(rSpark, with: .color(Color.white))
+
+                    // Secondary twinkle sparkle
+                    let lSubSpark = Circle().path(in: CGRect(x: leftEyeX + 1.0, y: finalGazeY + 1.0, width: 1.5, height: 1.5))
+                    let rSubSpark = Circle().path(in: CGRect(x: rightEyeX + 1.0, y: finalGazeY + 1.0, width: 1.5, height: 1.5))
+                    context.fill(lSubSpark, with: .color(Color.white.opacity(0.85)))
+                    context.fill(rSubSpark, with: .color(Color.white.opacity(0.85)))
                 }
             }
 
@@ -1241,6 +1266,29 @@ public struct PetCanvasRenderer {
             let oMouth = Ellipse().path(in: CGRect(x: center.x - 3.5, y: mouthY - 3, width: 7, height: 8))
             context.fill(oMouth, with: .color(Color(white: 0.12)))
             return
+        }
+
+        if species == .ghost {
+            if animState == .dance {
+                // Open cheerful smile with pink tongue
+                var smile = Path()
+                smile.move(to: CGPoint(x: center.x - halfW - 1, y: mouthY))
+                smile.addQuadCurve(to: CGPoint(x: center.x + halfW + 1, y: mouthY), control: CGPoint(x: center.x, y: mouthY + 5.5))
+                smile.closeSubpath()
+                context.fill(smile, with: .color(Color(white: 0.15)))
+                if !isGrayscale {
+                    let tongue = Ellipse().path(in: CGRect(x: center.x - 2.5, y: mouthY + 2.0, width: 5, height: 3.5))
+                    context.fill(tongue, with: .color(Color.pink.opacity(0.85)))
+                }
+                return
+            } else if animState == .thinking {
+                // Curious small side curve / smirk
+                var curiousMouth = Path()
+                curiousMouth.move(to: CGPoint(x: center.x - halfW * 0.6, y: mouthY + 1))
+                curiousMouth.addQuadCurve(to: CGPoint(x: center.x + halfW, y: mouthY - 1.5), control: CGPoint(x: center.x + 1, y: mouthY + 2))
+                context.stroke(curiousMouth, with: .color(Color(white: 0.18)), lineWidth: 1.8)
+                return
+            }
         }
 
         var mouth = Path()

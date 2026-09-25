@@ -320,7 +320,7 @@ public class PetWindowController: NSObject, NSWindowDelegate {
     public func currentChatPanelRectInWindow() -> NSRect {
         guard let win = window, PetState.shared.isChatOpen else { return .zero }
         let petSize: CGFloat = 140
-        let width: CGFloat = 340
+        let width: CGFloat = 360
         let panelHeight: CGFloat = win.frame.height - petSize
         let localY: CGFloat = currentAnchor.isTop ? 0 : petSize
         return NSRect(x: 0, y: localY, width: width, height: panelHeight)
@@ -346,7 +346,7 @@ public class PetWindowController: NSObject, NSWindowDelegate {
             return NSRect(x: origin.x, y: origin.y, width: petSize, height: petSize)
         }
 
-        let width: CGFloat = 340
+        let width: CGFloat = 360
         let height: CGFloat = 620
 
         // Window origin is bottom-left corner of the window in screen coords

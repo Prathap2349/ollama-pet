@@ -13,6 +13,10 @@ public class PetState: ObservableObject {
     @Published public var streak: Int = 0
     @Published public var chatCount: Int = 0
 
+    public var level: Int {
+        return max(1, (streak * 2) + (chatCount / 5) + 1)
+    }
+
     @Published public var bubbleText: String = ""
     @Published public var isBubbleVisible: Bool = false
     @Published public var dreamText: String = ""
@@ -28,12 +32,32 @@ public class PetState: ObservableObject {
     // Companion Mode
     @Published public var companionMode: Bool = false
 
+    // Celebration Ring & Pulse
+    @Published public var isCelebrationPulsing: Bool = false
+    @Published public var celebrationPulseColor: Color = Color.yellow
+    private var celebrationTimer: Timer?
+
     private var bubbleTimer: Timer?
     private var dreamTimer: Timer?
     private var sleepTimer: Timer?
     private var animTimer: Timer?
 
     private let dreams = ["🍕", "🌈", "⭐", "🐟", "🎮", "🏖️", "🚀", "💤", "🌙", "🎵", "🍦", "🦋"]
+
+    public func triggerCelebration(color: Color = Color(red: 1.0, green: 0.85, blue: 0.2), duration: TimeInterval = 5.0) {
+        celebrationTimer?.invalidate()
+        isCelebrationPulsing = true
+        celebrationPulseColor = color
+        animState = .dance
+        celebrationTimer = Timer.scheduledTimer(withTimeInterval: duration, repeats: false) { [weak self] _ in
+            Task { @MainActor in
+                self?.isCelebrationPulsing = false
+                if self?.animState == .dance {
+                    self?.animState = .idle
+                }
+            }
+        }
+    }
 
     public init() {
         loadFromPersistence()

@@ -3,6 +3,7 @@ import AVFoundation
 import Vision
 import AppKit
 import Combine
+import SwiftUI
 
 // MARK: - Presence State & Models
 
@@ -21,6 +22,21 @@ public enum PresenceStatus: String {
     public var isPositive: Bool {
         return self == .ownerPresent
     }
+
+    public var displayIndicator: String {
+        switch self {
+        case .searching: return "● Scanning"
+        case .uncertain: return "🟡 Checking Face"
+        case .ownerPresent: return "🟢 Owner Verified"
+        case .unknownDetected: return "🔴 Unknown"
+        case .multipleDetected: return "👥 Multiple People"
+        case .away: return "💤 No Person Detected"
+        case .noFace: return "⚪ Face Obscured"
+        case .personDetectedNoOwner: return "👤 Person Detected"
+        case .cameraUnavailable: return "⚠️ Camera Unavailable"
+        case .idle: return "○ Camera Off"
+        }
+    }
 }
 
 public struct TrackedSubject: Identifiable {
@@ -37,6 +53,28 @@ public struct TrackedSubject: Identifiable {
 
     public var dwellDuration: TimeInterval {
         return lastSeen.timeIntervalSince(firstSeen)
+    }
+
+    public var recognitionBadge: String {
+        if isOwner {
+            return "🟢 Owner Verified"
+        } else if consecutiveOwnerMatches > 0 || isUncertain {
+            return "🟡 Checking Face"
+        } else {
+            return "🔴 Unknown"
+        }
+    }
+
+    public var statusDescription: String {
+        if isOwner {
+            return "Strong match · \(consecutiveOwnerMatches) confirmations"
+        } else if consecutiveOwnerMatches > 0 {
+            return "Possible match · \(consecutiveOwnerMatches) confirmation"
+        } else if isUncertain {
+            return "Checking face alignment..."
+        } else {
+            return "No owner match"
+        }
     }
 
     public init(
@@ -537,6 +575,7 @@ public final class PresenceMonitor: ObservableObject {
     private let coordinator = PresenceCaptureCoordinator()
     private var snapshotCooldownUntil: Date = Date.distantPast
     private var ownerFeaturePrints: [VNFeaturePrintObservation] = []
+    private var previousPresenceStatus: PresenceStatus = .idle
 
     // Internal Watchdog for Self-Healing (Zero Terminal / killall commands)
     private var watchdogTimer: Timer?
@@ -758,11 +797,31 @@ public final class PresenceMonitor: ObservableObject {
         self.trackedSubjects = subjects
         self.presenceStatus = status
 
-        // Connect presence status to Pet emotions
-        if status == .ownerPresent {
-            PetState.shared.setTemporaryMood(.happy, duration: 2.5)
-        } else if status == .unknownDetected {
-            PetState.shared.setTemporaryMood(.concerned, duration: 4.0)
+        // Connect presence status transitions to Pet emotions & reactions
+        if status != previousPresenceStatus {
+            let previous = previousPresenceStatus
+            previousPresenceStatus = status
+
+            let spokenAlerts = DataManager.shared.savedData.presenceSpokenAlertsEnabled ?? false
+
+            if status == .ownerPresent {
+                PetState.shared.setTemporaryMood(.happy, duration: 5.0)
+                PetState.shared.triggerCelebration(color: Color.green, duration: 3.0)
+                PetState.shared.showBubble("Welcome back! 🐾", duration: 3.5)
+                if spokenAlerts {
+                    VoiceAssistant.shared.speak(text: "Welcome back.")
+                }
+            } else if status == .unknownDetected && previous != .uncertain {
+                PetState.shared.setTemporaryMood(.concerned, duration: 5.0)
+                PetState.shared.triggerCelebration(color: Color.orange, duration: 2.0)
+                PetState.shared.showBubble("Hmm... I don't recognize this person. 👀", duration: 3.5)
+                if spokenAlerts {
+                    VoiceAssistant.shared.speak(text: "Unfamiliar person detected.")
+                }
+            } else if status == .multipleDetected {
+                PetState.shared.setTemporaryMood(.surprised, duration: 4.0)
+                PetState.shared.showBubble("I see multiple people. 👥", duration: 3.0)
+            }
         }
 
         // Dynamically tune sampling frequency based on presence state

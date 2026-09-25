@@ -387,8 +387,10 @@ public struct PetSavedData: Codable {
 
     // Focus Guardian Settings
     public var focusNotificationsEnabled: Bool?
+    public var speakFocusCompletionAloud: Bool? = false
     public var hydrationReminderEnabled: Bool?
     public var hydrationIntervalMinutes: Int? // default 60
+    public var presenceSpokenAlertsEnabled: Bool? = false
 
     // Multi-City Climate Vault
     public var weatherLocations: [SavedWeatherLocation] = []

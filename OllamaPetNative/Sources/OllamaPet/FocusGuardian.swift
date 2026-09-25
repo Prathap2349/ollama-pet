@@ -27,6 +27,15 @@ public class FocusGuardian: ObservableObject {
         }
     }
 
+    public var progress: Double {
+        guard sessionTotalSeconds > 0 else { return 0.0 }
+        return max(0.0, min(1.0, 1.0 - (Double(remainingSeconds) / Double(sessionTotalSeconds))))
+    }
+
+    public var isPaused: Bool {
+        return !isSessionActive && remainingSeconds < sessionTotalSeconds && remainingSeconds > 0
+    }
+
     private var sessionTimer: Timer?
     private var hydrationTimer: Timer?
     private var lastAwayNotificationDate: Date? = nil

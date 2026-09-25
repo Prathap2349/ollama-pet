@@ -28,7 +28,7 @@ struct PetStageView: View {
                         petStageArea
                     }
                 }
-                .frame(width: 340, height: 620)
+                .frame(width: 360, height: 620)
             } else {
                 // Closed state: exactly 140x140
                 petStageArea
@@ -36,7 +36,7 @@ struct PetStageView: View {
             }
         }
         .frame(
-            width: petState.isChatOpen ? 340 : 140,
+            width: petState.isChatOpen ? 360 : 140,
             height: petState.isChatOpen ? 620 : 140
         )
     }
@@ -57,6 +57,15 @@ struct PetStageView: View {
             }
 
             ZStack(alignment: .center) {
+                // Celebration Glowing Ring / Pulse
+                if petState.isCelebrationPulsing {
+                    Circle()
+                        .stroke(petState.celebrationPulseColor.opacity(0.85), lineWidth: 3.5)
+                        .frame(width: 122, height: 122)
+                        .shadow(color: petState.celebrationPulseColor, radius: 12, x: 0, y: 0)
+                        .scaleEffect(1.0 + CGFloat(sin(petState.animTime * 6.0)) * 0.05)
+                }
+
                 // High-Framerate Procedural Physics Canvas with Adaptive Refresh Rate
                 canvasView
 
@@ -169,7 +178,7 @@ struct PetStageView: View {
                 Spacer(minLength: 0)
             }
         }
-        .frame(width: petState.isChatOpen ? 340 : 140, height: 140)
+        .frame(width: petState.isChatOpen ? 360 : 140, height: 140)
     }
 
     private var canvasView: some View {

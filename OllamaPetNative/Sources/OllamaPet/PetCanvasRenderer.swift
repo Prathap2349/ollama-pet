@@ -41,6 +41,7 @@ public struct PetCanvasRenderer {
             species: species,
             model: model,
             animState: animState,
+            mood: mood,
             snapshot: snapshot,
             isGrayscale: perf.grayscaleTestMode
         )
@@ -100,6 +101,7 @@ public struct PetCanvasRenderer {
         species: PetSpecies,
         model: CharacterStructuralModel,
         animState: PetAnimState,
+        mood: PetMood = .happy,
         snapshot: AnimationSnapshot,
         isGrayscale: Bool
     ) {
@@ -132,8 +134,8 @@ public struct PetCanvasRenderer {
             drawCatAnatomy(context: &context, center: center, primary: primaryColor, belly: bellyColor, snapshot: snapshot)
 
         case .dragon:
-            // DRAGON (Ember): Large horns, wings, elongated snout, 4 legs with claws, long tail with spade
-            drawDragonAnatomy(context: &context, center: center, primary: primaryColor, secondary: secondaryColor, snapshot: snapshot)
+            // DRAGON (Ember): Fantasy dragon silhouette with large wings, horned dragon head, glowing chest core, claws, spade tail
+            drawDragonAnatomy(context: &context, center: center, primary: primaryColor, secondary: secondaryColor, mood: mood, snapshot: snapshot)
 
         case .robot:
             // ROBOT (ARIA): Mechanical rectangular head and torso, antenna, articulated limbs with joints, chest core (NOT an animal body!)
@@ -237,53 +239,212 @@ public struct PetCanvasRenderer {
     }
 
     // 2. DRAGON — EMBER (Distinct from cat: Horns, wings, elongated snout, claws, spade tail)
-    private static func drawDragonAnatomy(context: inout GraphicsContext, center: CGPoint, primary: Color, secondary: Color, snapshot: AnimationSnapshot) {
-        // Wings (behind body)
-        let wingSpan = CGFloat(snapshot.wingFlapAngle.degrees * 0.4)
+    // 2. DRAGON — EMBER (Full Fantasy Dragon Silhouette: Sweeping Horns, Obvious Wings, Glowing Chest Core, 4 Claws, Sinuous Spade Tail)
+    private static func drawDragonAnatomy(context: inout GraphicsContext, center: CGPoint, primary: Color, secondary: Color, mood: PetMood, snapshot: AnimationSnapshot) {
+        // Dynamic color palette based on mood
+        let bodyColor: Color
+        let wingColor: Color
+        let hornColor: Color
+        let coreColor: Color
+
+        switch mood {
+        case .happy:
+            bodyColor = Color(red: 0.86, green: 0.28, blue: 0.12)
+            wingColor = Color(red: 0.98, green: 0.58, blue: 0.16)
+            hornColor = Color(red: 1.0, green: 0.82, blue: 0.28)
+            coreColor = Color(red: 1.0, green: 0.90, blue: 0.40)
+        case .excited:
+            bodyColor = Color(red: 0.95, green: 0.26, blue: 0.08)
+            wingColor = Color(red: 1.0, green: 0.50, blue: 0.10)
+            hornColor = Color(red: 1.0, green: 0.86, blue: 0.25)
+            coreColor = Color(red: 1.0, green: 0.95, blue: 0.50)
+        case .angry:
+            bodyColor = Color(red: 0.65, green: 0.08, blue: 0.08)
+            wingColor = Color(red: 0.85, green: 0.18, blue: 0.08)
+            hornColor = Color(red: 0.45, green: 0.08, blue: 0.08)
+            coreColor = Color(red: 1.0, green: 0.35, blue: 0.10)
+        case .sleepy:
+            bodyColor = Color(red: 0.45, green: 0.12, blue: 0.25)
+            wingColor = Color(red: 0.35, green: 0.10, blue: 0.30)
+            hornColor = Color(red: 0.55, green: 0.35, blue: 0.45)
+            coreColor = Color(red: 0.60, green: 0.30, blue: 0.40).opacity(0.5)
+        case .proud:
+            bodyColor = Color(red: 0.78, green: 0.16, blue: 0.12)
+            wingColor = Color(red: 0.96, green: 0.60, blue: 0.15)
+            hornColor = Color(red: 1.0, green: 0.85, blue: 0.22)
+            coreColor = Color(red: 1.0, green: 0.90, blue: 0.30)
+        default:
+            bodyColor = Color(red: 0.74, green: 0.16, blue: 0.12) // deep crimson
+            wingColor = Color(red: 0.92, green: 0.46, blue: 0.14) // warm amber orange
+            hornColor = Color(red: 0.96, green: 0.74, blue: 0.22) // warm gold
+            coreColor = Color(red: 1.0, green: 0.78, blue: 0.22)
+        }
+
+        // 1. Two Large Obvious Dragon Wings (Behind body, with finger ribs & scalloped membrane)
+        let wingSpan = CGFloat(snapshot.wingFlapAngle.degrees * 0.55)
+        
+        // Left Wing
         var lWing = Path()
-        lWing.move(to: CGPoint(x: center.x - 16, y: center.y - 12))
-        lWing.addLine(to: CGPoint(x: center.x - 42, y: center.y - 34 + wingSpan))
-        lWing.addLine(to: CGPoint(x: center.x - 32, y: center.y - 8))
-        lWing.addLine(to: CGPoint(x: center.x - 20, y: center.y - 2))
+        let lElbow = CGPoint(x: center.x - 22, y: center.y - 20)
+        let lTip1 = CGPoint(x: center.x - 52, y: center.y - 44 + wingSpan)
+        let lTip2 = CGPoint(x: center.x - 48, y: center.y - 24 + wingSpan * 0.7)
+        let lTip3 = CGPoint(x: center.x - 34, y: center.y - 8 + wingSpan * 0.4)
+        lWing.move(to: CGPoint(x: center.x - 14, y: center.y - 6))
+        lWing.addLine(to: lElbow)
+        lWing.addLine(to: lTip1)
+        lWing.addQuadCurve(to: lTip2, control: CGPoint(x: center.x - 42, y: center.y - 32 + wingSpan * 0.8))
+        lWing.addQuadCurve(to: lTip3, control: CGPoint(x: center.x - 38, y: center.y - 14 + wingSpan * 0.5))
+        lWing.addQuadCurve(to: CGPoint(x: center.x - 18, y: center.y + 6), control: CGPoint(x: center.x - 24, y: center.y))
         lWing.closeSubpath()
-        context.fill(lWing, with: .color(secondary))
+        context.fill(lWing, with: .color(wingColor.opacity(0.88)))
+        context.stroke(lWing, with: .color(hornColor.opacity(0.6)), lineWidth: 1.2)
 
+        // Wing Struts / Bones (Left)
+        var lStruts = Path()
+        lStruts.move(to: lElbow)
+        lStruts.addLine(to: lTip1)
+        lStruts.move(to: lElbow)
+        lStruts.addLine(to: lTip2)
+        lStruts.move(to: lElbow)
+        lStruts.addLine(to: lTip3)
+        context.stroke(lStruts, with: .color(bodyColor), lineWidth: 1.5)
+
+        // Right Wing
         var rWing = Path()
-        rWing.move(to: CGPoint(x: center.x + 16, y: center.y - 12))
-        rWing.addLine(to: CGPoint(x: center.x + 42, y: center.y - 34 + wingSpan))
-        rWing.addLine(to: CGPoint(x: center.x + 32, y: center.y - 8))
-        rWing.addLine(to: CGPoint(x: center.x + 20, y: center.y - 2))
+        let rElbow = CGPoint(x: center.x + 22, y: center.y - 20)
+        let rTip1 = CGPoint(x: center.x + 52, y: center.y - 44 + wingSpan)
+        let rTip2 = CGPoint(x: center.x + 48, y: center.y - 24 + wingSpan * 0.7)
+        let rTip3 = CGPoint(x: center.x + 34, y: center.y - 8 + wingSpan * 0.4)
+        rWing.move(to: CGPoint(x: center.x + 14, y: center.y - 6))
+        rWing.addLine(to: rElbow)
+        rWing.addLine(to: rTip1)
+        rWing.addQuadCurve(to: rTip2, control: CGPoint(x: center.x + 42, y: center.y - 32 + wingSpan * 0.8))
+        rWing.addQuadCurve(to: rTip3, control: CGPoint(x: center.x + 38, y: center.y - 14 + wingSpan * 0.5))
+        rWing.addQuadCurve(to: CGPoint(x: center.x + 18, y: center.y + 6), control: CGPoint(x: center.x + 24, y: center.y))
         rWing.closeSubpath()
-        context.fill(rWing, with: .color(secondary))
+        context.fill(rWing, with: .color(wingColor.opacity(0.88)))
+        context.stroke(rWing, with: .color(hornColor.opacity(0.6)), lineWidth: 1.2)
 
-        // Robust Dragon Body
-        let bodyRect = CGRect(x: center.x - 28, y: center.y - 14, width: 56, height: 44)
-        context.fill(RoundedRectangle(cornerRadius: 16).path(in: bodyRect), with: .color(primary))
+        // Wing Struts / Bones (Right)
+        var rStruts = Path()
+        rStruts.move(to: rElbow)
+        rStruts.addLine(to: rTip1)
+        rStruts.move(to: rElbow)
+        rStruts.addLine(to: rTip2)
+        rStruts.move(to: rElbow)
+        rStruts.addLine(to: rTip3)
+        context.stroke(rStruts, with: .color(bodyColor), lineWidth: 1.5)
 
-        // Elongated Dragon Head & Snout
-        let headRect = CGRect(x: center.x - 24, y: center.y - 36, width: 48, height: 32)
-        context.fill(RoundedRectangle(cornerRadius: 12).path(in: headRect), with: .color(primary))
+        // 2. Long Sinuous Dragon Tail with 3-Pointed Flame/Spade Tip
+        var tail = Path()
+        let tailTip = CGPoint(x: center.x - 42 + CGFloat(snapshot.tailWagAngle.degrees * 0.45), y: center.y + 6)
+        tail.move(to: CGPoint(x: center.x - 22, y: center.y + 20))
+        tail.addCurve(to: tailTip,
+                      control1: CGPoint(x: center.x - 44, y: center.y + 32),
+                      control2: CGPoint(x: center.x - 52, y: center.y + 14))
+        context.stroke(tail, with: .color(bodyColor), lineWidth: 6.5)
 
-        // Snout extension
-        let snoutRect = CGRect(x: center.x - 16, y: center.y - 22, width: 32, height: 16)
-        context.fill(RoundedRectangle(cornerRadius: 8).path(in: snoutRect), with: .color(primary))
+        // Dragon Spade / Flame at tail tip
+        var spade = Path()
+        spade.move(to: tailTip)
+        spade.addLine(to: CGPoint(x: tailTip.x - 12, y: tailTip.y - 8))
+        spade.addLine(to: CGPoint(x: tailTip.x - 7, y: tailTip.y))
+        spade.addLine(to: CGPoint(x: tailTip.x - 14, y: tailTip.y + 8))
+        spade.addLine(to: CGPoint(x: tailTip.x - 2, y: tailTip.y + 4))
+        spade.closeSubpath()
+        context.fill(spade, with: .color(hornColor))
+        context.stroke(spade, with: .color(wingColor), lineWidth: 1.2)
 
-        // Horns
+        // 3. Robust Fantasy Dragon Body (Muscular torso)
+        let bodyRect = CGRect(x: center.x - 26, y: center.y - 12, width: 52, height: 44)
+        context.fill(RoundedRectangle(cornerRadius: 18).path(in: bodyRect), with: .color(bodyColor))
+
+        // 4. Segmented Dragon Ventral Belly Plates (Warm golden amber scutes)
+        for i in 0..<4 {
+            let scuteY = center.y - 2 + CGFloat(i * 8)
+            let scuteWidth: CGFloat = CGFloat(24 - i * 2)
+            let scuteRect = CGRect(x: center.x - scuteWidth / 2, y: scuteY, width: scuteWidth, height: 6)
+            context.fill(RoundedRectangle(cornerRadius: 3).path(in: scuteRect), with: .color(hornColor.opacity(0.85)))
+            context.stroke(RoundedRectangle(cornerRadius: 3).path(in: scuteRect), with: .color(Color.black.opacity(0.15)), lineWidth: 0.8)
+        }
+
+        // 5. Glowing Ember Chest Core (Radiant Diamond)
+        let coreY = center.y - 4
+        var coreDiamond = Path()
+        coreDiamond.move(to: CGPoint(x: center.x, y: coreY - 6))
+        coreDiamond.addLine(to: CGPoint(x: center.x + 6, y: coreY))
+        coreDiamond.addLine(to: CGPoint(x: center.x, y: coreY + 6))
+        coreDiamond.addLine(to: CGPoint(x: center.x - 6, y: coreY))
+        coreDiamond.closeSubpath()
+        context.fill(coreDiamond, with: .color(coreColor))
+        // Ambient core glow
+        let coreGlow = Circle().path(in: CGRect(x: center.x - 10, y: coreY - 10, width: 20, height: 20))
+        context.fill(coreGlow, with: .color(coreColor.opacity(0.35)))
+
+        // 6. Arched Dragon Neck & Head with Snout
+        var neck = Path()
+        neck.move(to: CGPoint(x: center.x - 16, y: center.y - 8))
+        neck.addLine(to: CGPoint(x: center.x - 20, y: center.y - 28))
+        neck.addLine(to: CGPoint(x: center.x + 20, y: center.y - 28))
+        neck.addLine(to: CGPoint(x: center.x + 16, y: center.y - 8))
+        neck.closeSubpath()
+        context.fill(neck, with: .color(bodyColor))
+
+        // Sculpted Dragon Head
+        let headRect = CGRect(x: center.x - 22, y: center.y - 38, width: 44, height: 28)
+        context.fill(RoundedRectangle(cornerRadius: 12).path(in: headRect), with: .color(bodyColor))
+
+        // Elongated Dragon Snout & Muzzle
+        let snoutRect = CGRect(x: center.x - 14, y: center.y - 22, width: 28, height: 14)
+        context.fill(RoundedRectangle(cornerRadius: 7).path(in: snoutRect), with: .color(bodyColor))
+
+        // Dragon Nostrils
+        let lNostril = Ellipse().path(in: CGRect(x: center.x - 8, y: center.y - 14, width: 3, height: 2.5))
+        let rNostril = Ellipse().path(in: CGRect(x: center.x + 5, y: center.y - 14, width: 3, height: 2.5))
+        context.fill(lNostril, with: .color(Color.black.opacity(0.6)))
+        context.fill(rNostril, with: .color(Color.black.opacity(0.6)))
+
+        // 7. Sweeping Dragon Horns (Curving backward & upward with golden ridge stripes)
         var lHorn = Path()
-        lHorn.move(to: CGPoint(x: center.x - 18, y: center.y - 32))
-        lHorn.addQuadCurve(to: CGPoint(x: center.x - 30, y: center.y - 52), control: CGPoint(x: center.x - 28, y: center.y - 42))
-        lHorn.addLine(to: CGPoint(x: center.x - 10, y: center.y - 32))
+        lHorn.move(to: CGPoint(x: center.x - 16, y: center.y - 34))
+        lHorn.addCurve(to: CGPoint(x: center.x - 34, y: center.y - 58),
+                       control1: CGPoint(x: center.x - 26, y: center.y - 42),
+                       control2: CGPoint(x: center.x - 36, y: center.y - 50))
+        lHorn.addCurve(to: CGPoint(x: center.x - 8, y: center.y - 36),
+                       control1: CGPoint(x: center.x - 28, y: center.y - 52),
+                       control2: CGPoint(x: center.x - 14, y: center.y - 44))
         lHorn.closeSubpath()
-        context.fill(lHorn, with: .color(secondary))
+        context.fill(lHorn, with: .color(hornColor))
+        context.stroke(lHorn, with: .color(Color(white: 0.15)), lineWidth: 1.0)
 
         var rHorn = Path()
-        rHorn.move(to: CGPoint(x: center.x + 10, y: center.y - 32))
-        rHorn.addQuadCurve(to: CGPoint(x: center.x + 30, y: center.y - 52), control: CGPoint(x: center.x + 28, y: center.y - 42))
-        rHorn.addLine(to: CGPoint(x: center.x + 18, y: center.y - 32))
+        rHorn.move(to: CGPoint(x: center.x + 8, y: center.y - 36))
+        rHorn.addCurve(to: CGPoint(x: center.x + 34, y: center.y - 58),
+                       control1: CGPoint(x: center.x + 14, y: center.y - 44),
+                       control2: CGPoint(x: center.x + 28, y: center.y - 52))
+        rHorn.addCurve(to: CGPoint(x: center.x + 16, y: center.y - 34),
+                       control1: CGPoint(x: center.x + 36, y: center.y - 50),
+                       control2: CGPoint(x: center.x + 26, y: center.y - 42))
         rHorn.closeSubpath()
-        context.fill(rHorn, with: .color(secondary))
+        context.fill(rHorn, with: .color(hornColor))
+        context.stroke(rHorn, with: .color(Color(white: 0.15)), lineWidth: 1.0)
 
-        // Dorsal spikes along back
+        // Smaller cheek frills/horns
+        var lFrill = Path()
+        lFrill.move(to: CGPoint(x: center.x - 20, y: center.y - 24))
+        lFrill.addLine(to: CGPoint(x: center.x - 30, y: center.y - 26))
+        lFrill.addLine(to: CGPoint(x: center.x - 22, y: center.y - 18))
+        lFrill.closeSubpath()
+        context.fill(lFrill, with: .color(hornColor.opacity(0.85)))
+
+        var rFrill = Path()
+        rFrill.move(to: CGPoint(x: center.x + 20, y: center.y - 24))
+        rFrill.addLine(to: CGPoint(x: center.x + 30, y: center.y - 26))
+        rFrill.addLine(to: CGPoint(x: center.x + 22, y: center.y - 18))
+        rFrill.closeSubpath()
+        context.fill(rFrill, with: .color(hornColor.opacity(0.85)))
+
+        // 8. Dorsal Spine Spikes along spine
         for i in 0..<3 {
             let sx = center.x - 8 + CGFloat(i * 8)
             var spike = Path()
@@ -291,29 +452,32 @@ public struct PetCanvasRenderer {
             spike.addLine(to: CGPoint(x: sx, y: center.y - 22))
             spike.addLine(to: CGPoint(x: sx + 3, y: center.y - 14))
             spike.closeSubpath()
-            context.fill(spike, with: .color(secondary))
+            context.fill(spike, with: .color(hornColor))
         }
 
-        // Long Dragon Tail with Spade Tip
-        var tail = Path()
-        let tailTip = CGPoint(x: center.x - 38 + CGFloat(snapshot.tailWagAngle.degrees * 0.4), y: center.y + 4)
-        tail.move(to: CGPoint(x: center.x - 24, y: center.y + 18))
-        tail.addQuadCurve(to: tailTip, control: CGPoint(x: center.x - 42, y: center.y + 24))
-        context.stroke(tail, with: .color(primary), lineWidth: 5.0)
+        // 9. Four Limbs with Sharp Talons
+        // Front Arms & Claws
+        let pawY = center.y + 16 + snapshot.pawOffset * 0.35
+        let lForearm = RoundedRectangle(cornerRadius: 3).path(in: CGRect(x: center.x - 22, y: pawY, width: 10, height: 12))
+        let rForearm = RoundedRectangle(cornerRadius: 3).path(in: CGRect(x: center.x + 12, y: pawY, width: 10, height: 12))
+        context.fill(lForearm, with: .color(bodyColor))
+        context.fill(rForearm, with: .color(bodyColor))
 
-        // Spade at tail tip
-        var spade = Path()
-        spade.move(to: tailTip)
-        spade.addLine(to: CGPoint(x: tailTip.x - 8, y: tailTip.y - 6))
-        spade.addLine(to: CGPoint(x: tailTip.x - 10, y: tailTip.y + 4))
-        spade.closeSubpath()
-        context.fill(spade, with: .color(secondary))
+        // Claws (3 sharp dark talons on each foot)
+        for i in 0..<3 {
+            let lx = center.x - 22 + CGFloat(i * 3)
+            let rx = center.x + 13 + CGFloat(i * 3)
+            let lTalon = Rectangle().path(in: CGRect(x: lx, y: pawY + 10, width: 2, height: 4))
+            let rTalon = Rectangle().path(in: CGRect(x: rx, y: pawY + 10, width: 2, height: 4))
+            context.fill(lTalon, with: .color(Color.black.opacity(0.85)))
+            context.fill(rTalon, with: .color(Color.black.opacity(0.85)))
+        }
 
-        // Claws/Legs
-        let lClaw = RoundedRectangle(cornerRadius: 3).path(in: CGRect(x: center.x - 20, y: center.y + 24, width: 14, height: 8))
-        let rClaw = RoundedRectangle(cornerRadius: 3).path(in: CGRect(x: center.x + 6, y: center.y + 24, width: 14, height: 8))
-        context.fill(lClaw, with: .color(primary))
-        context.fill(rClaw, with: .color(primary))
+        // Rear Crouching Haunches
+        let lHaunch = Capsule().path(in: CGRect(x: center.x - 28, y: center.y + 20, width: 12, height: 14))
+        let rHaunch = Capsule().path(in: CGRect(x: center.x + 16, y: center.y + 20, width: 12, height: 14))
+        context.fill(lHaunch, with: .color(bodyColor.opacity(0.95)))
+        context.fill(rHaunch, with: .color(bodyColor.opacity(0.95)))
     }
 
     // 3. ROBOT — ARIA (Mechanical rectangular head & body, articulated limbs with joints, chest core)

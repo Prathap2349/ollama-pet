@@ -1,6 +1,7 @@
 import Foundation
 import UserNotifications
 import AppKit
+import SwiftUI
 
 // MARK: - Native macOS Notification Scheduler
 
@@ -102,6 +103,13 @@ public class NotificationScheduler {
         checkAuthorization(completion: completion)
     }
 
+    public func getNotificationSettings(completion: @escaping (UNNotificationSettings) -> Void) {
+        guard Bundle.main.bundleIdentifier != nil else { return }
+        UNUserNotificationCenter.current().getNotificationSettings { settings in
+            completion(settings)
+        }
+    }
+
     public func sendTestNotification(completion: ((Bool) -> Void)? = nil) {
         guard Bundle.main.bundleIdentifier != nil else {
             postImmediate(title: "🐾 Ollama Pet Test", body: "Notifications are active and working properly!")
@@ -146,17 +154,27 @@ public class NotificationScheduler {
 
         let mins = max(1, durationSeconds / 60)
 
-        // 2. Trigger Pet expressive emotion, bubble, and audio feedback
+        // 2. Trigger Pet expressive emotion, celebration pulse, audio & haptic feedback
         DispatchQueue.main.async {
             PetState.shared.setTemporaryMood(.proud, duration: 8.0)
-            PetState.shared.showBubble("🎉 Focus complete! Your \(mins)-minute session is finished. Nice work! ❤️", duration: 5.0)
+            PetState.shared.triggerCelebration(color: Color(red: 1.0, green: 0.85, blue: 0.2), duration: 5.0)
+            PetState.shared.showBubble("🎉 Focus complete! Your \(mins)m focus time is finished. Great job!", duration: 5.5)
             SoundEffect.receive.play()
+
+            // Optional spoken announcement if enabled by user
+            let speakEnabled = DataManager.shared.savedData.speakFocusCompletionAloud ?? false
+            if speakEnabled {
+                VoiceAssistant.shared.speak(text: "Your focus time is finished. Great job. Take a short break.")
+            }
+
+            // Safe macOS haptic feedback if available
+            NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .default)
         }
 
         // 3. Dispatch authoritative native notification exactly once
         postImmediate(
             title: "🎯 Focus Complete",
-            body: "Great job! Your \(mins)-minute focus session is finished. Take a well-deserved break!"
+            body: "Your \(mins)-minute focus session is finished. Nice work! ❤️"
         )
     }
 

@@ -2,6 +2,7 @@ import Foundation
 import AppKit
 import SwiftUI
 import ServiceManagement
+import UserNotifications
 
 // MARK: - Dedicated Settings Window Controller
 
@@ -86,7 +87,7 @@ public enum SettingsGroup: String, CaseIterable, Identifiable {
         case .presence:
             return [.presenceMonitor, .screen, .focus]
         case .privacyAndSystem:
-            return [.permissions, .privacy]
+            return [.notifications, .permissions, .privacy]
         }
     }
 }
@@ -105,6 +106,7 @@ public enum SettingsTab: String, CaseIterable, Identifiable {
     case presenceMonitor = "Presence Monitor"
     case screen = "Screen Awareness"
     case focus = "Focus & Health"
+    case notifications = "Notifications"
     case permissions = "Permissions & Security"
     case privacy = "Privacy & Telemetry"
 
@@ -125,6 +127,7 @@ public enum SettingsTab: String, CaseIterable, Identifiable {
         case .presenceMonitor: return "person.crop.rectangle.badge.plus"
         case .screen: return "display"
         case .focus: return "brain.head.profile"
+        case .notifications: return "bell.badge.fill"
         case .permissions: return "lock.shield.fill"
         case .privacy: return "hand.raised.fill"
         }
@@ -257,30 +260,32 @@ public struct SettingsRow<Trailing: View>: View {
 }
 
 public struct SettingsToggleRow: View {
+    public let icon: String?
+    public let iconColor: Color
     public let title: String
     public let subtitle: String?
     public let binding: Binding<Bool>
 
-    public init(title: String, subtitle: String? = nil, isOn: Binding<Bool>) {
+    public init(
+        icon: String? = nil,
+        iconColor: Color = .accentColor,
+        title: String,
+        subtitle: String? = nil,
+        isOn: Binding<Bool>
+    ) {
+        self.icon = icon
+        self.iconColor = iconColor
         self.title = title
         self.subtitle = subtitle
         self.binding = isOn
     }
 
     public var body: some View {
-        Toggle(isOn: binding) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.system(size: 13, weight: .medium))
-                if let subtitle = subtitle {
-                    Text(subtitle)
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
+        SettingsRow(icon: icon, iconColor: iconColor, title: title, subtitle: subtitle) {
+            Toggle("", isOn: binding)
+                .labelsHidden()
+                .toggleStyle(.switch)
         }
-        .toggleStyle(.switch)
     }
 }
 
@@ -534,6 +539,8 @@ public struct SettingsContainerView: View {
                             ScreenSettingsSection()
                         case .focus:
                             FocusSettingsSection()
+                        case .notifications:
+                            NotificationSettingsSection()
                         case .privacy:
                             PrivacySettingsSection()
                         }
@@ -931,48 +938,40 @@ struct AnimationSettingsSection: View {
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
 
-                VStack(spacing: 10) {
-                    Toggle(isOn: $perf.dynamicLightingEnabled) {
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text("Dynamic Radial Lighting")
-                                .font(.system(size: 12, weight: .semibold))
-                            Text("Adds soft directional aura and rim glow.")
-                                .font(.system(size: 10))
-                                .foregroundColor(.secondary)
-                        }
-                    }
+                VStack(spacing: 8) {
+                    SettingsToggleRow(
+                        icon: "sun.max.fill",
+                        iconColor: .orange,
+                        title: "Dynamic Radial Lighting",
+                        subtitle: "Adds soft directional aura and rim glow.",
+                        isOn: $perf.dynamicLightingEnabled
+                    )
                     Divider()
-                    Toggle(isOn: $perf.weatherEffectsEnabled) {
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text("Weather Atmospheric Effects")
-                                .font(.system(size: 12, weight: .semibold))
-                            Text("Renders raindrops, flurries, and golden hour particles.")
-                                .font(.system(size: 10))
-                                .foregroundColor(.secondary)
-                        }
-                    }
+                    SettingsToggleRow(
+                        icon: "cloud.sun.rain.fill",
+                        iconColor: .cyan,
+                        title: "Weather Atmospheric Effects",
+                        subtitle: "Renders raindrops, flurries, and golden hour particles.",
+                        isOn: $perf.weatherEffectsEnabled
+                    )
                     Divider()
-                    Toggle(isOn: $perf.cpuReactiveGlowEnabled) {
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text("CPU Thermal Reactive Glow")
-                                .font(.system(size: 12, weight: .semibold))
-                            Text("Pulsates companion aura when CPU usage spikes above 40%.")
-                                .font(.system(size: 10))
-                                .foregroundColor(.secondary)
-                        }
-                    }
+                    SettingsToggleRow(
+                        icon: "flame.fill",
+                        iconColor: .red,
+                        title: "CPU Thermal Reactive Glow",
+                        subtitle: "Pulsates companion aura when CPU usage spikes above 40%.",
+                        isOn: $perf.cpuReactiveGlowEnabled
+                    )
                     Divider()
-                    Toggle(isOn: $perf.particlesEnabled) {
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text("Floating Thought Particles")
-                                .font(.system(size: 12, weight: .semibold))
-                            Text("Floating sparks while LLM responses are streaming.")
-                                .font(.system(size: 10))
-                                .foregroundColor(.secondary)
-                        }
-                    }
+                    SettingsToggleRow(
+                        icon: "sparkles",
+                        iconColor: .yellow,
+                        title: "Floating Thought Particles",
+                        subtitle: "Floating sparks while LLM responses are streaming.",
+                        isOn: $perf.particlesEnabled
+                    )
                 }
-                .padding(12)
+                .padding(14)
                 .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
 
                 HStack {
@@ -1602,6 +1601,41 @@ struct PresenceSettingsSection: View {
                         }
                     }
                 }
+
+                if !monitor.trackedSubjects.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(monitor.trackedSubjects.count > 1 ? "👥 Multiple Subjects Detected (\(monitor.trackedSubjects.count))" : "👤 Detected Subject")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundColor(.secondary)
+
+                        ForEach(Array(monitor.trackedSubjects.enumerated()), id: \.element.id) { idx, subj in
+                            HStack(spacing: 8) {
+                                Circle()
+                                    .fill(subj.isOwner ? Color.green : (!monitor.isOwnerEnrolled ? Color.blue : Color.orange))
+                                    .frame(width: 8, height: 8)
+
+                                Text("Person \(idx + 1):")
+                                    .font(.system(size: 12, weight: .bold))
+
+                                Text(subj.statusDescription)
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.secondary)
+
+                                Spacer()
+
+                                Text(subj.recognitionBadge)
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Capsule().fill(Color.primary.opacity(0.08)))
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.03)))
+                        }
+                    }
+                    .padding(.top, 4)
+                }
             }
             .padding(14)
             .background(RoundedRectangle(cornerRadius: 12).fill(Color.primary.opacity(0.04)))
@@ -1710,6 +1744,11 @@ struct PresenceSettingsSection: View {
                 Toggle("Alert when unknown person stays near Mac > 5s", isOn: Binding(
                     get: { dataManager.savedData.presenceDwellAlertEnabled ?? true },
                     set: { dataManager.savedData.presenceDwellAlertEnabled = $0; dataManager.saveData() }
+                ))
+
+                Toggle("Pet Voice Announcements (Speak companion alerts aloud when presence changes)", isOn: Binding(
+                    get: { dataManager.savedData.presenceSpokenAlertsEnabled ?? false },
+                    set: { dataManager.savedData.presenceSpokenAlertsEnabled = $0; dataManager.saveData() }
                 ))
 
                 Toggle("Save unknown-person security snapshots (OFF by default)", isOn: Binding(
@@ -2773,3 +2812,261 @@ struct ActionHistorySettingsSection: View {
         }
     }
 }
+
+// MARK: - Notifications Settings Section
+
+struct NotificationSettingsSection: View {
+    @ObservedObject var dataManager = DataManager.shared
+    @State private var authStatus: UNAuthorizationStatus = .notDetermined
+    @State private var isTesting: Bool = false
+    @State private var testResult: String? = nil
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            // Header
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Notifications & Alerts")
+                    .font(.system(size: 18, weight: .bold))
+                Text("Manage native macOS banner notifications, speech alerts, and companion reminder schedules.")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+            }
+
+            // 1. Status Card & System Permission
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 12) {
+                    Circle()
+                        .fill(statusColor)
+                        .frame(width: 10, height: 10)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(statusTitle)
+                            .font(.system(size: 13, weight: .semibold))
+                        Text(statusDescription)
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    if authStatus == .denied {
+                        Button("Open macOS Settings") {
+                            openSystemNotificationSettings()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                    } else if authStatus == .notDetermined {
+                        Button("Allow Notifications") {
+                            NotificationScheduler.shared.requestAuthorization { _ in
+                                refreshStatus()
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                    }
+                }
+
+                if authStatus == .denied {
+                    HStack(spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundColor(.red)
+                        Text("Notifications are disabled in macOS System Settings. Open System Settings > Notifications > Ollama Pet to enable.")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(.red)
+                    }
+                    .padding(10)
+                    .background(RoundedRectangle(cornerRadius: 6).fill(Color.red.opacity(0.1)))
+                }
+            }
+            .padding(14)
+            .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
+
+            // 2. Test Notification Action
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Verification & Diagnostics")
+                    .font(.system(size: 13, weight: .bold))
+
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Send Test Notification")
+                            .font(.system(size: 13, weight: .medium))
+                        Text("Dispatches an immediate notification banner to verify macOS delivery.")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    Button(isTesting ? "Sending..." : "Send Test Notification") {
+                        isTesting = true
+                        testResult = nil
+                        NotificationScheduler.shared.sendTestNotification { success in
+                            isTesting = false
+                            testResult = success ? "✓ Notification delivered successfully" : "⚠️ Failed to post. Check Do Not Disturb / Focus."
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(isTesting)
+                }
+
+                if let res = testResult {
+                    Text(res)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(res.hasPrefix("✓") ? .green : .orange)
+                        .padding(.top, 2)
+                }
+            }
+            .padding(14)
+            .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
+
+            // 3. Notification Category Checklist
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Active Notification Checklist")
+                    .font(.system(size: 13, weight: .bold))
+
+                VStack(spacing: 8) {
+                    notificationTypeRow(
+                        icon: "target",
+                        iconColor: .purple,
+                        title: "Focus Session Completions",
+                        subtitle: "Celebrates session completion, plays tone, and shows finish stats.",
+                        isActive: true
+                    )
+                    Divider()
+                    notificationTypeRow(
+                        icon: "drop.fill",
+                        iconColor: .blue,
+                        title: "Hydration & Health Breaks",
+                        subtitle: "Alerts you to take regular screen breaks and drink water.",
+                        isActive: dataManager.savedData.hydrationReminderEnabled ?? true
+                    )
+                    Divider()
+                    notificationTypeRow(
+                        icon: "clock.badge.checkmark",
+                        iconColor: .orange,
+                        title: "Companion Reminders",
+                        subtitle: "Dispatches scheduled reminders set via chat or Voice Assistant.",
+                        isActive: true
+                    )
+                    Divider()
+                    notificationTypeRow(
+                        icon: "person.crop.rectangle.badge.plus",
+                        iconColor: .green,
+                        title: "Presence & Security Alerts",
+                        subtitle: "Notifies when an unrecognized person lingers near your Mac.",
+                        isActive: dataManager.savedData.presenceDwellAlertEnabled ?? true
+                    )
+                }
+            }
+            .padding(14)
+            .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
+
+            // 4. Spoken Announcements & Audio
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Companion Spoken Announcements")
+                    .font(.system(size: 13, weight: .bold))
+
+                VStack(spacing: 8) {
+                    SettingsToggleRow(
+                        icon: "speaker.wave.2.fill",
+                        iconColor: .indigo,
+                        title: "Speak Focus Completion Aloud",
+                        subtitle: "Pet warmly announces when your focus session timer expires.",
+                        isOn: Binding(
+                            get: { dataManager.savedData.speakFocusCompletionAloud ?? false },
+                            set: { dataManager.savedData.speakFocusCompletionAloud = $0; dataManager.saveData() }
+                        )
+                    )
+                    Divider()
+                    SettingsToggleRow(
+                        icon: "person.wave.2.fill",
+                        iconColor: .teal,
+                        title: "Speak Presence Alerts Aloud",
+                        subtitle: "Pet vocalizes welcome greetings or unrecognized presence alerts.",
+                        isOn: Binding(
+                            get: { dataManager.savedData.presenceSpokenAlertsEnabled ?? false },
+                            set: { dataManager.savedData.presenceSpokenAlertsEnabled = $0; dataManager.saveData() }
+                        )
+                    )
+                }
+            }
+            .padding(14)
+            .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
+        }
+        .onAppear {
+            refreshStatus()
+        }
+    }
+
+    private func refreshStatus() {
+        NotificationScheduler.shared.checkAuthorization { status in
+            DispatchQueue.main.async {
+                self.authStatus = status
+            }
+        }
+    }
+
+    private func openSystemNotificationSettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.notifications") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    private var statusColor: Color {
+        switch authStatus {
+        case .authorized, .provisional: return .green
+        case .denied: return .red
+        case .notDetermined: return .orange
+        @unknown default: return .secondary
+        }
+    }
+
+    private var statusTitle: String {
+        switch authStatus {
+        case .authorized, .provisional: return "macOS Notifications Enabled"
+        case .denied: return "macOS Notifications Disabled"
+        case .notDetermined: return "Notification Permission Not Determined"
+        @unknown default: return "Notification Status Unknown"
+        }
+    }
+
+    private var statusDescription: String {
+        switch authStatus {
+        case .authorized, .provisional:
+            return "Ollama Pet has full permission to send system notification alerts and sound tones."
+        case .denied:
+            return "Alerts are blocked by system settings. Open macOS Settings to grant notification access."
+        case .notDetermined:
+            return "Grant permission so companion can alert you about focus sessions and reminders."
+        @unknown default:
+            return "System notification permission state is unavailable."
+        }
+    }
+
+    private func notificationTypeRow(icon: String, iconColor: Color, title: String, subtitle: String, isActive: Bool) -> some View {
+        HStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(iconColor.opacity(0.12))
+                    .frame(width: 28, height: 28)
+                Image(systemName: icon)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(iconColor)
+            }
+            .frame(width: 28, height: 28)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 13, weight: .medium))
+                Text(subtitle)
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+            }
+            Spacer()
+            Text(isActive ? "Active" : "Disabled")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundColor(isActive ? .green : .secondary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(Capsule().fill(isActive ? Color.green.opacity(0.12) : Color.secondary.opacity(0.12)))
+        }
+        .padding(.vertical, 2)
+    }
+}
+

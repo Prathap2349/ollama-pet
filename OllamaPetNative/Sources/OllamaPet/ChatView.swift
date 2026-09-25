@@ -66,15 +66,15 @@ struct ChatView: View {
             ActionConfirmationView()
         }
         .animation(.easeInOut(duration: 0.18), value: petState.activeTab)
-        .frame(width: 320, height: 460)
+        .frame(width: 360, height: 466)
         .background(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: 20)
                 .fill(Color(red: 15/255, green: 17/255, blue: 26/255).opacity(0.96))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 16)
-                        .stroke(petState.currentSpecies.accentColor.opacity(0.4), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: 20)
+                        .stroke(petState.currentSpecies.accentColor.opacity(0.35), lineWidth: 1)
                 )
-                .shadow(color: Color.black.opacity(0.6), radius: 16, x: 0, y: 8)
+                .shadow(color: Color.black.opacity(0.6), radius: 18, x: 0, y: 8)
         )
         .onAppear {
             loadMessages()
@@ -86,17 +86,15 @@ struct ChatView: View {
 
     // MARK: - Header Bar
     private var headerBar: some View {
-        VStack(spacing: 5) {
+        VStack(spacing: 6) {
             HStack(spacing: 8) {
-                HStack(spacing: 5) {
+                HStack(spacing: 6) {
                     Text(petState.currentSpecies.icon)
-                        .font(.system(size: 13))
+                        .font(.system(size: 14))
                     Text("Ollama Pet")
                         .font(.system(size: 12, weight: .bold))
                         .foregroundColor(.white)
                 }
-
-                Spacer()
 
                 HStack(spacing: 5) {
                     Circle()
@@ -108,7 +106,7 @@ struct ChatView: View {
                         .foregroundColor(Color.white.opacity(0.85))
                         .lineLimit(1)
                 }
-                .padding(.horizontal, 6)
+                .padding(.horizontal, 7)
                 .padding(.vertical, 3)
                 .background(Capsule().fill(Color.white.opacity(0.08)))
 
@@ -128,56 +126,52 @@ struct ChatView: View {
                     .buttonStyle(.plain)
                 }
 
+                Spacer()
+
+                Button(action: {
+                    SettingsWindowController.shared.showWindow()
+                    SoundEffect.click.play()
+                }) {
+                    Image(systemName: "gearshape.fill")
+                        .foregroundColor(Color.white.opacity(0.65))
+                        .font(.system(size: 13))
+                }
+                .buttonStyle(.plain)
+                .help("Settings")
+
                 Button(action: {
                     PetWindowController.shared.closePanel()
                 }) {
                     Image(systemName: "xmark.circle.fill")
-                        .foregroundColor(Color.white.opacity(0.5))
-                        .font(.system(size: 13))
+                        .foregroundColor(Color.white.opacity(0.55))
+                        .font(.system(size: 14))
                 }
                 .buttonStyle(.plain)
                 .help("Close Panel")
             }
-            .padding(.horizontal, 12)
-            .padding(.top, 9)
+            .padding(.horizontal, 14)
+            .padding(.top, 10)
 
             // Tabs Selector
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
                     if dataManager.isFeatureVisible("chat") {
-                        tabButton(title: "Chat", id: "chat", icon: "bubble.left")
+                        tabButton(title: "Chat", id: "chat", icon: "bubble.left.fill")
                     }
                     if dataManager.isFeatureVisible("remind") {
-                        tabButton(title: "Remind", id: "remind", icon: "clock")
-                    }
-                    if dataManager.isFeatureVisible("weather") {
-                        tabButton(title: "Weather", id: "weather", icon: "cloud.sun")
+                        tabButton(title: "Reminders", id: "remind", icon: "clock.fill")
                     }
                     if dataManager.isFeatureVisible("game") {
-                        tabButton(title: "Focus & Audio", id: "game", icon: "headphones")
+                        tabButton(title: "Focus", id: "game", icon: "target")
+                    }
+                    if dataManager.isFeatureVisible("weather") {
+                        tabButton(title: "Weather", id: "weather", icon: "cloud.sun.fill")
                     }
                     if dataManager.isFeatureVisible("system") {
-                        tabButton(title: "System", id: "system", icon: "cpu")
+                        tabButton(title: "System", id: "system", icon: "cpu.fill")
                     }
-                    Button(action: {
-                        SettingsWindowController.shared.showWindow()
-                        SoundEffect.click.play()
-                    }) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "gearshape")
-                                .font(.system(size: 10))
-                            Text("Settings")
-                                .font(.system(size: 11, weight: .semibold))
-                        }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color.white.opacity(0.08))
-                        .cornerRadius(8)
-                        .foregroundColor(Color.white.opacity(0.7))
-                    }
-                    .buttonStyle(.plain)
                 }
-                .padding(.horizontal, 10)
+                .padding(.horizontal, 12)
                 .padding(.vertical, 4)
             }
         }
@@ -204,13 +198,13 @@ struct ChatView: View {
             dataManager.saveData()
             SoundEffect.click.play()
         }) {
-            HStack(spacing: 4) {
+            HStack(spacing: 5) {
                 Image(systemName: icon)
                     .font(.system(size: 10))
                 Text(title)
                     .font(.system(size: 11, weight: .semibold))
             }
-            .padding(.horizontal, 8)
+            .padding(.horizontal, 9)
             .padding(.vertical, 4)
             .background(
                 petState.activeTab == id
@@ -220,7 +214,7 @@ struct ChatView: View {
             .cornerRadius(8)
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
-                    .stroke(petState.activeTab == id ? petState.currentSpecies.accentColor.opacity(0.5) : Color.white.opacity(0.05), lineWidth: 1)
+                    .stroke(petState.activeTab == id ? petState.currentSpecies.accentColor.opacity(0.55) : Color.white.opacity(0.05), lineWidth: 1)
             )
             .foregroundColor(petState.activeTab == id ? .white : Color.white.opacity(0.7))
         }
@@ -238,7 +232,7 @@ struct ChatView: View {
                             if !ollamaClient.isOnline {
                                 VStack(spacing: 8) {
                                     Text("🔴 Ollama is Offline")
-                                        .font(.system(size: 12, weight: .bold))
+                                        .font(.system(size: 13, weight: .bold))
                                         .foregroundColor(.orange)
                                     Text("Start Ollama service to chat with \(petState.currentSpecies.displayName).")
                                         .font(.system(size: 11))
@@ -261,12 +255,48 @@ struct ChatView: View {
                                 .padding(14)
                                 .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.05)))
                                 .padding(.horizontal, 16)
-                                .padding(.top, 16)
+                                .padding(.top, 24)
                             } else {
-                                Text("Session started. Ask \(petState.currentSpecies.displayName) anything!")
-                                    .font(.system(size: 11, design: .monospaced))
-                                    .foregroundColor(Color.white.opacity(0.4))
-                                    .padding(.top, 20)
+                                // Welcoming Onboarding Banner
+                                VStack(spacing: 12) {
+                                    ZStack {
+                                        Circle()
+                                            .fill(petState.currentSpecies.accentColor.opacity(0.18))
+                                            .frame(width: 52, height: 52)
+                                        Text(petState.currentSpecies.icon)
+                                            .font(.system(size: 28))
+                                    }
+                                    .padding(.top, 8)
+
+                                    VStack(spacing: 3) {
+                                        Text("Hi, I'm \(petState.currentSpecies.displayName)!")
+                                            .font(.system(size: 15, weight: .bold))
+                                            .foregroundColor(.white)
+                                        Text("Your local AI desktop companion")
+                                            .font(.system(size: 11))
+                                            .foregroundColor(Color.white.opacity(0.6))
+                                    }
+
+                                    VStack(spacing: 6) {
+                                        Text("SUGGESTED PROMPTS")
+                                            .font(.system(size: 9, weight: .bold))
+                                            .foregroundColor(Color.white.opacity(0.4))
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                            .padding(.horizontal, 4)
+
+                                        suggestionPill("What can you help me with?")
+                                        suggestionPill("Open Safari")
+                                        suggestionPill("Set a 25m focus timer")
+                                        suggestionPill("How is the weather today?")
+                                    }
+                                    .padding(.horizontal, 4)
+                                    .padding(.top, 4)
+                                }
+                                .padding(14)
+                                .background(RoundedRectangle(cornerRadius: 14).fill(Color.white.opacity(0.04)))
+                                .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.07), lineWidth: 1))
+                                .padding(.horizontal, 14)
+                                .padding(.top, 8)
                             }
                         }
 
@@ -275,7 +305,7 @@ struct ChatView: View {
                                 .id(msg.id)
                         }
 
-                        if petState.isThinking {
+                        if petState.isThinking && (messages.isEmpty || messages.last?.role == "user") {
                             HStack {
                                 TypingDotsView(accentColor: petState.currentSpecies.accentColor)
                                 Spacer()
@@ -371,16 +401,24 @@ struct ChatView: View {
             .padding(10)
             .background(Color.white.opacity(0.04))
 
-            // Footer action buttons
+            // Footer action bar with companion identity badge
             HStack {
+                HStack(spacing: 5) {
+                    Text(petState.currentSpecies.icon)
+                        .font(.system(size: 11))
+                    Text("\(petState.currentSpecies.displayName) · Level \(petState.level)")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(Color.white.opacity(0.6))
+                }
+
+                Spacer()
+
                 Button("Walk") {
                     startWalkAcrossScreen()
                 }
                 .buttonStyle(.plain)
                 .font(.system(size: 10, design: .monospaced))
                 .foregroundColor(Color.white.opacity(0.6))
-
-                Spacer()
 
                 Button("Export") {
                     exportChat()
@@ -397,9 +435,34 @@ struct ChatView: View {
                 .foregroundColor(Color.red.opacity(0.8))
             }
             .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(Color.black.opacity(0.2))
+            .padding(.vertical, 7)
+            .background(Color.black.opacity(0.25))
         }
+    }
+
+    private func suggestionPill(_ prompt: String) -> some View {
+        Button(action: {
+            inputText = prompt
+            sendMessage()
+        }) {
+            HStack {
+                Image(systemName: "sparkle")
+                    .font(.system(size: 9))
+                    .foregroundColor(petState.currentSpecies.accentColor)
+                Text(prompt)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(Color.white.opacity(0.85))
+                Spacer()
+                Image(systemName: "arrow.up.right")
+                    .font(.system(size: 9))
+                    .foregroundColor(Color.white.opacity(0.4))
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.06)))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.08), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
     }
 
     @ViewBuilder
@@ -616,78 +679,192 @@ struct ChatView: View {
 
     // MARK: - Reminders Tab
     private var remindTabContent: some View {
-        VStack(spacing: 10) {
-            VStack(spacing: 6) {
+        VStack(spacing: 8) {
+            let pendingReminders = dataManager.savedData.reminders
+                .filter { $0.status == "pending" }
+                .sorted { $0.due < $1.due }
+            let nextReminder = pendingReminders.first
+
+            // 1. Top "Next Reminder" Highlight Card
+            VStack(alignment: .leading, spacing: 6) {
                 HStack {
+                    Label("NEXT REMINDER", systemImage: "bell.badge.fill")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(petState.currentSpecies.accentColor)
+                    Spacer()
+                    if let next = nextReminder {
+                        let minsLeft = max(0, Int((next.due - Date().timeIntervalSince1970 * 1000) / 60000))
+                        Text(minsLeft == 0 ? "Due now" : "in \(minsLeft)m")
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(petState.currentSpecies.accentColor.opacity(0.2)))
+                            .foregroundColor(petState.currentSpecies.accentColor)
+                    }
+                }
+
+                if let next = nextReminder {
+                    HStack(alignment: .center) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(next.text)
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(.white)
+                                .lineLimit(2)
+                            let timeStr = Date(timeIntervalSince1970: next.due / 1000).formatted(date: .omitted, time: .shortened)
+                            Text("Scheduled for \(timeStr)")
+                                .font(.system(size: 10))
+                                .foregroundColor(Color.white.opacity(0.5))
+                        }
+                        Spacer()
+                        Button(action: {
+                            dataManager.removeReminder(id: next.id)
+                            petState.showBubble("Done! ✓", duration: 1.5)
+                            SoundEffect.receive.play()
+                        }) {
+                            HStack(spacing: 3) {
+                                Image(systemName: "checkmark")
+                                Text("Done")
+                            }
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundColor(.black)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(Capsule().fill(Color.green))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                } else {
+                    Text("✨ No upcoming reminders. Set one below or ask in Chat!")
+                        .font(.system(size: 11))
+                        .foregroundColor(Color.white.opacity(0.5))
+                        .padding(.vertical, 4)
+                }
+            }
+            .padding(12)
+            .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.06)))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.08), lineWidth: 1))
+            .padding(.horizontal, 12)
+            .padding(.top, 8)
+
+            // 2. Upcoming Reminders List
+            VStack(alignment: .leading, spacing: 4) {
+                Text("UPCOMING REMINDERS (\(pendingReminders.count))")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundColor(Color.white.opacity(0.4))
+                    .padding(.horizontal, 14)
+
+                ScrollView {
+                    LazyVStack(spacing: 6) {
+                        if pendingReminders.isEmpty {
+                            Text("No reminders scheduled")
+                                .font(.system(size: 11))
+                                .foregroundColor(Color.white.opacity(0.35))
+                                .padding(.top, 14)
+                        } else {
+                            ForEach(pendingReminders) { rem in
+                                HStack(spacing: 8) {
+                                    let minsLeft = max(0, Int((rem.due - Date().timeIntervalSince1970 * 1000) / 60000))
+                                    Text(minsLeft == 0 ? "now" : "\(minsLeft)m")
+                                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                        .foregroundColor(petState.currentSpecies.accentColor)
+                                        .frame(width: 38, alignment: .center)
+                                        .padding(.vertical, 3)
+                                        .background(RoundedRectangle(cornerRadius: 5).fill(petState.currentSpecies.accentColor.opacity(0.15)))
+
+                                    Text(rem.text)
+                                        .font(.system(size: 11, weight: .medium))
+                                        .foregroundColor(.white)
+                                        .lineLimit(1)
+
+                                    Spacer()
+
+                                    Button(action: {
+                                        dataManager.removeReminder(id: rem.id)
+                                        SoundEffect.click.play()
+                                    }) {
+                                        Image(systemName: "trash")
+                                            .font(.system(size: 11))
+                                            .foregroundColor(Color.white.opacity(0.4))
+                                    }
+                                    .buttonStyle(.plain)
+                                    .help("Delete reminder")
+                                }
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.04)))
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                }
+            }
+
+            Spacer(minLength: 0)
+
+            // 3. Bottom "+ Create Reminder" Section
+            VStack(spacing: 8) {
+                HStack(spacing: 6) {
                     TextField("Reminder note...", text: $reminderText)
                         .textFieldStyle(.plain)
-                        .padding(6)
-                        .background(Color.white.opacity(0.08))
-                        .cornerRadius(6)
-                        .foregroundColor(.white)
-
-                    Picker("", selection: $reminderMinutes) {
-                        Text("1m").tag(1)
-                        Text("5m").tag(5)
-                        Text("15m").tag(15)
-                        Text("30m").tag(30)
-                        Text("60m").tag(60)
-                    }
-                    .labelsHidden()
-                    .frame(width: 70)
-
-                    Button("Add") {
-                        if !reminderText.trimmingCharacters(in: .whitespaces).isEmpty {
-                            dataManager.addReminder(text: reminderText, minutes: reminderMinutes)
-                            petState.showBubble("I'll remind you in \(reminderMinutes)m! ⏰")
-                            reminderText = ""
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(petState.currentSpecies.accentColor)
-                    .controlSize(.small)
-                }
-            }
-            .padding(.horizontal, 12)
-            .padding(.top, 12)
-
-            List {
-                if dataManager.savedData.reminders.isEmpty {
-                    Text("No active reminders scheduled.")
                         .font(.system(size: 11))
-                        .foregroundColor(Color.white.opacity(0.4))
-                        .listRowBackground(Color.clear)
-                } else {
-                    ForEach(dataManager.savedData.reminders) { rem in
-                        HStack {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(rem.text)
-                                    .font(.system(size: 12, weight: .medium))
-                                    .foregroundColor(.white)
-
-                                let minsLeft = max(0, Int((rem.due - Date().timeIntervalSince1970 * 1000) / 60000))
-                                Text("Due in ~\(minsLeft)m")
-                                    .font(.system(size: 10, design: .monospaced))
-                                    .foregroundColor(Color.white.opacity(0.5))
-                            }
-
-                            Spacer()
-
-                            Button(action: {
-                                dataManager.removeReminder(id: rem.id)
-                            }) {
-                                Image(systemName: "trash")
-                                    .font(.system(size: 12))
-                                    .foregroundColor(.red.opacity(0.8))
-                            }
-                            .buttonStyle(.plain)
+                        .padding(7)
+                        .background(Color.white.opacity(0.08))
+                        .cornerRadius(8)
+                        .foregroundColor(.white)
+                        .onSubmit {
+                            createReminder()
                         }
-                        .listRowBackground(Color.white.opacity(0.04))
+
+                    Button(action: {
+                        createReminder()
+                    }) {
+                        Text("+ Add")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(RoundedRectangle(cornerRadius: 8).fill(reminderText.trimmingCharacters(in: .whitespaces).isEmpty ? Color.white.opacity(0.2) : petState.currentSpecies.accentColor))
                     }
+                    .buttonStyle(.plain)
+                    .disabled(reminderText.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+
+                // Quick Duration Pills (+5m, +15m, +30m, +1h)
+                HStack(spacing: 6) {
+                    Text("In:")
+                        .font(.system(size: 10))
+                        .foregroundColor(Color.white.opacity(0.5))
+                    ForEach([5, 15, 30, 60], id: \.self) { mins in
+                        Button(action: {
+                            reminderMinutes = mins
+                            SoundEffect.click.play()
+                        }) {
+                            Text(mins == 60 ? "+1h" : "+\(mins)m")
+                                .font(.system(size: 10, weight: reminderMinutes == mins ? .bold : .medium))
+                                .foregroundColor(reminderMinutes == mins ? .white : Color.white.opacity(0.7))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(
+                                    Capsule().fill(reminderMinutes == mins ? petState.currentSpecies.accentColor : Color.white.opacity(0.08))
+                                )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    Spacer()
                 }
             }
-            .scrollContentBackground(.hidden)
+            .padding(10)
+            .background(Color.white.opacity(0.04))
         }
+    }
+
+    private func createReminder() {
+        let note = reminderText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !note.isEmpty else { return }
+        dataManager.addReminder(text: note, minutes: reminderMinutes)
+        petState.showBubble("I'll remind you in \(reminderMinutes)m! ⏰")
+        SoundEffect.receive.play()
+        reminderText = ""
     }
 
     // MARK: - System Tab
@@ -766,38 +943,123 @@ struct ChatView: View {
         }
     }
 
-    // MARK: - Game / Music Tab
+    // MARK: - Focus & Health Tab
     private var gameTabContent: some View {
         ScrollView {
-            VStack(spacing: 12) {
-                // Focus Guardian Section
+            VStack(spacing: 10) {
+                // 1. Timer Hero Display with Progress Bar
                 VStack(spacing: 8) {
                     HStack {
-                        Text(focusGuardian.isSessionActive ? "🎯 Active Focus Session" : "🎯 Focus Guardian")
-                            .font(.system(size: 12, weight: .bold))
-                            .foregroundColor(petState.currentSpecies.accentColor)
+                        HStack(spacing: 6) {
+                            Circle()
+                                .fill(focusStatusColor)
+                                .frame(width: 8, height: 8)
+                            Text(focusStatusText)
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundColor(focusStatusColor)
+                        }
                         Spacer()
                         if focusGuardian.isSessionActive {
-                            HStack(spacing: 4) {
-                                Circle()
-                                    .fill(focusGuardian.userIsAway ? Color.red : Color.green)
-                                    .frame(width: 6, height: 6)
-                                Text(focusGuardian.userIsAway ? "User Away" : "Focused")
-                                    .font(.system(size: 10, design: .monospaced))
-                                    .foregroundColor(focusGuardian.userIsAway ? .red : .green)
-                            }
+                            Text("\(Int(focusGuardian.progress * 100))% done")
+                                .font(.system(size: 10, design: .monospaced))
+                                .foregroundColor(Color.white.opacity(0.6))
                         }
                     }
 
-                    // Current Timer Countdown
+                    // Giant Timer Countdown
                     Text(focusGuardian.formattedTime)
-                        .font(.system(size: 30, weight: .bold, design: .monospaced))
+                        .font(.system(size: 38, weight: .bold, design: .monospaced))
                         .foregroundColor(.white)
+                        .padding(.vertical, 2)
 
-                    // Custom Duration Inputs (Hours, Minutes, Seconds)
-                    if !focusGuardian.isSessionActive {
+                    // Smooth Progress Bar
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            RoundedRectangle(cornerRadius: 3)
+                                .fill(Color.white.opacity(0.12))
+                            RoundedRectangle(cornerRadius: 3)
+                                .fill(petState.currentSpecies.accentColor)
+                                .frame(width: geo.size.width * CGFloat(focusGuardian.progress))
+                        }
+                    }
+                    .frame(height: 6)
+
+                    // Start / Pause / Reset Controls
+                    HStack(spacing: 10) {
+                        Button(action: {
+                            if focusGuardian.isSessionActive {
+                                focusGuardian.pauseFocusSession()
+                            } else {
+                                focusGuardian.startFocusSession()
+                            }
+                            SoundEffect.click.play()
+                        }) {
+                            HStack(spacing: 5) {
+                                Image(systemName: focusGuardian.isSessionActive ? "pause.fill" : "play.fill")
+                                Text(focusGuardian.isSessionActive ? "Pause" : "Start Focus")
+                            }
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 6)
+                            .background(RoundedRectangle(cornerRadius: 8).fill(petState.currentSpecies.accentColor))
+                        }
+                        .buttonStyle(.plain)
+
+                        Button(action: {
+                            focusGuardian.resetFocusSession()
+                            SoundEffect.click.play()
+                        }) {
+                            Text("Reset")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundColor(Color.white.opacity(0.8))
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 6)
+                                .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.1)))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.top, 4)
+                }
+                .padding(14)
+                .background(RoundedRectangle(cornerRadius: 14).fill(Color.white.opacity(0.06)))
+                .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.08), lineWidth: 1))
+
+                // 2. Companion Focus Card
+                HStack(spacing: 12) {
+                    Text(petState.currentSpecies.icon)
+                        .font(.system(size: 26))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("\(petState.currentSpecies.displayName) is focusing with you")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(.white)
+                        Text("Distractions silenced. Take deep breaths and work peacefully.")
+                            .font(.system(size: 10))
+                            .foregroundColor(Color.white.opacity(0.6))
+                    }
+                    Spacer()
+                }
+                .padding(10)
+                .background(RoundedRectangle(cornerRadius: 10).fill(petState.currentSpecies.accentColor.opacity(0.12)))
+
+                // 3. Quick Session Presets & Custom Configuration
+                if !focusGuardian.isSessionActive {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("QUICK PRESETS")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundColor(Color.white.opacity(0.4))
+                            .padding(.horizontal, 4)
+
                         HStack(spacing: 6) {
-                            Text("Duration:")
+                            presetButton("10m Quick", seconds: 10 * 60)
+                            presetButton("25m Pomodoro", seconds: 25 * 60)
+                            presetButton("45m Deep", seconds: 45 * 60)
+                            presetButton("60m", seconds: 60 * 60)
+                        }
+
+                        // Custom duration row
+                        HStack(spacing: 6) {
+                            Text("Custom:")
                                 .font(.system(size: 10, weight: .medium))
                                 .foregroundColor(.secondary)
 
@@ -834,71 +1096,16 @@ struct ChatView: View {
                                 .frame(width: 48)
                             }
                         }
-                        .padding(.vertical, 2)
-                    }
-
-                    // Action Buttons
-                    HStack(spacing: 10) {
-                        Button(focusGuardian.isSessionActive ? "Pause" : "Start") {
-                            if focusGuardian.isSessionActive {
-                                focusGuardian.pauseFocusSession()
-                            } else {
-                                focusGuardian.startFocusSession()
-                            }
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(petState.currentSpecies.accentColor)
-                        .controlSize(.small)
-
-                        Button("Reset") {
-                            focusGuardian.resetFocusSession()
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                    }
-
-                    // Quick Presets: 10s (Test), 1m, 10m, 25m, 45m, 60m
-                    if !focusGuardian.isSessionActive {
-                        VStack(spacing: 4) {
-                            HStack(spacing: 4) {
-                                Button("10s (Test)") { focusGuardian.applyPreset(seconds: 10) }
-                                Button("1m") { focusGuardian.applyPreset(seconds: 60) }
-                                Button("10m") { focusGuardian.applyPreset(seconds: 10 * 60) }
-                                Button("25m") { focusGuardian.applyPreset(seconds: 25 * 60) }
-                                Button("45m") { focusGuardian.applyPreset(seconds: 45 * 60) }
-                            }
-                            .font(.system(size: 9, weight: .medium))
-                            .buttonStyle(.bordered)
-                            .controlSize(.mini)
-                        }
-                    }
-
-                    if visionGuardian.isRunning || screenGuardian.isMonitoring {
-                        HStack(spacing: 10) {
-                            if visionGuardian.isRunning {
-                                Label(visionGuardian.presenceState.rawValue, systemImage: "video.fill")
-                                    .font(.system(size: 9))
-                                    .foregroundColor(Color.white.opacity(0.7))
-                            }
-                            if screenGuardian.isMonitoring {
-                                Label(screenGuardian.currentCategory.rawValue, systemImage: "display")
-                                    .font(.system(size: 9))
-                                    .foregroundColor(Color.white.opacity(0.7))
-                            }
-                        }
                         .padding(.top, 2)
                     }
+                    .padding(10)
+                    .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.04)))
                 }
-                .padding(10)
-                .background(Color.white.opacity(0.04))
-                .cornerRadius(10)
 
-                Divider().background(Color.white.opacity(0.1))
-
-                // Music Visualizer Section
-                VStack(spacing: 6) {
+                // 4. Secondary Audio / Music Visualizer Section
+                VStack(spacing: 8) {
                     HStack {
-                        Text("Beat Visualizer")
+                        Label("Focus Audio & Visualizer", systemImage: "headphones")
                             .font(.system(size: 11, weight: .bold))
                             .foregroundColor(.white)
                         Spacer()
@@ -911,19 +1118,20 @@ struct ChatView: View {
                     }
 
                     // Beat Bars
-                    HStack(alignment: .bottom, spacing: 6) {
+                    HStack(alignment: .bottom, spacing: 5) {
                         ForEach(0..<8) { i in
-                            RoundedRectangle(cornerRadius: 3)
+                            RoundedRectangle(cornerRadius: 2)
                                 .fill(petState.currentSpecies.accentColor)
-                                .frame(width: 14, height: max(6, music.beatLevels[i] * 40))
+                                .frame(width: 12, height: max(4, music.beatLevels[i] * 32))
                         }
                     }
-                    .frame(height: 44)
+                    .frame(height: 32)
 
-                    HStack {
-                        Button("Upload Music") {
+                    HStack(spacing: 8) {
+                        Button("Upload Audio") {
                             openMusicFile()
                         }
+                        .font(.system(size: 11))
                         .buttonStyle(.bordered)
                         .controlSize(.small)
 
@@ -931,17 +1139,58 @@ struct ChatView: View {
                             Button("Stop") {
                                 music.stop()
                             }
+                            .font(.system(size: 11))
                             .buttonStyle(.bordered)
                             .controlSize(.small)
                         }
                     }
                 }
                 .padding(10)
-                .background(Color.white.opacity(0.04))
-                .cornerRadius(10)
+                .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.04)))
             }
             .padding(12)
         }
+    }
+
+    private var focusStatusColor: Color {
+        if !focusGuardian.isSessionActive {
+            return Color.secondary
+        }
+        if focusGuardian.isPaused {
+            return Color.yellow
+        }
+        if focusGuardian.userIsAway {
+            return Color.red
+        }
+        return Color.green
+    }
+
+    private var focusStatusText: String {
+        if !focusGuardian.isSessionActive {
+            return "⚪ Ready to Focus"
+        }
+        if focusGuardian.isPaused {
+            return "🟡 Session Paused"
+        }
+        if focusGuardian.userIsAway {
+            return "🔴 Stepped Away"
+        }
+        return "🟢 Deep Focus Active"
+    }
+
+    private func presetButton(_ title: String, seconds: Int) -> some View {
+        Button(action: {
+            focusGuardian.applyPreset(seconds: seconds)
+            SoundEffect.click.play()
+        }) {
+            Text(title)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundColor(.white)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(RoundedRectangle(cornerRadius: 6).fill(Color.white.opacity(0.08)))
+        }
+        .buttonStyle(.plain)
     }
 
 

@@ -1982,19 +1982,15 @@ struct PresenceSettingsSection: View {
                     }
                     Spacer()
                     Button(action: {
-                        if monitor.isRunning {
-                            monitor.stop()
-                        } else {
-                            monitor.start()
-                        }
+                        monitor.toggleMonitoring()
                     }) {
-                        Text(monitor.isRunning ? "Stop Monitor" : "Start Monitor")
+                        Text(monitor.isActiveOrStarting ? "Stop Monitor" : "Start Monitor")
                             .font(.system(size: 11, weight: .bold))
                             .foregroundColor(.white)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 5)
                             .background(
-                                Capsule().fill(monitor.isRunning ? Color.red : Color.green)
+                                Capsule().fill(monitor.isActiveOrStarting ? Color.red : Color.green)
                             )
                     }
                     .buttonStyle(.plain)

@@ -33,7 +33,7 @@ chmod +x "${MACOS_DIR}/${APP_NAME}"
 
 echo "3. Copying App Icon..."
 if [ -f "icon.icns" ]; then
-  cp "icon.icns" "${RESOURCES_DIR}/AppIcon.icns"
+  cp -X "icon.icns" "${RESOURCES_DIR}/AppIcon.icns"
   echo "✓ icon.icns copied."
 fi
 

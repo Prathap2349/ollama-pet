@@ -1372,6 +1372,18 @@ public final class PresenceMonitor: ObservableObject {
         coordinator.intervalSeconds = interval
     }
 
+    public var isActiveOrStarting: Bool {
+        return isRunning || monitoringState == .starting || monitoringState == .running || monitoringState == .recovering
+    }
+
+    public func toggleMonitoring() {
+        if isActiveOrStarting {
+            stop()
+        } else {
+            start()
+        }
+    }
+
     // MARK: - Session Control (Safe State Machine)
 
     public func start() {

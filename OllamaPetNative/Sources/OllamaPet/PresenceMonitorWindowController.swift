@@ -174,18 +174,14 @@ struct PresenceWidgetView: View {
                 Spacer()
 
                 Button(action: {
-                    if monitor.isRunning {
-                        monitor.stop()
-                    } else {
-                        monitor.start()
-                    }
+                    monitor.toggleMonitoring()
                 }) {
-                    Text(monitor.isRunning ? "Pause" : "Start")
+                    Text(monitor.isActiveOrStarting ? "Pause" : "Start")
                         .font(.system(size: 8, weight: .bold))
                         .foregroundColor(.white)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
-                        .background(Capsule().fill(monitor.isRunning ? Color.orange.opacity(0.8) : Color.green.opacity(0.8)))
+                        .background(Capsule().fill(monitor.isActiveOrStarting ? Color.orange.opacity(0.8) : Color.green.opacity(0.8)))
                 }
                 .buttonStyle(.plain)
             }
@@ -313,18 +309,14 @@ struct PresenceWidgetView: View {
                 Spacer()
 
                 Button(action: {
-                    if monitor.isRunning {
-                        monitor.stop()
-                    } else {
-                        monitor.start()
-                    }
+                    monitor.toggleMonitoring()
                 }) {
-                    Text(monitor.isRunning ? "Stop Monitor" : "Resume Monitor")
+                    Text(monitor.isActiveOrStarting ? "Stop Monitor" : "Resume Monitor")
                         .font(.system(size: 9, weight: .bold))
                         .foregroundColor(.white)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
-                        .background(Capsule().fill(monitor.isRunning ? Color.red.opacity(0.8) : Color.green.opacity(0.8)))
+                        .background(Capsule().fill(monitor.isActiveOrStarting ? Color.red.opacity(0.8) : Color.green.opacity(0.8)))
                 }
                 .buttonStyle(.plain)
             }

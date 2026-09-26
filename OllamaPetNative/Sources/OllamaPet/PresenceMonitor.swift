@@ -1223,13 +1223,60 @@ public final class PresenceMonitor: ObservableObject {
     /// Whether owner calibration wizard is currently open, suppressing normal presence alerts and reactions
     @Published public var isCalibrationActive: Bool = false
 
-    /// Whether any UI component (expanded monitor or settings) is actively watching the camera view
-    @Published public var isLivePreviewRequested: Bool = false {
+    /// Active consumers requesting live camera preview frames (reference-counted / token-based)
+    private var activePreviewRequesters: Set<String> = []
+
+    /// Whether any UI component (expanded monitor, wizard, settings) is actively watching the camera view.
+    /// Managed centrally via requestLivePreview() and releaseLivePreview().
+    @Published public private(set) var isLivePreviewRequested: Bool = false {
         didSet {
             coordinator.isLivePreviewRequested = isLivePreviewRequested
             if !isLivePreviewRequested {
                 latestPreviewImage = nil // Free preview image memory immediately
             }
+        }
+    }
+
+    public func requestLivePreview(id: String = "default") {
+        if Thread.isMainThread {
+            activePreviewRequesters.insert(id)
+            updateEffectiveLivePreviewState()
+        } else {
+            DispatchQueue.main.async { [weak self] in
+                self?.activePreviewRequesters.insert(id)
+                self?.updateEffectiveLivePreviewState()
+            }
+        }
+    }
+
+    public func releaseLivePreview(id: String = "default") {
+        if Thread.isMainThread {
+            activePreviewRequesters.remove(id)
+            updateEffectiveLivePreviewState()
+        } else {
+            DispatchQueue.main.async { [weak self] in
+                self?.activePreviewRequesters.remove(id)
+                self?.updateEffectiveLivePreviewState()
+            }
+        }
+    }
+
+    public func resetLivePreviewRequests() {
+        if Thread.isMainThread {
+            activePreviewRequesters.removeAll()
+            updateEffectiveLivePreviewState()
+        } else {
+            DispatchQueue.main.async { [weak self] in
+                self?.activePreviewRequesters.removeAll()
+                self?.updateEffectiveLivePreviewState()
+            }
+        }
+    }
+
+    private func updateEffectiveLivePreviewState() {
+        let newRequestedState = !activePreviewRequesters.isEmpty
+        if isLivePreviewRequested != newRequestedState {
+            isLivePreviewRequested = newRequestedState
         }
     }
 

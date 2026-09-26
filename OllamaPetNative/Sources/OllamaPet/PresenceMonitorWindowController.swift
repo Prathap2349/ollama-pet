@@ -51,7 +51,7 @@ public final class PresenceMonitorWindowController: NSWindowController, NSWindow
 
     public func hideWidget() {
         window?.orderOut(nil)
-        PresenceMonitor.shared.isLivePreviewRequested = false
+        PresenceMonitor.shared.releaseLivePreview(id: "presence_widget")
     }
 
     public func setExpanded(_ expanded: Bool) {
@@ -68,7 +68,7 @@ public final class PresenceMonitorWindowController: NSWindowController, NSWindow
     }
 
     public func windowWillClose(_ notification: Notification) {
-        PresenceMonitor.shared.isLivePreviewRequested = false
+        PresenceMonitor.shared.releaseLivePreview(id: "presence_widget")
     }
 }
 
@@ -96,7 +96,11 @@ struct PresenceWidgetView: View {
                 Button(action: {
                     withAnimation(.easeInOut(duration: 0.2)) {
                         isExpanded.toggle()
-                        monitor.isLivePreviewRequested = isExpanded
+                        if isExpanded {
+                            monitor.requestLivePreview(id: "presence_widget")
+                        } else {
+                            monitor.releaseLivePreview(id: "presence_widget")
+                        }
                         PresenceMonitorWindowController.shared.setExpanded(isExpanded)
                     }
                 }) {
@@ -130,7 +134,7 @@ struct PresenceWidgetView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(red: 15/255, green: 17/255, blue: 26/255))
         .onDisappear {
-            monitor.isLivePreviewRequested = false
+            monitor.releaseLivePreview(id: "presence_widget")
         }
     }
 

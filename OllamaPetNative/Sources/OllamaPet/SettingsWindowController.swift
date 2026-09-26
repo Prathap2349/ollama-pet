@@ -2463,10 +2463,10 @@ struct PresenceSettingsSection: View {
             OwnerEnrollmentWizardView(isPresented: $showEnrollmentWizard)
         }
         .onAppear {
-            monitor.isLivePreviewRequested = true
+            monitor.requestLivePreview(id: "settings_presence_tab")
         }
         .onDisappear {
-            monitor.isLivePreviewRequested = false
+            monitor.releaseLivePreview(id: "settings_presence_tab")
         }
     }
 
@@ -3002,7 +3002,7 @@ struct OwnerEnrollmentWizardView: View {
         }
         .onAppear {
             monitor.isCalibrationActive = true
-            monitor.isLivePreviewRequested = true
+            monitor.requestLivePreview(id: "owner_enrollment_wizard")
             if !monitor.isRunning {
                 startedMonitorForWizard = true
                 monitor.start()
@@ -3029,7 +3029,7 @@ struct OwnerEnrollmentWizardView: View {
     private func performCleanup() {
         timer?.invalidate()
         timer = nil
-        monitor.isLivePreviewRequested = false
+        monitor.releaseLivePreview(id: "owner_enrollment_wizard")
         monitor.isCalibrationActive = false
         if startedMonitorForWizard {
             monitor.stop()
@@ -3047,7 +3047,7 @@ struct OwnerEnrollmentWizardView: View {
     private func retryCamera() {
         performCleanup()
         monitor.isCalibrationActive = true
-        monitor.isLivePreviewRequested = true
+        monitor.requestLivePreview(id: "owner_enrollment_wizard")
         startedMonitorForWizard = true
         monitor.start()
         startInspectionLoop()

@@ -184,6 +184,14 @@ Unlike web wrappers or heavy electron apps, Ollama Pet is engineered specificall
 
 ---
 
+## 📝 Changelog & Recent Fixes
+
+### Presence Monitor Live Preview Request Ownership Fix
+* **Issue Addressed**: Fixed camera preview image becoming blank/hidden when multiple UI components were open simultaneously (e.g., Settings Presence tab, Owner Calibration Wizard, and Floating Presence Widget). Previously, closing any single component set a shared `isLivePreviewRequested` boolean to `false`, cutting off live video preview frames for remaining active screens even though face detection continued working.
+* **Architecture Fix**: Upgraded `PresenceMonitor` to use reference-counted, consumer-keyed request/release ownership (`requestLivePreview(id:)`, `releaseLivePreview(id:)`, `resetLivePreviewRequests()`). Live camera preview frames now remain active as long as at least one UI consumer holds an active request, and cleanly spin down when all requests are released.
+
+---
+
 ## 📄 License
 
 This project is licensed under the [MIT License](LICENSE).

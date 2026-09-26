@@ -133,7 +133,9 @@ public class PetState: ObservableObject {
     public init() {
         loadFromPersistence()
         startAnimationLoop()
-        startIdleAndDreamTimers()
+        DispatchQueue.main.async { [weak self] in
+            self?.startIdleAndDreamTimers()
+        }
     }
 
     private func loadFromPersistence() {

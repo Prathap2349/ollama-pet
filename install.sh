@@ -1,7 +1,19 @@
 #!/bin/bash
 set -e
 
+IS_DEBUG=false
+if [ "$1" == "--debug" ] || [ "$2" == "--debug" ]; then
+    IS_DEBUG=true
+fi
+
+echo "=========================================="
 echo "=== Installing Ollama Pet ==="
+if [ "$IS_DEBUG" = true ]; then
+    echo "Mode: DEBUG (foreground launch with live console)"
+else
+    echo "Mode: Standard Release"
+fi
+echo "=========================================="
 
 APP_NAME="OllamaPet"
 TEMP_BUILD_DIR="/tmp/OllamaPetBuild"
@@ -102,23 +114,48 @@ rm -rf "dist/OllamaPet.app" 2>/dev/null || true
 
 # 9. Launch installed app and verify process
 echo "Step 9: Launching installed application..."
+
+if [ "$IS_DEBUG" = true ]; then
+    echo "Starting ${FINAL_PATH}/Contents/MacOS/${APP_NAME} in foreground mode..."
+    echo "=========================================="
+    echo "Press Ctrl+C to stop."
+    echo "=========================================="
+    exec "${FINAL_PATH}/Contents/MacOS/${APP_NAME}"
+fi
+
 open "${FINAL_PATH}"
 
-# Verification
-sleep 2.0
-RUNNING_PID=$(pgrep -f "/Contents/MacOS/${APP_NAME}" 2>/dev/null | head -n 1 || true)
-if [ -z "$RUNNING_PID" ]; then
-    RUNNING_PID=$(pgrep -x "${APP_NAME}" 2>/dev/null | head -n 1 || true)
-fi
+# Verification with robust polling (checks 3 times over 2 seconds)
+RUNNING_PID=""
+for i in {1..5}; do
+    sleep 0.5
+    RUNNING_PID=$(pgrep -f "${FINAL_PATH}/Contents/MacOS/${APP_NAME}" 2>/dev/null | head -n 1 || true)
+    if [ -z "$RUNNING_PID" ]; then
+        RUNNING_PID=$(pgrep -x "${APP_NAME}" 2>/dev/null | head -n 1 || true)
+    fi
+    if [ -n "$RUNNING_PID" ]; then
+        break
+    fi
+done
 
 if [ -n "$RUNNING_PID" ]; then
     echo "=========================================="
     echo "✓ Ollama Pet successfully installed & launched!"
     echo "✓ Path: ${FINAL_PATH}"
     echo "✓ Running PID: ${RUNNING_PID}"
+    echo "✓ Status: Active & Running in Background"
     echo "=========================================="
 else
-    echo "⚠️ Warning: Ollama Pet was launched but does not appear in running processes."
-    echo "Recent log output:"
-    log show --predicate 'process == "OllamaPet"' --info --last 1m 2>/dev/null | tail -n 20 || true
+    echo "=========================================="
+    echo "❌ OLLAMA PET STARTUP DIAGNOSTICS"
+    echo "=========================================="
+    echo "Launch result: FAILED (Process not found after launch)"
+    echo "Target binary: ${FINAL_PATH}/Contents/MacOS/${APP_NAME}"
+    echo ""
+    echo "--- Recent Process & Crash Logs ---"
+    log show --predicate 'process == "OllamaPet"' --info --last 1m 2>/dev/null | tail -n 25 || echo "No unified logs available."
+    echo ""
+    echo "Tip: Run './install.sh --debug' to run in foreground with direct console output."
+    echo "=========================================="
+    exit 1
 fi

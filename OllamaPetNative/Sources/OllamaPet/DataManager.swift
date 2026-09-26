@@ -12,10 +12,14 @@ public class DataManager: ObservableObject {
         let home = FileManager.default.homeDirectoryForCurrentUser
         self.filePath = home.appendingPathComponent("ollama-pet-data.json")
         loadData()
-        if Bundle.main.bundleIdentifier != nil {
-            requestNotificationPermission()
+        // Defer notification requests and reminder sync so init is completely non-blocking
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            if Bundle.main.bundleIdentifier != nil {
+                self.requestNotificationPermission()
+            }
+            NotificationScheduler.shared.syncPendingReminders(reminders: self.savedData.reminders)
         }
-        NotificationScheduler.shared.syncPendingReminders(reminders: savedData.reminders)
     }
 
     public func loadData() {
@@ -29,7 +33,12 @@ public class DataManager: ObservableObject {
             let loaded = try JSONDecoder().decode(PetSavedData.self, from: data)
             self.savedData = loaded
         } catch {
-            print("Failed to load pet data: \(error.localizedDescription)")
+            NSLog("[DataManager] Failed to load saved data: %@", error.localizedDescription)
+            // Safely preserve corrupted file for diagnostic inspection instead of silent overwrite
+            let backupPath = filePath.deletingLastPathComponent().appendingPathComponent("ollama-pet-data.corrupted.json")
+            try? FileManager.default.copyItem(at: filePath, to: backupPath)
+            NSLog("[DataManager] Preserved corrupted file at %@ for diagnostic review", backupPath.path)
+            NSLog("[DataManager] Starting with safe defaults")
             self.savedData = PetSavedData()
         }
     }
@@ -41,7 +50,7 @@ public class DataManager: ObservableObject {
             let data = try encoder.encode(savedData)
             try data.write(to: filePath, options: [.atomic])
         } catch {
-            print("Failed to save pet data: \(error.localizedDescription)")
+            NSLog("[DataManager] Failed to save pet data: %@", error.localizedDescription)
         }
     }
 

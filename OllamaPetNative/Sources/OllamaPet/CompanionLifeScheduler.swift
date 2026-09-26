@@ -19,7 +19,8 @@ public final class CompanionLifeScheduler: ObservableObject {
     private var isSitting: Bool = false
 
     private init() {
-        startScheduler()
+        // Timers and scheduler loop are explicitly started via startScheduler()
+        // to prevent circular dependency lockups during Swift singleton initialization.
     }
 
     public func recordUserInteraction() {

@@ -227,6 +227,25 @@ public class Pet3DCharacterBuilder {
         pupilNode.position = SCNVector3(0, 0, radius * 0.72)
         eye.addChildNode(pupilNode)
 
+        // Wet Corneal Specular Highlight
+        let highlightMat = pbrMaterial(color: NSColor(white: 1.0, alpha: 0.92), roughness: 0.05, emission: NSColor(white: 0.8, alpha: 1.0))
+        let highlightGeo = SCNSphere(radius: radius * 0.18)
+        highlightGeo.materials = [highlightMat]
+        let highlightNode = SCNNode(geometry: highlightGeo)
+        highlightNode.position = SCNVector3(radius * 0.22, radius * 0.25, radius * 0.88)
+        eye.addChildNode(highlightNode)
+
+        // Glassy Wet Cornea Outer Layer
+        let corneaMat = SCNMaterial()
+        corneaMat.lightingModel = .physicallyBased
+        corneaMat.diffuse.contents = NSColor(white: 1.0, alpha: 0.08)
+        corneaMat.roughness.contents = 0.02
+        corneaMat.metalness.contents = 0.1
+        corneaMat.transparency = 0.25
+        let corneaGeo = SCNSphere(radius: radius * 1.04)
+        corneaGeo.materials = [corneaMat]
+        eye.addChildNode(SCNNode(geometry: corneaGeo))
+
         // Upper Eyelid Shell
         let upperLidGeo = SCNSphere(radius: radius * 1.06)
         upperLidGeo.materials = [lidMat]
@@ -826,6 +845,35 @@ public class Pet3DCharacterBuilder {
         let rightEyeComp = makeFacialEye(eyeMat: eyeMat, pupilMat: pupilMat, lidMat: furMat, radius: 0.052, isDragonPupil: false)
         rightEyeComp.eyeNode.position = SCNVector3(0.11, 0.04, 0.18)
         head.addChildNode(rightEyeComp.eyeNode)
+
+        // Procedural Fur Details: Cheek Tufts, Whiskers & Layered Chest Bib
+        let whiteFurMat = pbrMaterial(color: NSColor(red: 0.96, green: 0.96, blue: 0.98, alpha: 1.0), roughness: 0.5)
+        let whiskerMat = pbrMaterial(color: NSColor(white: 0.95, alpha: 0.85), roughness: 0.2)
+
+        for side in [-1.0, 1.0] {
+            let tuftGeo = SCNCone(topRadius: 0.005, bottomRadius: 0.045, height: 0.12)
+            tuftGeo.materials = [whiteFurMat]
+            let tuft = SCNNode(geometry: tuftGeo)
+            tuft.position = SCNVector3(CGFloat(side) * 0.19, -0.04, 0.10)
+            tuft.eulerAngles = SCNVector3(0, 0, CGFloat(-side) * CGFloat.pi / 2.6)
+            head.addChildNode(tuft)
+
+            for w in [-1.0, 0.0, 1.0] {
+                let whiskerGeo = SCNCylinder(radius: 0.002, height: 0.14)
+                whiskerGeo.materials = [whiskerMat]
+                let whisker = SCNNode(geometry: whiskerGeo)
+                whisker.position = SCNVector3(CGFloat(side) * 0.12, -0.02 + CGFloat(w) * 0.015, 0.22)
+                whisker.eulerAngles = SCNVector3(0, CGFloat(-side) * CGFloat.pi / 2.3, CGFloat(w) * 0.15)
+                head.addChildNode(whisker)
+            }
+        }
+
+        let bibGeo = SCNCapsule(capRadius: 0.14, height: 0.28)
+        bibGeo.materials = [whiteFurMat]
+        let bib = SCNNode(geometry: bibGeo)
+        bib.position = SCNVector3(0, 0.08, 0.16)
+        bib.eulerAngles = SCNVector3(CGFloat.pi / 2.5, 0, 0)
+        body.addChildNode(bib)
 
         // Tail
         let tailRoot = SCNNode()

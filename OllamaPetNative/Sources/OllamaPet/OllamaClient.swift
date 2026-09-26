@@ -59,6 +59,28 @@ public enum OllamaConnectionState: Equatable {
     }
 }
 
+// MARK: - Explicit Ollama Generation State Machine
+
+public enum OllamaGenerationState: Equatable {
+    case idle
+    case loadingModel
+    case generating
+    case streaming
+    case completed
+    case failed(reason: String)
+
+    public var displayTitle: String {
+        switch self {
+        case .idle: return "Idle"
+        case .loadingModel: return "Loading model..."
+        case .generating: return "Thinking..."
+        case .streaming: return "Generating response..."
+        case .completed: return "Completed"
+        case .failed(let reason): return "Failed: \(reason)"
+        }
+    }
+}
+
 // MARK: - Robust Ollama Client
 
 @MainActor
@@ -66,6 +88,7 @@ public class OllamaClient: ObservableObject {
     public static let shared = OllamaClient()
 
     @Published public var connectionState: OllamaConnectionState = .checking
+    @Published public var generationState: OllamaGenerationState = .idle
     @Published public var isOnline: Bool = false
     @Published public var installedModels: [String] = []
     @Published public var activeModel: String = ""
@@ -73,6 +96,13 @@ public class OllamaClient: ObservableObject {
     @Published public var isChecking: Bool = false
     @Published public var isStartingService: Bool = false
     @Published public var diagnosticError: String? = nil
+
+    // Telemetry & Diagnostics Drawer Support
+    @Published public var lastResponseDuration: TimeInterval = 0
+    @Published public var latencyMs: Double = 0
+    @Published public var healthStatus: String = "Healthy"
+    @Published public var reconnectCount: Int = 0
+    @Published public var lastFailureReason: String? = nil
 
     private let baseURL = URL(string: "http://127.0.0.1:11434")!
     public var endpoint: String { baseURL.absoluteString }
@@ -84,8 +114,8 @@ public class OllamaClient: ObservableObject {
 
     public init() {
         let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 45.0
-        config.timeoutIntervalForResource = 90.0
+        config.timeoutIntervalForRequest = 120.0
+        config.timeoutIntervalForResource = 300.0
         self.session = URLSession(configuration: config)
 
         startAutoReconnectMonitor()
@@ -343,6 +373,7 @@ public class OllamaClient: ObservableObject {
             let model: String
             let messages: [ChatPayloadMessage]
             let stream: Bool
+            let keep_alive: String
         }
 
         var payloadMessages: [ChatPayloadMessage] = []
@@ -354,10 +385,17 @@ public class OllamaClient: ObservableObject {
             payloadMessages.append(ChatPayloadMessage(role: role, content: msg.content))
         }
 
-        let payload = ChatRequestPayload(model: modelToUse, messages: payloadMessages, stream: false)
+        let keepAlive = DataManager.shared.savedData.ollamaKeepAlive ?? "10m"
+        let payload = ChatRequestPayload(model: modelToUse, messages: payloadMessages, stream: false, keep_alive: keepAlive)
         request.httpBody = try JSONEncoder().encode(payload)
 
+        self.generationState = .loadingModel
+        self.statusMessage = "🔵 Loading model..."
+        let startTime = Date().timeIntervalSinceReferenceDate
+
         do {
+            self.generationState = .generating
+            self.statusMessage = "🧠 Thinking..."
             let (data, response) = try await session.data(for: request)
             guard let httpResponse = response as? HTTPURLResponse else {
                 throw NSError(domain: "OllamaClient", code: 500, userInfo: [NSLocalizedDescriptionKey: "Invalid server response from Ollama"])
@@ -367,6 +405,13 @@ public class OllamaClient: ObservableObject {
                 let rawError = String(data: data, encoding: .utf8) ?? "HTTP \(httpResponse.statusCode)"
                 throw NSError(domain: "OllamaClient", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Ollama error: \(rawError)"])
             }
+
+            let elapsed = Date().timeIntervalSinceReferenceDate - startTime
+            self.lastResponseDuration = elapsed
+            self.latencyMs = elapsed * 1000
+            self.generationState = .completed
+            self.healthStatus = "Healthy"
+            self.statusMessage = "🟢 Ollama Connected (\(self.activeModel))"
 
             struct ChatResponsePayload: Decodable {
                 struct MessageContent: Decodable {
@@ -392,11 +437,29 @@ public class OllamaClient: ObservableObject {
 
             throw NSError(domain: "OllamaClient", code: 500, userInfo: [NSLocalizedDescriptionKey: "Empty reply from Ollama"])
         } catch {
-            // Signal connection degradation gracefully
-            if (error as NSError).domain == NSURLErrorDomain {
-                self.isOnline = false
-                self.connectionState = .reconnecting(attempt: 1)
-                self.statusMessage = "🟡 Connection lost. Reconnecting..."
+            let elapsed = Date().timeIntervalSinceReferenceDate - startTime
+            self.lastResponseDuration = elapsed
+            let errDesc = error.localizedDescription
+            self.lastFailureReason = errDesc
+            self.generationState = .failed(reason: errDesc)
+
+            // CRITICAL: Do NOT unconditionally disconnect or set offline solely due to a generation timeout/error!
+            // Probe /api/tags asynchronously to verify if Ollama server itself is still alive.
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                let reachable = await self.probeTagsQuick()
+                if reachable {
+                    self.isOnline = true
+                    self.healthStatus = "Degraded"
+                    self.statusMessage = "🟢 Ollama Connected (\(self.activeModel))"
+                } else {
+                    self.isOnline = false
+                    self.healthStatus = "Offline"
+                    self.reconnectAttempts += 1
+                    self.reconnectCount += 1
+                    self.connectionState = .reconnecting(attempt: self.reconnectAttempts)
+                    self.statusMessage = "🟡 Connection lost. Reconnecting..."
+                }
             }
             throw error
         }
@@ -427,6 +490,7 @@ public class OllamaClient: ObservableObject {
             let model: String
             let messages: [ChatPayloadMessage]
             let stream: Bool
+            let keep_alive: String
         }
 
         var payloadMessages: [ChatPayloadMessage] = []
@@ -438,10 +502,17 @@ public class OllamaClient: ObservableObject {
             payloadMessages.append(ChatPayloadMessage(role: role, content: msg.content))
         }
 
-        let payload = ChatRequestPayload(model: modelToUse, messages: payloadMessages, stream: true)
+        let keepAlive = DataManager.shared.savedData.ollamaKeepAlive ?? "10m"
+        let payload = ChatRequestPayload(model: modelToUse, messages: payloadMessages, stream: true, keep_alive: keepAlive)
         request.httpBody = try JSONEncoder().encode(payload)
 
+        self.generationState = .loadingModel
+        self.statusMessage = "🔵 Loading model..."
+        let startTime = Date().timeIntervalSinceReferenceDate
+
         do {
+            self.generationState = .streaming
+            self.statusMessage = "✍️ Generating..."
             let (asyncBytes, response) = try await session.bytes(for: request)
             guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
                 throw NSError(domain: "OllamaClient", code: 500, userInfo: [NSLocalizedDescriptionKey: "Invalid stream response from Ollama"])
@@ -466,6 +537,7 @@ public class OllamaClient: ObservableObject {
                     if !token.isEmpty {
                         fullAccumulation += token
                         await MainActor.run {
+                            self.generationState = .streaming
                             onToken(token)
                         }
                     }
@@ -475,15 +547,108 @@ public class OllamaClient: ObservableObject {
                 }
             }
 
+            let elapsed = Date().timeIntervalSinceReferenceDate - startTime
+            self.lastResponseDuration = elapsed
+            self.latencyMs = elapsed * 1000
+            self.generationState = .completed
+            self.healthStatus = "Healthy"
+            self.statusMessage = "🟢 Ollama Connected (\(self.activeModel))"
+
             return fullAccumulation
         } catch {
-            if (error as NSError).domain == NSURLErrorDomain {
-                self.isOnline = false
-                self.connectionState = .reconnecting(attempt: 1)
-                self.statusMessage = "🟡 Connection lost. Reconnecting..."
+            let elapsed = Date().timeIntervalSinceReferenceDate - startTime
+            self.lastResponseDuration = elapsed
+            let errDesc = error.localizedDescription
+            self.lastFailureReason = errDesc
+            self.generationState = .failed(reason: errDesc)
+
+            // CRITICAL: Do NOT unconditionally disconnect or set offline solely due to a generation timeout/error!
+            // Probe /api/tags asynchronously to verify if Ollama server itself is still alive.
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                let reachable = await self.probeTagsQuick()
+                if reachable {
+                    self.isOnline = true
+                    self.healthStatus = "Degraded"
+                    self.statusMessage = "🟢 Ollama Connected (\(self.activeModel))"
+                } else {
+                    self.isOnline = false
+                    self.healthStatus = "Offline"
+                    self.reconnectAttempts += 1
+                    self.reconnectCount += 1
+                    self.connectionState = .reconnecting(attempt: self.reconnectAttempts)
+                    self.statusMessage = "🟡 Connection lost. Reconnecting..."
+                }
             }
             throw error
         }
+    }
+
+    // MARK: - Health & Model Warmup Utilities
+
+    /// Quick non-blocking probe of service health
+    public func probeTagsQuick() async -> Bool {
+        let tagsURL = baseURL.appendingPathComponent("api/tags")
+        var request = URLRequest(url: tagsURL)
+        request.timeoutInterval = 2.5
+        do {
+            let (_, response) = try await session.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+                return false
+            }
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    /// Ping test calculating roundtrip latency in milliseconds
+    public func pingServer() async -> (success: Bool, latencyMs: Double) {
+        let start = Date().timeIntervalSinceReferenceDate
+        let ok = await probeTagsQuick()
+        let ms = (Date().timeIntervalSinceReferenceDate - start) * 1000
+        if ok {
+            self.latencyMs = ms
+            self.healthStatus = "Healthy"
+        } else {
+            self.healthStatus = "Unreachable"
+        }
+        return (ok, ms)
+    }
+
+    /// Explicitly pre-warms the active model into GPU VRAM with keep_alive
+    public func warmupModel() async {
+        guard isOnline, !activeModel.isEmpty else { return }
+        generationState = .loadingModel
+        statusMessage = "🔵 Pre-warming \(activeModel)..."
+
+        let chatURL = baseURL.appendingPathComponent("api/chat")
+        var request = URLRequest(url: chatURL)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 15.0
+
+        struct WarmupMessage: Encodable {
+            let role: String
+            let content: String
+        }
+        struct WarmupPayload: Encodable {
+            let model: String
+            let messages: [WarmupMessage]
+            let keep_alive: String
+        }
+        let keepAlive = DataManager.shared.savedData.ollamaKeepAlive ?? "10m"
+        let payload = WarmupPayload(
+            model: activeModel,
+            messages: [WarmupMessage(role: "user", content: "hi")],
+            keep_alive: keepAlive
+        )
+        if let data = try? JSONEncoder().encode(payload) {
+            request.httpBody = data
+            _ = try? await session.data(for: request)
+        }
+        generationState = .idle
+        statusMessage = "🟢 Ollama Connected (\(activeModel))"
     }
 
     deinit {

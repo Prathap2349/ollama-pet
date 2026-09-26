@@ -5,6 +5,7 @@ import SwiftUI
 
 public enum ActionExecutionStatus: String, Codable, CaseIterable {
     case success = "Success"
+    case partial = "Partial Success"
     case blocked = "Blocked for Safety"
     case cancelled = "Cancelled by User"
     case failed = "Execution Failed"
@@ -15,6 +16,7 @@ public enum ActionExecutionStatus: String, Codable, CaseIterable {
     public var badgeColor: Color {
         switch self {
         case .success: return .green
+        case .partial: return .orange
         case .blocked: return .orange
         case .cancelled: return .gray
         case .failed: return .red
@@ -27,6 +29,7 @@ public enum ActionExecutionStatus: String, Codable, CaseIterable {
     public var iconName: String {
         switch self {
         case .success: return "checkmark.circle.fill"
+        case .partial: return "exclamationmark.circle.fill"
         case .blocked: return "shield.slash.fill"
         case .cancelled: return "xmark.circle.fill"
         case .failed: return "exclamationmark.triangle.fill"

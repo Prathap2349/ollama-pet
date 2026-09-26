@@ -285,6 +285,16 @@ public enum PetSpecies: String, CaseIterable, Codable, Identifiable {
         }
     }
 
+    public var turnDelaySeconds: Double {
+        switch self {
+        case .cat, .fox: return 0.20
+        case .bunny: return 0.18
+        case .robot, .robotcat: return 0.28
+        case .ghost: return 0.15
+        case .dragon: return 0.38
+        }
+    }
+
     public var specialAbility: SpeciesSpecialAbility {
         switch self {
         case .dragon: return .fireBreath
@@ -419,6 +429,7 @@ public enum PetMood: String, CaseIterable, Codable {
 
 public enum PetAnimState: String, Codable {
     case idle, dance, thinking, sleep, shock, walk, run, sit, celebrate, react, wake
+    case lookAround, watchUser, stretch, groom, stand, turnLeft, turnRight, pause, curious, returnHome
 }
 
 // MARK: - Facial & Physiological Systems
@@ -446,9 +457,13 @@ public enum MediaEnergyLevel: String, Codable {
 
 public enum PetEventPriority: Int, Comparable {
     case idleBehavior = 0
-    case musicReaction = 1
-    case importantAppEvent = 2
-    case userInteraction = 3
+    case autonomousLife = 1
+    case musicReaction = 2
+    case importantAppEvent = 3
+    case focusMode = 4
+    case macAction = 5
+    case voiceChat = 6
+    case userInteraction = 7
 
     public static func < (lhs: PetEventPriority, rhs: PetEventPriority) -> Bool {
         lhs.rawValue < rhs.rawValue
@@ -634,6 +649,10 @@ public struct PetSavedData: Codable {
     public var mediaDetectionEnabled: Bool? = false
     public var danceWhenMusicDetected: Bool? = true
     public var autonomousLifeMode: String? = "normal"
+    public var autonomousLifeEnabled: Bool? = true
+    public var walkFrequency: String? = "normal" // "off", "minimal", "normal", "lively"
+    public var quietModeEnabled: Bool? = false
+    public var ollamaKeepAlive: String? = "10m"
 
     public init(
         version: Int? = 1,

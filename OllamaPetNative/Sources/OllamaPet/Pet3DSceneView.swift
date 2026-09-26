@@ -142,33 +142,53 @@ public struct Pet3DSceneView: NSViewRepresentable {
             setupNotificationObservers()
         }
 
+        private var notificationTokens: [NSObjectProtocol] = []
+        private var lastFireTriggerTime: TimeInterval = 0
+
         private func setupNotificationObservers() {
-            NotificationCenter.default.addObserver(forName: NSNotification.Name("PetTriggerDragonFireBreath"), object: nil, queue: .main) { [weak self] _ in
+            for token in notificationTokens {
+                NotificationCenter.default.removeObserver(token)
+            }
+            notificationTokens.removeAll()
+
+            let fireToken = NotificationCenter.default.addObserver(forName: NSNotification.Name("PetTriggerDragonFireBreath"), object: nil, queue: .main) { [weak self] _ in
                 Task { @MainActor [weak self] in
                     self?.triggerFireBreath()
                 }
             }
-            NotificationCenter.default.addObserver(forName: NSNotification.Name("PetTriggerRobotWave"), object: nil, queue: .main) { [weak self] _ in
+            notificationTokens.append(fireToken)
+
+            let waveToken = NotificationCenter.default.addObserver(forName: NSNotification.Name("PetTriggerRobotWave"), object: nil, queue: .main) { [weak self] _ in
                 Task { @MainActor [weak self] in
                     self?.triggerRobotWave()
                 }
             }
+            notificationTokens.append(waveToken)
         }
 
         public func triggerFireBreath() {
+            let now = Date().timeIntervalSinceReferenceDate
+            guard now - lastFireTriggerTime > 3.0 else { return } // 3.0s debounce prevents duplicate burst
+            lastFireTriggerTime = now
             guard !isBreathingFire else { return }
             isBreathingFire = true
-            fireStartTime = Date().timeIntervalSinceReferenceDate
-            PetState.shared.showBubble("🔥 *FWOOOOSH!*", duration: 3.0)
-            SoundEffect.click.play()
+            fireStartTime = now
+            let isQuiet = DataManager.shared.savedData.quietModeEnabled ?? false
+            if !isQuiet {
+                PetState.shared.showBubble("🔥 *FWOOOOSH!*", duration: 3.0)
+                SoundEffect.click.play()
+            }
         }
 
         public func triggerRobotWave() {
             guard !isWaving else { return }
             isWaving = true
             waveStartTime = Date().timeIntervalSinceReferenceDate
-            PetState.shared.showBubble("👋 *Beep-boop! Hello!*", duration: 2.5)
-            SoundEffect.receive.play()
+            let isQuiet = DataManager.shared.savedData.quietModeEnabled ?? false
+            if !isQuiet {
+                PetState.shared.showBubble("👋 *Beep-boop! Hello!*", duration: 2.5)
+                SoundEffect.receive.play()
+            }
         }
 
         func setupCharacter(in scene: SCNScene, petState: PetState) {
@@ -244,6 +264,9 @@ public struct Pet3DSceneView: NSViewRepresentable {
             var bobY: CGFloat = CGFloat(sin(t * 2.2)) * (reduceMotion ? 0.004 : 0.012)
             var scaleY: CGFloat = 1.0 + CGFloat(sin(t * 2.2)) * (reduceMotion ? 0.005 : 0.015)
             var scaleXZ: CGFloat = 1.0 - CGFloat(sin(t * 2.2)) * (reduceMotion ? 0.003 : 0.008)
+            var targetHeadPitch: CGFloat = 0.0
+            var targetHeadRoll: CGFloat = 0.0
+            var targetHeadYaw: CGFloat = 0.0
 
             // Music Beat Reactivity
             if musicAmp > 0.05 && !reduceMotion {
@@ -297,14 +320,19 @@ public struct Pet3DSceneView: NSViewRepresentable {
                 if t - lastSaccadeTime >= nextSaccadeInterval {
                     lastSaccadeTime = t
                     nextSaccadeInterval = Double.random(in: 2.4...4.8)
-                    if isThinking {
+                    if animState == .watchUser {
+                        gazeTargetX = 0.0
+                        gazeTargetY = 0.002
+                        targetLookYaw = 0.0
+                        targetLookPitch = 0.08
+                    } else if isThinking {
                         gazeTargetX = CGFloat(sin(t * 1.5)) * 0.008
                         gazeTargetY = 0.006 // Upward thoughtful drift
                         targetLookYaw = CGFloat(sin(t * 1.5)) * 0.15
                     } else if mood == .focused {
                         gazeTargetX = 0.0
                         gazeTargetY = 0.0 // Locked directly forward
-                    } else if mood == .curious {
+                    } else if mood == .curious || animState == .curious {
                         gazeTargetX = (Double.random(in: 0...1) < 0.5 ? -0.008 : 0.008)
                         gazeTargetY = 0.004
                         targetLookYaw = gazeTargetX * 12.0
@@ -324,6 +352,20 @@ public struct Pet3DSceneView: NSViewRepresentable {
             rig.leftPupilNode?.position.y = currentGazeY
             rig.rightPupilNode?.position.x = currentGazeX
             rig.rightPupilNode?.position.y = currentGazeY
+
+            // Emotion & attention-driven pupil dilation
+            let pupilScale: Float
+            if animState == .curious || mood == .excited || animState == .watchUser {
+                pupilScale = 1.25 // Dilated, engaged
+            } else if mood == .focused || animState == .thinking {
+                pupilScale = 0.85 // Narrowed, sharp
+            } else if isSleeping {
+                pupilScale = 0.70
+            } else {
+                pupilScale = 1.0
+            }
+            rig.leftPupilNode?.scale = SCNVector3(pupilScale, pupilScale, pupilScale)
+            rig.rightPupilNode?.scale = SCNVector3(pupilScale, pupilScale, pupilScale)
 
             // 4. Eyelid Emotion Shaping (Requirement 2 & 4)
             var targetUpperLid: CGFloat = 0.02
@@ -681,6 +723,55 @@ public struct Pet3DSceneView: NSViewRepresentable {
                 case .ghost:
                     bobY -= 0.06
                 }
+            } else if animState == .stretch {
+                // Organic full-body stretch
+                rig.frontLeftLeg?.eulerAngles.x = 0.52
+                rig.frontLeftShin?.eulerAngles.x = -0.25
+                rig.frontRightLeg?.eulerAngles.x = 0.52
+                rig.frontRightShin?.eulerAngles.x = -0.25
+                rig.backLeftLeg?.eulerAngles.x = -0.38
+                rig.backRightLeg?.eulerAngles.x = -0.38
+                bobY -= 0.05
+                targetHeadPitch = -0.15
+                rig.tailNode?.eulerAngles.y = 0.30
+
+            } else if animState == .groom {
+                // Feline / mammal face grooming
+                rig.frontRightLeg?.eulerAngles.x = 0.85
+                rig.frontRightShin?.eulerAngles.x = -0.95
+                rig.frontLeftLeg?.eulerAngles.x = -0.10
+                rig.backLeftLeg?.eulerAngles.x = -0.60
+                rig.backRightLeg?.eulerAngles.x = -0.60
+                bobY -= 0.04
+                targetHeadPitch = -0.22
+                targetHeadRoll = 0.18
+
+            } else if animState == .lookAround {
+                // Looking around inquisitively
+                targetHeadYaw += CGFloat(sin(t * 1.8)) * 0.45
+                targetHeadPitch += 0.04
+                rig.tailNode?.eulerAngles.y = CGFloat(cos(t * 1.8)) * 0.35
+
+            } else if animState == .watchUser {
+                // Direct attentive user focus
+                targetHeadPitch += 0.08
+                targetHeadYaw = 0.0
+                rig.tailNode?.eulerAngles.y = CGFloat(sin(t * 1.2)) * 0.20
+
+            } else if animState == .curious {
+                // Inquisitive head tilt
+                targetHeadRoll = 0.28
+                targetHeadYaw = -0.15
+                targetHeadPitch = 0.04
+
+            } else if animState == .turnLeft {
+                rig.rootNode.eulerAngles.y = -0.35
+                targetHeadYaw = -0.25
+
+            } else if animState == .turnRight {
+                rig.rootNode.eulerAngles.y = 0.35
+                targetHeadYaw = 0.25
+
             } else {
                 // Standing rest position
                 rig.frontLeftLeg?.eulerAngles.x = 0
@@ -744,11 +835,6 @@ public struct Pet3DSceneView: NSViewRepresentable {
                     seg.eulerAngles.y = CGFloat(sin((t - delay) * tailWagFreq)) * (tailAmp * 0.7)
                 }
             }
-
-            // 8. Emotion & Head Targeting Variables
-            var targetHeadPitch: CGFloat = 0.0
-            var targetHeadRoll: CGFloat = 0.0
-            var targetHeadYaw: CGFloat = 0.0
 
             // Dragon Fire Breath Animation Sequence (Requirement 4)
             if isBreathingFire, let emitter = rig.fireEmitterNode {
@@ -842,74 +928,77 @@ public struct Pet3DSceneView: NSViewRepresentable {
             }
 
             // 9. Emotion Engine Full Mapping (Requirement 4)
-            switch mood {
-            case .calm:
-                targetHeadPitch = 0.0
-                targetHeadRoll = 0.0
+            let isCustomPoseState = (animState == .lookAround || animState == .watchUser || animState == .curious || animState == .stretch || animState == .groom || animState == .turnLeft || animState == .turnRight)
+            if !isCustomPoseState {
+                switch mood {
+                case .calm:
+                    targetHeadPitch = 0.0
+                    targetHeadRoll = 0.0
 
-            case .happy:
-                targetHeadRoll = CGFloat(sin(t * 2.0)) * 0.08
-                targetHeadPitch = CGFloat(cos(t * 2.0)) * 0.05
-                rig.leftEarNode?.eulerAngles.z = -CGFloat(Double.pi / 12) + CGFloat(sin(t * 3.0)) * 0.04
-                rig.rightEarNode?.eulerAngles.z = CGFloat(Double.pi / 12) - CGFloat(sin(t * 3.0)) * 0.04
+                case .happy:
+                    targetHeadRoll = CGFloat(sin(t * 2.0)) * 0.08
+                    targetHeadPitch = CGFloat(cos(t * 2.0)) * 0.05
+                    rig.leftEarNode?.eulerAngles.z = -CGFloat(Double.pi / 12) + CGFloat(sin(t * 3.0)) * 0.04
+                    rig.rightEarNode?.eulerAngles.z = CGFloat(Double.pi / 12) - CGFloat(sin(t * 3.0)) * 0.04
 
-            case .joyful:
-                targetHeadRoll = CGFloat(sin(t * 3.0)) * 0.10
-                targetHeadPitch = 0.08 + CGFloat(cos(t * 3.0)) * 0.06
-                bobY += CGFloat(abs(sin(t * 4.0))) * 0.03
+                case .joyful:
+                    targetHeadRoll = CGFloat(sin(t * 3.0)) * 0.10
+                    targetHeadPitch = 0.08 + CGFloat(cos(t * 3.0)) * 0.06
+                    bobY += CGFloat(abs(sin(t * 4.0))) * 0.03
 
-            case .excited:
-                targetHeadPitch = CGFloat(sin(t * 6.0)) * 0.12
-                bobY += CGFloat(abs(sin(t * 6.0))) * 0.04
+                case .excited:
+                    targetHeadPitch = CGFloat(sin(t * 6.0)) * 0.12
+                    bobY += CGFloat(abs(sin(t * 6.0))) * 0.04
 
-            case .curious:
-                targetHeadRoll = 0.25 // Inquisitive cocked head
-                targetHeadYaw = -0.15
-                rig.leftEarNode?.eulerAngles.z = -CGFloat(Double.pi / 6)
-                rig.rightEarNode?.eulerAngles.z = 0.0
+                case .curious:
+                    targetHeadRoll = 0.25 // Inquisitive cocked head
+                    targetHeadYaw = -0.15
+                    rig.leftEarNode?.eulerAngles.z = -CGFloat(Double.pi / 6)
+                    rig.rightEarNode?.eulerAngles.z = 0.0
 
-            case .focused:
-                targetHeadPitch = 0.06 // Forward attentive posture
-                targetHeadRoll = 0.0
+                case .focused:
+                    targetHeadPitch = 0.06 // Forward attentive posture
+                    targetHeadRoll = 0.0
 
-            case .sleepy:
-                targetHeadPitch = -0.24 // Heavy drooping head
-                scaleY = 0.94
-                bobY -= 0.04
+                case .sleepy:
+                    targetHeadPitch = -0.24 // Heavy drooping head
+                    scaleY = 0.94
+                    bobY -= 0.04
 
-            case .sad, .crying:
-                targetHeadPitch = -0.32 // Drooped sad head
-                rig.leftEarNode?.eulerAngles.z = -CGFloat(Double.pi / 5)
-                rig.rightEarNode?.eulerAngles.z = CGFloat(Double.pi / 5)
-                bobY -= 0.03
+                case .sad, .crying:
+                    targetHeadPitch = -0.32 // Drooped sad head
+                    rig.leftEarNode?.eulerAngles.z = -CGFloat(Double.pi / 5)
+                    rig.rightEarNode?.eulerAngles.z = CGFloat(Double.pi / 5)
+                    bobY -= 0.03
 
-            case .concerned:
-                targetHeadRoll = 0.22
-                targetHeadYaw = -0.12
+                case .concerned:
+                    targetHeadRoll = 0.22
+                    targetHeadYaw = -0.12
 
-            case .surprised:
-                targetHeadPitch = 0.18 // Sudden upward gaze
-                scaleY = 1.08
+                case .surprised:
+                    targetHeadPitch = 0.18 // Sudden upward gaze
+                    scaleY = 1.08
 
-            case .celebrating:
-                targetHeadPitch = CGFloat(sin(t * 5.0)) * 0.14
-                targetHeadRoll = CGFloat(cos(t * 4.0)) * 0.12
-                bobY += CGFloat(abs(sin(t * 5.0))) * 0.06
+                case .celebrating:
+                    targetHeadPitch = CGFloat(sin(t * 5.0)) * 0.14
+                    targetHeadRoll = CGFloat(cos(t * 4.0)) * 0.12
+                    bobY += CGFloat(abs(sin(t * 5.0))) * 0.06
 
-            case .relaxed:
-                targetHeadPitch = -0.04
-                targetHeadRoll = CGFloat(sin(t * 1.5)) * 0.04
+                case .relaxed:
+                    targetHeadPitch = -0.04
+                    targetHeadRoll = CGFloat(sin(t * 1.5)) * 0.04
 
-            case .angry:
-                targetHeadPitch = -0.18
-                targetHeadYaw = CGFloat(sin(t * 4.0)) * 0.05
+                case .angry:
+                    targetHeadPitch = -0.18
+                    targetHeadYaw = CGFloat(sin(t * 4.0)) * 0.05
 
-            case .proud:
-                targetHeadPitch = 0.22 // High chin
-                scaleXZ = 1.05
+                case .proud:
+                    targetHeadPitch = 0.22 // High chin
+                    scaleXZ = 1.05
 
-            default:
-                targetHeadRoll = CGFloat(snapshot.headTiltAngle.radians) * 0.5
+                default:
+                    targetHeadRoll = CGFloat(snapshot.headTiltAngle.radians) * 0.5
+                }
             }
 
             if isSleeping {
@@ -943,6 +1032,9 @@ public struct Pet3DSceneView: NSViewRepresentable {
 
         deinit {
             displayTimer?.invalidate()
+            for token in notificationTokens {
+                NotificationCenter.default.removeObserver(token)
+            }
         }
     }
 }

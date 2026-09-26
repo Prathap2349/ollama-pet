@@ -58,7 +58,24 @@ public class ActionIntentParser {
         // C. Extract specific browser target if present (e.g. "in Google Chrome", "in Safari", "in Firefox")
         let (cleanedText, cleanedLower, targetBrowser) = extractBrowser(from: text, lower: lower)
 
-        // D. Search Web
+        // D. Search Web & Media
+        if cleanedLower.starts(with: "play ") && (cleanedLower.contains("on youtube") || cleanedLower.contains("in youtube")) {
+            var q = cleanedText
+            if let range = q.range(of: "play ", options: .caseInsensitive) {
+                q.removeSubrange(range)
+            }
+            if let range = q.range(of: " on youtube", options: .caseInsensitive) {
+                q.removeSubrange(range)
+            } else if let range = q.range(of: " in youtube", options: .caseInsensitive) {
+                q.removeSubrange(range)
+            }
+            let trimmedQ = q.trimmingCharacters(in: .whitespaces)
+            let encoded = trimmedQ.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? trimmedQ
+            return MacAction(type: .openURL, url: "https://www.youtube.com/results?search_query=\(encoded)", browser: targetBrowser)
+        }
+        if cleanedLower == "play lofi" || cleanedLower == "play lofi on youtube" || cleanedLower == "play lofi music" {
+            return MacAction(type: .openURL, url: "https://www.youtube.com/results?search_query=lofi+hip+hop+radio", browser: targetBrowser)
+        }
         if cleanedLower.starts(with: "search youtube for ") {
             let q = String(cleanedText.dropFirst("search youtube for ".count)).trimmingCharacters(in: .whitespaces)
             let encoded = q.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? q
@@ -143,6 +160,21 @@ public class ActionIntentParser {
         }
 
         // H. Open URLs / Websites with optional Browser Target
+        if cleanedLower.starts(with: "go to ") || cleanedLower.starts(with: "navigate to ") {
+            let site = cleanedLower.starts(with: "go to ") ? String(cleanedText.dropFirst(6)) : String(cleanedText.dropFirst(12))
+            let trimmedSite = site.trimmingCharacters(in: .whitespaces)
+            let lowerSite = trimmedSite.lowercased()
+            if lowerSite == "youtube" || lowerSite == "youtube.com" {
+                return MacAction(type: .openURL, url: "https://www.youtube.com", browser: targetBrowser)
+            } else if lowerSite == "google" || lowerSite == "google.com" {
+                return MacAction(type: .openURL, url: "https://www.google.com", browser: targetBrowser)
+            } else if lowerSite == "github" || lowerSite == "github.com" {
+                return MacAction(type: .openURL, url: "https://www.github.com", browser: targetBrowser)
+            } else if lowerSite.contains(".com") || lowerSite.contains(".org") || lowerSite.contains(".net") || lowerSite.contains(".io") || lowerSite.starts(with: "http") {
+                let url = lowerSite.starts(with: "http") ? trimmedSite : "https://\(trimmedSite)"
+                return MacAction(type: .openURL, url: url, browser: targetBrowser)
+            }
+        }
         if cleanedLower.starts(with: "open http://") || cleanedLower.starts(with: "open https://") {
             let urlStr = String(cleanedText.dropFirst(5)).trimmingCharacters(in: .whitespaces)
             return MacAction(type: .openURL, url: urlStr, browser: targetBrowser)
@@ -186,13 +218,33 @@ public class ActionIntentParser {
     private func extractBrowser(from text: String, lower: String) -> (cleanedText: String, cleanedLower: String, browser: String?) {
         let browserPatterns: [(pattern: String, name: String)] = [
             (" in google chrome", "Google Chrome"),
+            (" on google chrome", "Google Chrome"),
+            (" using google chrome", "Google Chrome"),
+            (" with google chrome", "Google Chrome"),
             (" in chrome", "Google Chrome"),
+            (" on chrome", "Google Chrome"),
+            (" using chrome", "Google Chrome"),
+            (" with chrome", "Google Chrome"),
             (" in safari", "Safari"),
+            (" on safari", "Safari"),
+            (" using safari", "Safari"),
+            (" with safari", "Safari"),
             (" in firefox", "Firefox"),
+            (" on firefox", "Firefox"),
+            (" using firefox", "Firefox"),
+            (" with firefox", "Firefox"),
             (" in microsoft edge", "Microsoft Edge"),
+            (" on microsoft edge", "Microsoft Edge"),
+            (" using microsoft edge", "Microsoft Edge"),
             (" in edge", "Microsoft Edge"),
+            (" on edge", "Microsoft Edge"),
+            (" using edge", "Microsoft Edge"),
             (" in brave browser", "Brave Browser"),
-            (" in brave", "Brave Browser")
+            (" on brave browser", "Brave Browser"),
+            (" using brave browser", "Brave Browser"),
+            (" in brave", "Brave Browser"),
+            (" on brave", "Brave Browser"),
+            (" using brave", "Brave Browser")
         ]
 
         for (pattern, name) in browserPatterns {

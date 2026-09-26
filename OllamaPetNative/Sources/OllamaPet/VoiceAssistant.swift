@@ -210,7 +210,6 @@ public class VoiceAssistant: NSObject, ObservableObject, AVSpeechSynthesizerDele
 
     private func processSpokenQuery(_ text: String) async {
         let petState = PetState.shared
-        let ollama = OllamaClient.shared
         let dataManager = DataManager.shared
 
         // Add to chat history
@@ -245,7 +244,15 @@ public class VoiceAssistant: NSObject, ObservableObject, AVSpeechSynthesizerDele
 
         do {
             let systemCtx = "You are \(petState.currentSpecies.displayName), a cute friendly desktop companion. Keep answers short, conversational, and direct (1-3 sentences max)."
-            let reply = try await ollama.sendChat(systemPrompt: systemCtx, messages: history)
+            var accumulated = ""
+
+            let reply = try await AIProviderManager.shared.streamChat(
+                systemPrompt: systemCtx,
+                messages: history
+            ) { token in
+                accumulated += token
+                petState.showBubble(accumulated, duration: 4.0)
+            }
 
             // Save reply to history
             history.append(ChatMessage(role: "assistant", content: reply))
@@ -256,8 +263,9 @@ public class VoiceAssistant: NSObject, ObservableObject, AVSpeechSynthesizerDele
             petState.animState = .idle
             petState.showBubble(reply, duration: 4.0)
 
-            // Speak response if enabled
-            if dataManager.savedData.speakAiResponses ?? true {
+            // Speak response if enabled and not in Quiet Mode
+            let isQuiet = dataManager.savedData.quietModeEnabled ?? false
+            if !isQuiet && (dataManager.savedData.speakAiResponses ?? true) {
                 speak(text: reply)
             } else {
                 state = .idle

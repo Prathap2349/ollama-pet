@@ -35,9 +35,11 @@ struct ChatView: View {
     @State private var editReminderMinutes: Int = 15
     @State private var editReminderRecurring: Bool = false
 
-    // Settings state
+    // Settings & Diagnostics state
     @State private var testingOllama: Bool = false
     @State private var testOllamaResult: String? = nil
+    @State private var showDiagnosticsDrawer: Bool = false
+    @State private var isPingingOllama: Bool = false
 
     var body: some View {
         ZStack {
@@ -103,19 +105,32 @@ struct ChatView: View {
                         .foregroundColor(.white)
                 }
 
-                HStack(spacing: 5) {
-                    Circle()
-                        .fill(headerStatusColor)
-                        .frame(width: 7, height: 7)
+                Button(action: {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        showDiagnosticsDrawer.toggle()
+                    }
+                    SoundEffect.click.play()
+                }) {
+                    HStack(spacing: 5) {
+                        Circle()
+                            .fill(headerStatusColor)
+                            .frame(width: 7, height: 7)
 
-                    Text(ollamaClient.statusMessage)
-                        .font(.system(size: 10, weight: .medium, design: .monospaced))
-                        .foregroundColor(Color.white.opacity(0.85))
-                        .lineLimit(1)
+                        Text(dynamicStatusText)
+                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .foregroundColor(Color.white.opacity(0.85))
+                            .lineLimit(1)
+
+                        Image(systemName: showDiagnosticsDrawer ? "chevron.up" : "chevron.down")
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundColor(Color.white.opacity(0.5))
+                    }
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(Color.white.opacity(0.08)))
                 }
-                .padding(.horizontal, 7)
-                .padding(.vertical, 3)
-                .background(Capsule().fill(Color.white.opacity(0.08)))
+                .buttonStyle(.plain)
+                .help("Toggle Ollama Diagnostics Drawer")
 
                 if !ollamaClient.isOnline {
                     Button(action: {
@@ -159,6 +174,11 @@ struct ChatView: View {
             .padding(.horizontal, 14)
             .padding(.top, 10)
 
+            if showDiagnosticsDrawer {
+                diagnosticsDrawer
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+
             // Tabs Selector
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
@@ -185,14 +205,128 @@ struct ChatView: View {
         .background(Color.white.opacity(0.04))
     }
 
+    private var dynamicStatusText: String {
+        switch ollamaClient.generationState {
+        case .loadingModel:
+            return "🔵 Loading model..."
+        case .generating:
+            return "🧠 Thinking..."
+        case .streaming:
+            return "✍️ Generating..."
+        case .idle, .completed, .failed:
+            return ollamaClient.statusMessage
+        }
+    }
+
+    private var diagnosticsDrawer: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("OLLAMA DIAGNOSTICS")
+                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .foregroundColor(petState.currentSpecies.accentColor)
+
+                Spacer()
+
+                Button(action: {
+                    Task {
+                        isPingingOllama = true
+                        _ = await ollamaClient.pingServer()
+                        isPingingOllama = false
+                    }
+                }) {
+                    HStack(spacing: 3) {
+                        if isPingingOllama {
+                            ProgressView()
+                                .scaleEffect(0.5)
+                                .frame(width: 10, height: 10)
+                        } else {
+                            Image(systemName: "bolt.horizontal.fill")
+                                .font(.system(size: 8))
+                        }
+                        Text("Ping Test")
+                            .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Capsule().fill(Color.white.opacity(0.12)))
+                    .foregroundColor(.white)
+                }
+                .buttonStyle(.plain)
+
+                Button(action: {
+                    Task {
+                        await ollamaClient.warmupModel()
+                    }
+                }) {
+                    Text("Warmup")
+                        .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Capsule().fill(Color.white.opacity(0.12)))
+                        .foregroundColor(.white)
+                }
+                .buttonStyle(.plain)
+            }
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack {
+                    Text("Endpoint:").foregroundColor(Color.white.opacity(0.5))
+                    Text(ollamaClient.endpoint).foregroundColor(.white).lineLimit(1)
+                    Spacer()
+                    Text("Status:").foregroundColor(Color.white.opacity(0.5))
+                    Text(ollamaClient.isOnline ? "Online" : "Offline")
+                        .foregroundColor(ollamaClient.isOnline ? .green : .red)
+                }
+                HStack {
+                    Text("Model:").foregroundColor(Color.white.opacity(0.5))
+                    Text(ollamaClient.activeModel.isEmpty ? "None" : ollamaClient.activeModel)
+                        .foregroundColor(.white).lineLimit(1)
+                    Spacer()
+                    Text("Gen:").foregroundColor(Color.white.opacity(0.5))
+                    Text(ollamaClient.generationState.displayTitle).foregroundColor(.yellow).lineLimit(1)
+                }
+                HStack {
+                    Text("Latency:").foregroundColor(Color.white.opacity(0.5))
+                    Text(ollamaClient.latencyMs > 0 ? String(format: "%.0f ms", ollamaClient.latencyMs) : "--")
+                        .foregroundColor(.white)
+                    Spacer()
+                    Text("Health:").foregroundColor(Color.white.opacity(0.5))
+                    Text(ollamaClient.healthStatus)
+                        .foregroundColor(ollamaClient.healthStatus == "Healthy" ? .green : .orange)
+                }
+                if let err = ollamaClient.lastFailureReason {
+                    HStack {
+                        Text("Failure:").foregroundColor(Color.red.opacity(0.8))
+                        Text(err).foregroundColor(.red).lineLimit(1)
+                    }
+                }
+            }
+            .font(.system(size: 9, design: .monospaced))
+        }
+        .padding(8)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Color.black.opacity(0.4)))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.08), lineWidth: 1))
+        .padding(.horizontal, 12)
+        .padding(.bottom, 4)
+    }
+
     private var headerStatusColor: Color {
-        switch ollamaClient.connectionState {
-        case .connected:
-            return ollamaClient.installedModels.isEmpty ? .orange : .green
-        case .connecting, .reconnecting, .checking:
-            return .orange
+        switch ollamaClient.generationState {
+        case .loadingModel:
+            return .blue
+        case .generating, .streaming:
+            return .purple
         case .failed:
-            return .red
+            return .orange
+        case .idle, .completed:
+            switch ollamaClient.connectionState {
+            case .connected:
+                return ollamaClient.installedModels.isEmpty ? .orange : .green
+            case .connecting, .reconnecting, .checking:
+                return .orange
+            case .failed:
+                return .red
+            }
         }
     }
 

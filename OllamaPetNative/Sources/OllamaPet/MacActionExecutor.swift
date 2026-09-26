@@ -1,6 +1,18 @@
 import Foundation
 import AppKit
 
+// MARK: - Action Execution Result
+
+public struct ActionExecutionResult {
+    public let message: String
+    public let status: ActionExecutionStatus
+
+    public init(_ message: String, status: ActionExecutionStatus = .success) {
+        self.message = message
+        self.status = status
+    }
+}
+
 // MARK: - Safe Mac Action Executor
 
 @MainActor
@@ -55,6 +67,18 @@ public class MacActionExecutor {
 
     // MARK: - Execution Engine
 
+    private func timeout(for actionType: MacActionType) -> TimeInterval {
+        switch actionType {
+        case .openApp: return 5.0
+        case .openURL, .searchWeb: return 8.0
+        case .sendMessage: return 10.0
+        case .createReminder, .setTimer: return 5.0
+        case .querySystemVitals: return 3.0
+        case .openReminders, .openCalendar, .openWhatsApp, .openMessages, .openSystemSettings: return 5.0
+        default: return 5.0
+        }
+    }
+
     public func executeConfirmedAction(_ action: MacAction) async -> String {
         let settings = DataManager.shared.savedData.macControlSettings ?? MacControlSettings()
 
@@ -63,25 +87,31 @@ public class MacActionExecutor {
             UserDefaults.standard.removeObject(forKey: "isExecutingMacAction")
         }
 
+        let timeoutSecs = timeout(for: action.type)
+
         do {
-            // Enforce 5.0s maximum timeout to guarantee main thread never hangs
-            let result = try await withThrowingTimeout(seconds: 5.0) {
+            let result = try await withThrowingTimeout(seconds: timeoutSecs) {
                 try await self.performActionInternal(action, settings: settings)
             }
 
             ActionHistoryManager.shared.record(
                 actionType: action.type.rawValue,
                 summary: action.summaryDescription,
-                status: .success,
-                detail: result
+                status: result.status,
+                detail: result.message
             )
 
             if settings.showActionStatus {
-                PetState.shared.showBubble("✓ \(result)", duration: 3.0)
-                SoundEffect.receive.play()
+                let icon = result.status == .partial ? "⚠️" : "✓"
+                PetState.shared.showBubble("\(icon) \(result.message)", duration: 3.5)
+                if result.status == .partial {
+                    SoundEffect.alert.play()
+                } else {
+                    SoundEffect.receive.play()
+                }
             }
 
-            return result
+            return result.message
         } catch {
             let errorMsg = error.localizedDescription
             ActionHistoryManager.shared.record(
@@ -102,14 +132,15 @@ public class MacActionExecutor {
 
     // MARK: - Native Subsystem Operations
 
-    private func performActionInternal(_ action: MacAction, settings: MacControlSettings) async throws -> String {
+    private func performActionInternal(_ action: MacAction, settings: MacControlSettings) async throws -> ActionExecutionResult {
         switch action.type {
 
         case .openApp:
             guard let appName = action.app else {
                 throw NSError(domain: "MacAction", code: 400, userInfo: [NSLocalizedDescriptionKey: "No application specified."])
             }
-            return try await launchApplication(named: appName)
+            let launchMsg = try await launchApplication(named: appName)
+            return ActionExecutionResult(launchMsg, status: .success)
 
         case .openURL:
             guard let urlStr = action.url, let url = URL(string: urlStr) else {
@@ -122,11 +153,20 @@ public class MacActionExecutor {
                 let config = NSWorkspace.OpenConfiguration()
                 config.activates = true
                 _ = try await NSWorkspace.shared.open([url], withApplicationAt: browserURL, configuration: config)
-                return "Opened \(urlStr) in \(browserName)"
+
+                // Tab / Process Verification
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                let bId = bundleId(for: browserName)
+                let isRunning = !bId.isEmpty && !NSRunningApplication.runningApplications(withBundleIdentifier: bId).isEmpty
+                if isRunning {
+                    return ActionExecutionResult("Opened \(urlStr) in \(browserName)", status: .success)
+                } else {
+                    return ActionExecutionResult("Dispatched \(urlStr) to \(browserName) (window opening)", status: .partial)
+                }
             } else {
                 let success = NSWorkspace.shared.open(url)
                 if success {
-                    return "Opened \(urlStr)"
+                    return ActionExecutionResult("Opened \(urlStr)", status: .success)
                 } else {
                     throw NSError(domain: "MacAction", code: 500, userInfo: [NSLocalizedDescriptionKey: "Unable to open URL in browser."])
                 }
@@ -145,11 +185,18 @@ public class MacActionExecutor {
                 let config = NSWorkspace.OpenConfiguration()
                 config.activates = true
                 _ = try await NSWorkspace.shared.open([searchURL], withApplicationAt: browserURL, configuration: config)
-                return "Searched web for '\(query)' in \(browserName)"
+
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                let bId = bundleId(for: browserName)
+                let isRunning = !bId.isEmpty && !NSRunningApplication.runningApplications(withBundleIdentifier: bId).isEmpty
+                return ActionExecutionResult(
+                    isRunning ? "Searched web for '\(query)' in \(browserName)" : "Sent search for '\(query)' to \(browserName)",
+                    status: isRunning ? .success : .partial
+                )
             } else {
                 let success = NSWorkspace.shared.open(searchURL)
                 if success {
-                    return "Searched web for '\(query)'"
+                    return ActionExecutionResult("Searched web for '\(query)'", status: .success)
                 } else {
                     throw NSError(domain: "MacAction", code: 500, userInfo: [NSLocalizedDescriptionKey: "Unable to open browser search."])
                 }
@@ -162,7 +209,7 @@ public class MacActionExecutor {
             let delay = action.delaySeconds ?? 60
             DataManager.shared.addReminder(text: title, seconds: delay)
             let formattedDelay = formatSeconds(delay)
-            return "Reminder set: '\(title)' in \(formattedDelay)"
+            return ActionExecutionResult("Reminder set: '\(title)' in \(formattedDelay)", status: .success)
 
         case .setTimer:
             let delay = action.delaySeconds ?? 60
@@ -174,37 +221,39 @@ public class MacActionExecutor {
                 body: "Your \(formattedDelay) timer has ended.",
                 inSeconds: delay
             )
-            return "Timer set for \(formattedDelay)"
+            return ActionExecutionResult("Timer set for \(formattedDelay)", status: .success)
 
         case .openReminders:
             if let url = URL(string: "x-apple-reminderkit:") {
                 _ = NSWorkspace.shared.open(url)
             }
             _ = try? await launchApplication(named: "Reminders")
-            return "Opened Reminders"
+            return ActionExecutionResult("Opened Reminders", status: .success)
 
         case .openCalendar:
             if let url = URL(string: "ical:") {
                 _ = NSWorkspace.shared.open(url)
             }
             _ = try? await launchApplication(named: "Calendar")
-            return "Opened Calendar"
+            return ActionExecutionResult("Opened Calendar", status: .success)
 
         case .openWhatsApp:
-            return try await launchApplication(named: "WhatsApp")
+            let res = try await launchApplication(named: "WhatsApp")
+            return ActionExecutionResult(res, status: .success)
 
         case .openMessages:
-            return try await launchApplication(named: "Messages")
+            let res = try await launchApplication(named: "Messages")
+            return ActionExecutionResult(res, status: .success)
 
         case .openSystemSettings:
             if let url = URL(string: "x-apple.systempreferences:") {
                 _ = NSWorkspace.shared.open(url)
             }
-            return "Opened System Settings"
+            return ActionExecutionResult("Opened System Settings", status: .success)
 
         case .showActionHistory:
             SettingsWindowController.shared.showTab(.actionHistory)
-            return "Opened Action History"
+            return ActionExecutionResult("Opened Action History", status: .success)
 
         case .runApprovedShortcut:
             guard let name = action.shortcutName else {
@@ -214,7 +263,7 @@ public class MacActionExecutor {
             if let url = URL(string: "shortcuts://run-shortcut?name=\(encodedName)") {
                 let success = NSWorkspace.shared.open(url)
                 if success {
-                    return "Running approved shortcut '\(name)'"
+                    return ActionExecutionResult("Running approved shortcut '\(name)'", status: .success)
                 }
             }
             throw NSError(domain: "MacAction", code: 500, userInfo: [NSLocalizedDescriptionKey: "Could not launch macOS Shortcuts."])
@@ -224,56 +273,68 @@ public class MacActionExecutor {
             let recipient = action.recipient ?? "Recipient"
             let text = action.messageText ?? ""
 
-            // Open service with draft ready
+            // Open service with draft ready. We never claim "Message sent" without external delivery confirmation!
             let encodedText = text.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? text
             if service.lowercased() == "whatsapp" {
                 if let url = URL(string: "whatsapp://send?text=\(encodedText)"), NSWorkspace.shared.open(url) {
-                    return "WhatsApp opened with your message draft for \(recipient). Click Send to deliver."
+                    return ActionExecutionResult(
+                        "WhatsApp opened with message draft for \(recipient). Please press Send in WhatsApp to deliver.",
+                        status: .partial
+                    )
                 }
                 _ = try? await launchApplication(named: "WhatsApp")
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(text, forType: .string)
-                return "WhatsApp opened. Message copied to clipboard for \(recipient)."
+                return ActionExecutionResult(
+                    "WhatsApp opened. Message draft copied to clipboard for \(recipient). Please paste and press Send.",
+                    status: .partial
+                )
             } else {
                 if let url = URL(string: "sms:&body=\(encodedText)"), NSWorkspace.shared.open(url) {
-                    return "Messages opened with your draft for \(recipient). Click Send to deliver."
+                    return ActionExecutionResult(
+                        "Messages opened with draft for \(recipient). Please press Send in Messages to deliver.",
+                        status: .partial
+                    )
                 }
                 _ = try? await launchApplication(named: "Messages")
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(text, forType: .string)
-                return "Messages opened. Message copied to clipboard for \(recipient)."
+                return ActionExecutionResult(
+                    "Messages opened. Message draft copied to clipboard for \(recipient). Please paste and press Send.",
+                    status: .partial
+                )
             }
 
         case .querySystemVitals:
             let sys = SystemMonitor.shared
             if let q = action.query?.lowercased() {
                 if q.contains("ram") || q.contains("memory") {
-                    return "You are using \(String(format: "%.1f", sys.memoryUsedGB)) GB of \(String(format: "%.1f", sys.memoryTotalGB)) GB RAM (\(String(format: "%.0f%%", sys.memoryPercent))). CPU load is currently \(String(format: "%.1f%%", sys.cpuPercent))."
+                    return ActionExecutionResult("RAM: \(String(format: "%.1f", sys.memoryUsedGB))/\(String(format: "%.1f", sys.memoryTotalGB)) GB (\(String(format: "%.0f%%", sys.memoryPercent))). CPU load: \(String(format: "%.1f%%", sys.cpuPercent)).", status: .success)
                 }
                 if q.contains("battery") || q.contains("power") {
                     let state = sys.isCharging ? "charging" : "on battery"
-                    return "Battery is at \(sys.batteryPercent)% and \(state). Thermal state is \(sys.thermalStateDescription)."
+                    return ActionExecutionResult("Battery is at \(sys.batteryPercent)% (\(state)). Thermal state: \(sys.thermalStateDescription).", status: .success)
                 }
                 if q.contains("app") {
                     let topNames = sys.topApplications.prefix(5).map { $0.name }.joined(separator: ", ")
-                    return "Active app is \(sys.frontmostApp). Top running apps: \(topNames)."
+                    return ActionExecutionResult("Active app: \(sys.frontmostApp). Top running apps: \(topNames).", status: .success)
                 }
             }
-            return "Mac: \(sys.macModel). RAM: \(String(format: "%.1f", sys.memoryUsedGB))/\(String(format: "%.1f", sys.memoryTotalGB)) GB. CPU: \(String(format: "%.1f%%", sys.cpuPercent)). Battery: \(sys.batteryPercent)%."
+            return ActionExecutionResult("Mac: \(sys.macModel). RAM: \(String(format: "%.1f", sys.memoryUsedGB))/\(String(format: "%.1f", sys.memoryTotalGB)) GB. CPU: \(String(format: "%.1f%%", sys.cpuPercent)). Battery: \(sys.batteryPercent)%.", status: .success)
 
         case .controlFocus:
             let durationSecs = action.durationSeconds ?? (25 * 60)
             FocusGuardian.shared.applyPreset(seconds: durationSecs)
             FocusGuardian.shared.startFocusSession()
             let mins = durationSecs / 60
-            return "Started a \(mins) minute focus session. Let's do this!"
+            return ActionExecutionResult("Started a \(mins) minute focus session.", status: .success)
 
         case .controlMonitoring:
             PresenceMonitor.shared.stop()
-            return "Presence monitoring stopped."
+            return ActionExecutionResult("Presence monitoring stopped.", status: .success)
 
         case .needsClarification:
-            return action.clarificationPrompt ?? "Please clarify your request."
+            return ActionExecutionResult(action.clarificationPrompt ?? "Please clarify your request.", status: .needsClarification)
 
         case .unknown:
             throw NSError(domain: "MacAction", code: 403, userInfo: [NSLocalizedDescriptionKey: "Action is not permitted."])

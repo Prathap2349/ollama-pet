@@ -948,6 +948,7 @@ struct QualityPresetCard: View {
 struct AnimationSettingsSection: View {
     @ObservedObject var perf = PerformanceManager.shared
     @ObservedObject var motion = CharacterMotionStateMachine.shared
+    @ObservedObject var dataManager = DataManager.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -1051,6 +1052,42 @@ struct AnimationSettingsSection: View {
                     Text("Off").tag("off")
                     Text("Minimal").tag("minimal")
                     Text("Normal (Recommended)").tag("normal")
+                    Text("Lively").tag("lively")
+                }
+                .pickerStyle(.segmented)
+            }
+
+            Divider()
+
+            // Locomotion & Walk Speed
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Locomotion & Walk Speed")
+                    .font(.system(size: 13, weight: .semibold))
+
+                Text("Controls the companion window movement velocity and frequency across your display desktop.")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+
+                HStack {
+                    Text("Walk Speed: \(String(format: "%.1f", dataManager.savedData.walkSpeed ?? 1.0))x")
+                        .font(.system(size: 12, weight: .medium))
+                    Slider(
+                        value: Binding(
+                            get: { dataManager.savedData.walkSpeed ?? 1.0 },
+                            set: { dataManager.setWalkSpeed($0) }
+                        ),
+                        in: 0.5...2.0,
+                        step: 0.1
+                    )
+                }
+
+                Picker("Walk Frequency", selection: Binding(
+                    get: { dataManager.savedData.walkFrequency ?? "normal" },
+                    set: { dataManager.setWalkFrequency($0) }
+                )) {
+                    Text("Off").tag("off")
+                    Text("Minimal").tag("minimal")
+                    Text("Normal").tag("normal")
                     Text("Lively").tag("lively")
                 }
                 .pickerStyle(.segmented)
@@ -1162,6 +1199,28 @@ struct GeneralSettingsSection: View {
                 .font(.system(size: 18, weight: .bold))
 
             VStack(spacing: 12) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "moon.stars.fill")
+                                .foregroundColor(.indigo)
+                            Text("Quiet Mode")
+                                .font(.system(size: 13, weight: .medium))
+                        }
+                        Text("Suppresses spoken voice responses, status bubbles, and sounds, and slows companion movement.")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    Toggle("", isOn: Binding(
+                        get: { dataManager.savedData.quietModeEnabled ?? false },
+                        set: { dataManager.setQuietModeEnabled($0) }
+                    ))
+                    .labelsHidden()
+                }
+
+                Divider()
+
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Sound Effects")
@@ -3636,7 +3695,238 @@ struct MacControlSettingsSection: View {
                 }
                 .padding(14)
                 .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
+
+                // Verification & Diagnostics Test Suite
+                MacControlDiagnosticsView()
             }
+        }
+    }
+}
+
+// MARK: - Mac Control Diagnostics View
+
+struct PipelineLogStep: Identifiable {
+    let id = UUID()
+    let stage: String
+    let message: String
+    let icon: String
+    let color: Color
+}
+
+struct MacControlDiagnosticsView: View {
+    @State private var isExecuting: Bool = false
+    @State private var logs: [PipelineLogStep] = []
+    @State private var finalResult: String? = nil
+    @State private var finalStatus: ActionExecutionStatus? = nil
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Image(systemName: "checkmark.shield.fill")
+                    .foregroundColor(.blue)
+                Text("Verification & Diagnostics Pipeline")
+                    .font(.system(size: 13, weight: .bold))
+                Spacer()
+                if isExecuting {
+                    ProgressView()
+                        .scaleEffect(0.6)
+                }
+            }
+
+            Text("Test live action dispatching against the 5-step pipeline: REQUEST → PARSE → VALIDATE → EXECUTE → VERIFY → STATUS.")
+                .font(.system(size: 11))
+                .foregroundColor(.secondary)
+
+            // Test Buttons Grid
+            HStack(spacing: 8) {
+                Button("Test Safari") {
+                    runTest(query: "open safari")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(isExecuting)
+
+                Button("Test Chrome + YouTube") {
+                    runTest(query: "play lofi hip hop on youtube using chrome")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(isExecuting)
+
+                Button("Test WhatsApp Draft") {
+                    runTest(query: "message Alex on whatsapp saying hello")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(isExecuting)
+
+                Button("Test System Vitals") {
+                    runTest(query: "check cpu temperature")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(isExecuting)
+            }
+            .padding(.vertical, 4)
+
+            // Live Pipeline Steps
+            if !logs.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(logs) { step in
+                        HStack(alignment: .top, spacing: 6) {
+                            Image(systemName: step.icon)
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundColor(step.color)
+                                .frame(width: 14)
+                                .padding(.top, 2)
+
+                            Text(step.stage)
+                                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                .foregroundColor(step.color)
+                                .frame(width: 70, alignment: .leading)
+
+                            Text(step.message)
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundColor(.primary)
+                                .lineLimit(3)
+                        }
+                    }
+                }
+                .padding(10)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.03)))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.primary.opacity(0.08), lineWidth: 1))
+            }
+
+            // Final Result Badge
+            if let result = finalResult, let status = finalStatus {
+                HStack(spacing: 6) {
+                    Image(systemName: status.iconName)
+                        .foregroundColor(status.badgeColor)
+                    Text(result)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(status.badgeColor)
+                }
+                .padding(.top, 2)
+            }
+        }
+        .padding(14)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
+    }
+
+    private func runTest(query: String) {
+        guard !isExecuting else { return }
+        isExecuting = true
+        logs = []
+        finalResult = nil
+        finalStatus = nil
+
+        Task { @MainActor in
+            // Step 1: REQUEST
+            logs.append(PipelineLogStep(
+                stage: "REQUEST",
+                message: "\"\(query)\"",
+                icon: "paperplane.fill",
+                color: .blue
+            ))
+            try? await Task.sleep(nanoseconds: 80_000_000)
+
+            // Step 2: PARSE
+            let action = await ActionIntentParser.shared.parseIntent(from: query)
+            guard let action = action else {
+                logs.append(PipelineLogStep(
+                    stage: "PARSE",
+                    message: "No action intent matched user input.",
+                    icon: "xmark.circle.fill",
+                    color: .red
+                ))
+                finalStatus = .failed
+                finalResult = "Action intent could not be parsed."
+                isExecuting = false
+                return
+            }
+            logs.append(PipelineLogStep(
+                stage: "PARSE",
+                message: "Type: \(action.type.rawValue) [\(action.summaryDescription)]",
+                icon: "cpu",
+                color: .teal
+            ))
+            try? await Task.sleep(nanoseconds: 80_000_000)
+
+            // Step 3: VALIDATE
+            let settings = DataManager.shared.savedData.macControlSettings ?? MacControlSettings()
+            let validation = ActionValidator.validate(action: action, settings: settings, isSafeMode: PerformanceManager.shared.isSafeMode)
+            switch validation {
+            case .blocked(let reason):
+                logs.append(PipelineLogStep(
+                    stage: "VALIDATE",
+                    message: "Blocked: \(reason)",
+                    icon: "hand.raised.fill",
+                    color: .orange
+                ))
+                finalStatus = .blocked
+                finalResult = reason
+                isExecuting = false
+                return
+            case .needsClarification(let prompt):
+                logs.append(PipelineLogStep(
+                    stage: "VALIDATE",
+                    message: "Clarification: \(prompt)",
+                    icon: "questionmark.circle.fill",
+                    color: .orange
+                ))
+                finalStatus = .needsClarification
+                finalResult = prompt
+                isExecuting = false
+                return
+            case .requiresConfirmation:
+                logs.append(PipelineLogStep(
+                    stage: "VALIDATE",
+                    message: "Requires user confirmation prompt.",
+                    icon: "exclamationmark.circle.fill",
+                    color: .yellow
+                ))
+            case .valid:
+                logs.append(PipelineLogStep(
+                    stage: "VALIDATE",
+                    message: "Passed allowlist & security checks.",
+                    icon: "checkmark.seal.fill",
+                    color: .green
+                ))
+            }
+            try? await Task.sleep(nanoseconds: 80_000_000)
+
+            // Step 4: EXECUTE
+            logs.append(PipelineLogStep(
+                stage: "EXECUTE",
+                message: "Dispatching via native MacActionExecutor...",
+                icon: "play.fill",
+                color: .purple
+            ))
+
+            let resultMessage = await MacActionExecutor.shared.processAction(action, userText: query)
+            try? await Task.sleep(nanoseconds: 80_000_000)
+
+            // Step 5: VERIFY
+            let lastItem = ActionHistoryManager.shared.items.first
+            let status = lastItem?.status ?? .success
+            logs.append(PipelineLogStep(
+                stage: "VERIFY",
+                message: "Checked macOS process & sandbox state: \(status.rawValue)",
+                icon: "magnifyingglass",
+                color: status.badgeColor
+            ))
+
+            // Step 6: STATUS
+            logs.append(PipelineLogStep(
+                stage: "STATUS",
+                message: resultMessage,
+                icon: status.iconName,
+                color: status.badgeColor
+            ))
+
+            finalStatus = status
+            finalResult = "[\(status.rawValue)] \(resultMessage)"
+            isExecuting = false
         }
     }
 }

@@ -349,4 +349,14 @@ public class DataManager: ObservableObject {
         savedData.macControlSettings = settings
         saveData()
     }
+
+    public func setQuietModeEnabled(_ enabled: Bool) {
+        savedData.quietModeEnabled = enabled
+        saveData()
+    }
+
+    public func setWalkFrequency(_ freq: String) {
+        savedData.walkFrequency = freq
+        saveData()
+    }
 }

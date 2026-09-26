@@ -41,6 +41,12 @@ public class PetState: ObservableObject {
     @Published public var autonomousLifeMode: String = "normal"
     private var autonomousLifeTimer: Timer?
 
+    // 3D Rendering & Customization
+    @Published public var renderEngineMode: RenderEngineMode = .threeD
+    @Published public var customHornEnabled: Bool = true
+    @Published public var customWingsEnabled: Bool = true
+    @Published public var customAccessory: String = "none"
+
     private var bubbleTimer: Timer?
     private var dreamTimer: Timer?
     private var sleepTimer: Timer?
@@ -96,6 +102,39 @@ public class PetState: ObservableObject {
         self.moodPoints = data.moodPoints
         self.activeTab = data.activeTab ?? "chat"
         self.autonomousLifeMode = data.autonomousLifeMode ?? "normal"
+
+        if let modeStr = data.renderEngineMode, let mode = RenderEngineMode(rawValue: modeStr) {
+            self.renderEngineMode = mode
+        } else {
+            self.renderEngineMode = .threeD
+        }
+        self.customHornEnabled = data.customHornEnabled ?? true
+        self.customWingsEnabled = data.customWingsEnabled ?? true
+        self.customAccessory = data.customAccessory ?? "none"
+    }
+
+    public func setRenderEngineMode(_ mode: RenderEngineMode) {
+        self.renderEngineMode = mode
+        DataManager.shared.savedData.renderEngineMode = mode.rawValue
+        DataManager.shared.saveData()
+    }
+
+    public func setCustomAccessory(_ acc: String) {
+        self.customAccessory = acc
+        DataManager.shared.savedData.customAccessory = acc
+        DataManager.shared.saveData()
+    }
+
+    public func toggleHorns() {
+        self.customHornEnabled.toggle()
+        DataManager.shared.savedData.customHornEnabled = self.customHornEnabled
+        DataManager.shared.saveData()
+    }
+
+    public func toggleWings() {
+        self.customWingsEnabled.toggle()
+        DataManager.shared.savedData.customWingsEnabled = self.customWingsEnabled
+        DataManager.shared.saveData()
     }
 
     public func setSpecies(_ species: PetSpecies) {

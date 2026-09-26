@@ -2,8 +2,17 @@ import Foundation
 import AppKit
 import IOKit.ps
 import ServiceManagement
+import Network
 
 // MARK: - Production System Monitor with Efficient Decoupled Intervals
+
+public struct TopAppItem: Identifiable {
+    public var id: pid_t { pid }
+    public let pid: pid_t
+    public let name: String
+    public let icon: NSImage?
+    public let isFrontmost: Bool
+}
 
 @MainActor
 public class SystemMonitor: ObservableObject {
@@ -42,6 +51,13 @@ public class SystemMonitor: ObservableObject {
     @Published public var frontmostApp: String = "Finder"
     @Published public var runningAppsCount: Int = 0
     @Published public var foregroundApps: [String] = []
+    @Published public var topApplications: [TopAppItem] = []
+
+    // 6. Network Connectivity
+    @Published public var isNetworkConnected: Bool = true
+    @Published public var networkType: String = "Wi-Fi"
+    private var pathMonitor: NWPathMonitor?
+    private let pathQueue = DispatchQueue(label: "SystemMonitorNetworkQueue")
 
     // Decoupled Timer Management
     private var cpuTimer: Timer?
@@ -52,9 +68,30 @@ public class SystemMonitor: ObservableObject {
 
     public init() {
         loadStaticSystemInfo()
+        setupNetworkMonitor()
         DispatchQueue.main.async { [weak self] in
             self?.startMonitoring()
         }
+    }
+
+    private func setupNetworkMonitor() {
+        let monitor = NWPathMonitor()
+        monitor.pathUpdateHandler = { [weak self] path in
+            Task { @MainActor in
+                self?.isNetworkConnected = (path.status == .satisfied)
+                if path.usesInterfaceType(.wifi) {
+                    self?.networkType = "Wi-Fi"
+                } else if path.usesInterfaceType(.cellular) {
+                    self?.networkType = "Cellular"
+                } else if path.usesInterfaceType(.wiredEthernet) {
+                    self?.networkType = "Ethernet"
+                } else {
+                    self?.networkType = path.status == .satisfied ? "Connected" : "Offline"
+                }
+            }
+        }
+        monitor.start(queue: pathQueue)
+        self.pathMonitor = monitor
     }
 
     // MARK: - Static System Info (Loaded Once)
@@ -319,19 +356,36 @@ public class SystemMonitor: ObservableObject {
         let front = NSWorkspace.shared.frontmostApplication?.localizedName ?? "Unavailable"
         self.frontmostApp = front
 
-        let running = NSWorkspace.shared.runningApplications
+        let runningApps = NSWorkspace.shared.runningApplications
             .filter { $0.activationPolicy == .regular && !($0.localizedName?.isEmpty ?? true) }
-            .compactMap { $0.localizedName }
 
-        let unique = Array(Set(running)).sorted()
+        let runningNames = runningApps.compactMap { $0.localizedName }
+        let unique = Array(Set(runningNames)).sorted()
         self.runningAppsCount = unique.count
         self.foregroundApps = unique
+
+        var seen = Set<String>()
+        var items: [TopAppItem] = []
+        for app in runningApps {
+            guard let name = app.localizedName, !name.isEmpty, !seen.contains(name) else { continue }
+            seen.insert(name)
+            items.append(
+                TopAppItem(
+                    pid: app.processIdentifier,
+                    name: name,
+                    icon: app.icon,
+                    isFrontmost: name == front
+                )
+            )
+        }
+        self.topApplications = items.sorted { ($0.isFrontmost ? 1 : 0) > ($1.isFrontmost ? 1 : 0) }
     }
 
     deinit {
         cpuTimer?.invalidate()
         batteryTimer?.invalidate()
         diskTimer?.invalidate()
+        pathMonitor?.cancel()
         if let prev = previousCpuInfo {
             vm_deallocate(mach_task_self_, vm_address_t(bitPattern: prev), vm_size_t(previousCpuInfoCount * UInt32(MemoryLayout<integer_t>.size)))
         }

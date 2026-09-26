@@ -20,6 +20,25 @@ public class FocusGuardian: ObservableObject {
     @Published public var customSeconds: Int = 0 {
         didSet { syncPendingDuration() }
     }
+    @Published public var isCustomDurationActive: Bool = false
+
+    public func adjustHours(_ delta: Int) {
+        guard !isSessionActive else { return }
+        customHours = max(0, min(23, customHours + delta))
+        isCustomDurationActive = true
+    }
+
+    public func adjustMinutes(_ delta: Int) {
+        guard !isSessionActive else { return }
+        customMinutes = max(0, min(59, customMinutes + delta))
+        isCustomDurationActive = true
+    }
+
+    public func adjustSeconds(_ delta: Int) {
+        guard !isSessionActive else { return }
+        customSeconds = max(0, min(59, customSeconds + delta))
+        isCustomDurationActive = true
+    }
 
     public var selectedDurationSeconds: Int {
         return max(1, (customHours * 3600) + (customMinutes * 60) + customSeconds)
@@ -166,6 +185,7 @@ public class FocusGuardian: ObservableObject {
 
     public func applyPreset(seconds: Int) {
         let secs = max(1, seconds)
+        isCustomDurationActive = false
         customHours = secs / 3600
         customMinutes = (secs % 3600) / 60
         customSeconds = secs % 60

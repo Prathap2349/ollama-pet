@@ -39,7 +39,12 @@ public class PerformanceManager: ObservableObject {
     @Published public var dayNightTintEnabled: Bool = false
     @Published public var particlesEnabled: Bool = false
     @Published public var grayscaleTestMode: Bool = false
+    @Published public var reduceMotion: Bool = false
     @Published public var statusNotice: String? = nil
+
+    public var isReduceMotionActive: Bool {
+        return reduceMotion || NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    }
 
     public var effectiveFPS: Double {
         if isSafeMode {
@@ -71,6 +76,7 @@ public class PerformanceManager: ObservableObject {
         self.dayNightTintEnabled = data.dayNightTintEnabled ?? false
         self.particlesEnabled = data.particlesEnabled ?? false
         self.grayscaleTestMode = data.grayscaleTestMode ?? false
+        self.reduceMotion = data.reduceMotion ?? false
 
         self.statusNotice = self.isSafeMode ? "Performance Safe Mode enabled to reduce system load." : nil
     }
@@ -84,6 +90,7 @@ public class PerformanceManager: ObservableObject {
         DataManager.shared.savedData.dayNightTintEnabled = dayNightTintEnabled
         DataManager.shared.savedData.particlesEnabled = particlesEnabled
         DataManager.shared.savedData.grayscaleTestMode = grayscaleTestMode
+        DataManager.shared.savedData.reduceMotion = reduceMotion
         DataManager.shared.saveData()
 
         updateStatusNotice()

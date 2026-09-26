@@ -16,6 +16,9 @@ public enum MacActionType: String, Codable, CaseIterable {
     case showActionHistory = "SHOW_ACTION_HISTORY"
     case runApprovedShortcut = "RUN_APPROVED_SHORTCUT"
     case sendMessage = "SEND_MESSAGE"
+    case querySystemVitals = "QUERY_SYSTEM_VITALS"
+    case controlFocus = "CONTROL_FOCUS"
+    case controlMonitoring = "CONTROL_MONITORING"
     case needsClarification = "NEEDS_CLARIFICATION"
     case unknown = "UNKNOWN"
 
@@ -34,6 +37,9 @@ public enum MacActionType: String, Codable, CaseIterable {
         case .showActionHistory: return "Show Action History"
         case .runApprovedShortcut: return "Run Approved Shortcut"
         case .sendMessage: return "Send Message"
+        case .querySystemVitals: return "Query System Vitals"
+        case .controlFocus: return "Control Focus Session"
+        case .controlMonitoring: return "Control Presence Monitor"
         case .needsClarification: return "Needs Clarification"
         case .unknown: return "Unknown Action"
         }
@@ -65,6 +71,7 @@ public struct MacAction: Identifiable, Codable, Equatable {
     public var query: String?
     public var reminderTitle: String?
     public var delaySeconds: Int?
+    public var durationSeconds: Int?
     public var service: String?          // "WhatsApp" or "Messages"
     public var recipient: String?
     public var messageText: String?
@@ -82,6 +89,7 @@ public struct MacAction: Identifiable, Codable, Equatable {
         query: String? = nil,
         reminderTitle: String? = nil,
         delaySeconds: Int? = nil,
+        durationSeconds: Int? = nil,
         service: String? = nil,
         recipient: String? = nil,
         messageText: String? = nil,
@@ -98,6 +106,7 @@ public struct MacAction: Identifiable, Codable, Equatable {
         self.query = query
         self.reminderTitle = reminderTitle
         self.delaySeconds = delaySeconds
+        self.durationSeconds = durationSeconds
         self.service = service
         self.recipient = recipient
         self.messageText = messageText
@@ -156,6 +165,12 @@ public struct MacAction: Identifiable, Codable, Equatable {
             return "Run shortcut '\(shortcutName ?? "")'"
         case .sendMessage:
             return "Send \(service ?? "Message") to \(recipient ?? "Someone"): \"\(messageText ?? "")\""
+        case .querySystemVitals:
+            return "Query system vitals (\(query ?? "status"))"
+        case .controlFocus:
+            return "Control Focus session (\((durationSeconds ?? 1500) / 60)m)"
+        case .controlMonitoring:
+            return "Stop presence monitoring"
         case .needsClarification:
             return clarificationPrompt ?? "Needs clarification"
         case .unknown:

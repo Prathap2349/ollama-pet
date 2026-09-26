@@ -66,8 +66,8 @@ struct PetStageView: View {
                         .scaleEffect(1.0 + CGFloat(sin(petState.animTime * 6.0)) * 0.05)
                 }
 
-                // High-Framerate Procedural Physics Canvas with Adaptive Refresh Rate
-                canvasView
+                // High-Framerate Character Viewport (3D Next-Gen Engine with 2D Canvas Fallback)
+                characterViewport
 
                 // Mood Indicator & Cycle Button
                 VStack {
@@ -82,6 +82,8 @@ struct PetStageView: View {
                                 .clipShape(Circle())
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel("Current Mood: \(petState.currentMood.rawValue.capitalized)")
+                        .accessibilityHint("Double tap to cycle to the next character mood")
 
                         Spacer()
 
@@ -94,6 +96,7 @@ struct PetStageView: View {
                             )
                             .frame(width: 8, height: 8)
                             .shadow(color: (OllamaClient.shared.isOnline ? Color.green : Color.orange).opacity(0.8), radius: 3)
+                            .accessibilityLabel(OllamaClient.shared.isOnline ? "Ollama Connected" : "Ollama Offline")
                     }
                     Spacer()
                 }
@@ -179,6 +182,16 @@ struct PetStageView: View {
             }
         }
         .frame(width: petState.isChatOpen ? 360 : 140, height: 140)
+    }
+
+    @ViewBuilder
+    private var characterViewport: some View {
+        if petState.renderEngineMode == .threeD {
+            Pet3DSceneView()
+                .frame(width: 120, height: 120)
+        } else {
+            canvasView
+        }
     }
 
     private var canvasView: some View {

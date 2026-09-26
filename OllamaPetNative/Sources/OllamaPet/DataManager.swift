@@ -146,6 +146,27 @@ public class DataManager: ObservableObject {
         saveData()
     }
 
+    public func updateReminder(id: Int64, text: String, minutes: Int, isRecurring: Bool) {
+        guard let index = savedData.reminders.firstIndex(where: { $0.id == id }) else { return }
+        let secs = max(60, minutes * 60)
+        let due = Date().addingTimeInterval(Double(secs)).timeIntervalSince1970 * 1000
+        savedData.reminders[index].text = text
+        savedData.reminders[index].due = due
+        savedData.reminders[index].isRecurring = isRecurring
+        savedData.reminders[index].repeatIntervalSeconds = isRecurring ? secs : nil
+        savedData.reminders[index].isPaused = false
+        saveData()
+
+        let notifId = savedData.reminders[index].notificationId ?? "reminder-\(id)"
+        NotificationScheduler.shared.cancelReminder(notificationId: notifId)
+        NotificationScheduler.shared.scheduleReminder(
+            id: id,
+            text: text,
+            inSeconds: secs,
+            notificationId: notifId
+        )
+    }
+
     public func checkReminders(onTrigger: @escaping (PetReminder, Bool) -> Void) {
         let now = Date().timeIntervalSince1970 * 1000
         var triggered: [PetReminder] = []

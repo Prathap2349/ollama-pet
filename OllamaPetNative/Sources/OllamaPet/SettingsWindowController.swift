@@ -570,6 +570,91 @@ struct CharacterSettingsSection: View {
                 .font(.system(size: 12))
                 .foregroundColor(.secondary)
 
+            // 1. Rendering Engine Mode (3D Next-Gen vs 2D Classic Canvas)
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Rendering Engine Mode")
+                            .font(.system(size: 13, weight: .semibold))
+                        Text("Choose between 3D Metal SceneKit real geometry or 2D Classic Canvas.")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
+                }
+
+                HStack(spacing: 10) {
+                    ForEach(RenderEngineMode.allCases) { mode in
+                        let isSelected = (petState.renderEngineMode == mode)
+                        Button(action: {
+                            petState.setRenderEngineMode(mode)
+                            SoundEffect.click.play()
+                        }) {
+                            HStack(spacing: 6) {
+                                Image(systemName: mode.icon)
+                                Text(mode.rawValue)
+                                    .font(.system(size: 12, weight: isSelected ? .bold : .medium))
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 7)
+                            .background(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(isSelected ? petState.currentSpecies.accentColor.opacity(0.25) : Color.primary.opacity(0.04))
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(isSelected ? petState.currentSpecies.accentColor : Color.primary.opacity(0.1), lineWidth: 1)
+                            )
+                            .foregroundColor(isSelected ? .white : .primary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .padding(12)
+            .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
+
+            // 2. Character Customization (Phase 14)
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Character Customization & Accessories")
+                    .font(.system(size: 13, weight: .semibold))
+
+                HStack(spacing: 16) {
+                    if petState.currentSpecies == .dragon {
+                        Toggle("Horns", isOn: Binding(
+                            get: { petState.customHornEnabled },
+                            set: { _ in petState.toggleHorns() }
+                        ))
+                        .toggleStyle(.checkbox)
+
+                        Toggle("Wings", isOn: Binding(
+                            get: { petState.customWingsEnabled },
+                            set: { _ in petState.toggleWings() }
+                        ))
+                        .toggleStyle(.checkbox)
+                    }
+
+                    Text("Accessory:")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.secondary)
+
+                    Picker("", selection: Binding(
+                        get: { petState.customAccessory },
+                        set: { petState.setCustomAccessory($0) }
+                    )) {
+                        Text("None").tag("none")
+                        Text("👓 Glasses").tag("glasses")
+                        Text("🎩 Top Hat").tag("hat")
+                        Text("🎀 Bowtie").tag("bowtie")
+                        Text("👑 Crown").tag("crown")
+                    }
+                    .pickerStyle(.menu)
+                    .frame(width: 130)
+                }
+            }
+            .padding(12)
+            .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
+
             // Silhouette Grayscale Test Mode Toggle (Prominent)
             Toggle(isOn: $perf.grayscaleTestMode) {
                 VStack(alignment: .leading, spacing: 2) {
@@ -901,6 +986,30 @@ struct AnimationSettingsSection: View {
                             .font(.system(size: 13, weight: .semibold))
                     }
                     Text("Guarantees low system usage: disables all particles, lighting shaders, weather, camera, and screen loops.")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                }
+            }
+            .toggleStyle(.switch)
+            .padding(12)
+            .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
+
+            // Accessibility Reduce Motion Toggle
+            Toggle(isOn: Binding(
+                get: { perf.reduceMotion },
+                set: { val in
+                    perf.reduceMotion = val
+                    perf.saveSettings()
+                }
+            )) {
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack {
+                        Image(systemName: "figure.walk.motion")
+                            .foregroundColor(.blue)
+                        Text("Reduce Motion (Accessibility)")
+                            .font(.system(size: 13, weight: .semibold))
+                    }
+                    Text("Dampens rapid bounces, hops, and high-frequency vibrations for a calmer, motion-sensitive companion experience.")
                         .font(.system(size: 11))
                         .foregroundColor(.secondary)
                 }

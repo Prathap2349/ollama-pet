@@ -274,6 +274,19 @@ public enum PetAnimState: String, Codable {
     case idle, dance, thinking, sleep, shock
 }
 
+public enum RenderEngineMode: String, CaseIterable, Codable, Identifiable {
+    case threeD = "3D Next-Gen"
+    case twoD = "2D Classic Canvas"
+
+    public var id: String { rawValue }
+    public var icon: String {
+        switch self {
+        case .threeD: return "cube.fill"
+        case .twoD: return "paintpalette.fill"
+        }
+    }
+}
+
 // MARK: - Chat Message Model
 
 public struct ChatMessage: Identifiable, Codable, Equatable {
@@ -353,6 +366,11 @@ public struct PetSavedData: Codable {
     public var speechBubblesEnabled: Bool?
     public var soundEffectsEnabled: Bool?
     public var launchAtLoginEnabled: Bool?
+    public var renderEngineMode: String? = "3D Next-Gen"
+    public var customHornEnabled: Bool? = true
+    public var customWingsEnabled: Bool? = true
+    public var customAccessory: String? = "none"
+    public var reduceMotion: Bool? = false
 
     // Ollama Startup & Auto-Reconnect Settings
     public var autoStartOllama: Bool? = true

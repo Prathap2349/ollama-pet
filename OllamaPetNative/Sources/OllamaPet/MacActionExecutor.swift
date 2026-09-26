@@ -244,6 +244,34 @@ public class MacActionExecutor {
                 return "Messages opened. Message copied to clipboard for \(recipient)."
             }
 
+        case .querySystemVitals:
+            let sys = SystemMonitor.shared
+            if let q = action.query?.lowercased() {
+                if q.contains("ram") || q.contains("memory") {
+                    return "You are using \(String(format: "%.1f", sys.memoryUsedGB)) GB of \(String(format: "%.1f", sys.memoryTotalGB)) GB RAM (\(String(format: "%.0f%%", sys.memoryPercent))). CPU load is currently \(String(format: "%.1f%%", sys.cpuPercent))."
+                }
+                if q.contains("battery") || q.contains("power") {
+                    let state = sys.isCharging ? "charging" : "on battery"
+                    return "Battery is at \(sys.batteryPercent)% and \(state). Thermal state is \(sys.thermalStateDescription)."
+                }
+                if q.contains("app") {
+                    let topNames = sys.topApplications.prefix(5).map { $0.name }.joined(separator: ", ")
+                    return "Active app is \(sys.frontmostApp). Top running apps: \(topNames)."
+                }
+            }
+            return "Mac: \(sys.macModel). RAM: \(String(format: "%.1f", sys.memoryUsedGB))/\(String(format: "%.1f", sys.memoryTotalGB)) GB. CPU: \(String(format: "%.1f%%", sys.cpuPercent)). Battery: \(sys.batteryPercent)%."
+
+        case .controlFocus:
+            let durationSecs = action.durationSeconds ?? (25 * 60)
+            FocusGuardian.shared.applyPreset(seconds: durationSecs)
+            FocusGuardian.shared.startFocusSession()
+            let mins = durationSecs / 60
+            return "Started a \(mins) minute focus session. Let's do this!"
+
+        case .controlMonitoring:
+            PresenceMonitor.shared.stop()
+            return "Presence monitoring stopped."
+
         case .needsClarification:
             return action.clarificationPrompt ?? "Please clarify your request."
 

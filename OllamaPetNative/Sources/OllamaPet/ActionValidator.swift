@@ -169,6 +169,9 @@ public struct ActionValidator {
         case .showActionHistory:
             return .valid(action)
 
+        case .querySystemVitals, .controlFocus, .controlMonitoring:
+            return .valid(action)
+
         case .runApprovedShortcut:
             guard settings.shortcutsEnabled else {
                 return .blocked("Shortcuts execution is disabled in Settings.")

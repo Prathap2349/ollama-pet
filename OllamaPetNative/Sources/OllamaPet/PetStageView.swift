@@ -7,7 +7,18 @@ struct PetStageView: View {
     @ObservedObject var sysMon = SystemMonitor.shared
     @ObservedObject var motion = CharacterMotionStateMachine.shared
     @ObservedObject var weatherService = WeatherService.shared
+    @ObservedObject var walker = WalkerManager.shared
     @ObservedObject var perf = PerformanceManager.shared
+
+    private var isLocomotionActive: Bool {
+        if walker.isWalking { return true }
+        switch petState.animState {
+        case .walk, .run, .turnLeft, .turnRight, .pause, .dance:
+            return true
+        default:
+            return false
+        }
+    }
 
     var body: some View {
         ZStack(alignment: petAlignment) {
@@ -69,41 +80,44 @@ struct PetStageView: View {
                 // High-Framerate Character Viewport (3D Next-Gen Engine with 2D Canvas Fallback)
                 characterViewport
 
-                // Mood Indicator & Cycle Button
-                VStack {
-                    HStack {
-                        Button(action: {
-                            petState.cycleMood()
-                        }) {
-                            Text(petState.currentSpecies.moodEmoji(for: petState.currentMood))
-                                .font(.system(size: 15))
-                                .padding(4)
-                                .background(Color.black.opacity(0.45))
-                                .clipShape(Circle())
+                // Mood Indicator & Cycle Button (Suppressed during locomotion)
+                if !isLocomotionActive {
+                    VStack {
+                        HStack {
+                            Button(action: {
+                                petState.cycleMood()
+                            }) {
+                                Text(petState.currentSpecies.moodEmoji(for: petState.currentMood))
+                                    .font(.system(size: 15))
+                                    .padding(4)
+                                    .background(Color.black.opacity(0.45))
+                                    .clipShape(Circle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Current Mood: \(petState.currentMood.rawValue.capitalized)")
+                            .accessibilityHint("Double tap to cycle to the next character mood")
+
+                            Spacer()
+
+                            // Status Dot with Glow (Online / Offline / Power Saving)
+                            Circle()
+                                .fill(
+                                    petState.isThinking ? Color.orange :
+                                    (sysMon.isPowerSavingMode ? Color.yellow :
+                                    (OllamaClient.shared.isOnline ? Color.green : Color.red))
+                                )
+                                .frame(width: 8, height: 8)
+                                .shadow(color: (OllamaClient.shared.isOnline ? Color.green : Color.orange).opacity(0.8), radius: 3)
+                                .accessibilityLabel(OllamaClient.shared.isOnline ? "Ollama Connected" : "Ollama Offline")
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Current Mood: \(petState.currentMood.rawValue.capitalized)")
-                        .accessibilityHint("Double tap to cycle to the next character mood")
-
                         Spacer()
-
-                        // Status Dot with Glow (Online / Offline / Power Saving)
-                        Circle()
-                            .fill(
-                                petState.isThinking ? Color.orange :
-                                (sysMon.isPowerSavingMode ? Color.yellow :
-                                (OllamaClient.shared.isOnline ? Color.green : Color.red))
-                            )
-                            .frame(width: 8, height: 8)
-                            .shadow(color: (OllamaClient.shared.isOnline ? Color.green : Color.orange).opacity(0.8), radius: 3)
-                            .accessibilityLabel(OllamaClient.shared.isOnline ? "Ollama Connected" : "Ollama Offline")
                     }
-                    Spacer()
+                    .frame(width: 116, height: 116)
+                    .transition(.opacity)
                 }
-                .frame(width: 116, height: 116)
 
-                // Atmospheric Indicator (if raining/snowing/golden hour)
-                if weatherService.activeAtmosphere != .clearDay {
+                // Atmospheric Indicator (if raining/snowing/golden hour, suppressed during locomotion)
+                if weatherService.activeAtmosphere != .clearDay && !isLocomotionActive {
                     VStack {
                         Spacer()
                         HStack {
@@ -116,6 +130,7 @@ struct PetStageView: View {
                         }
                     }
                     .frame(width: 116, height: 116)
+                    .transition(.opacity)
                 }
 
                 // Speech Bubble

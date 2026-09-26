@@ -46,9 +46,6 @@ public final class PresenceMonitorWindowController: NSWindowController, NSWindow
 
     public func showWidget() {
         guard let window = self.window else { return }
-        if !PresenceMonitor.shared.isRunning {
-            PresenceMonitor.shared.start()
-        }
         window.orderFront(nil)
     }
 
@@ -335,35 +332,38 @@ struct PresenceWidgetView: View {
 
     private var centralStatusIcon: String {
         switch monitor.presenceStatus {
-        case .ownerPresent: return "person.crop.circle.badge.checkmark"
+        case .ownerPresent, .ownerConfirmed: return "person.crop.circle.badge.checkmark"
+        case .ownerTemporarilyUnavailable: return "person.crop.circle.badge.questionmark"
         case .unknownDetected: return "person.crop.circle.badge.exclamationmark"
-        case .uncertain: return "person.crop.circle.badge.questionmark"
+        case .uncertain, .verifying, .faceDetected: return "person.crop.circle.badge.questionmark"
         case .personDetectedNoOwner: return "person.crop.circle"
         case .noFace: return "eye.slash.fill"
         case .multipleDetected: return "person.2.fill"
         case .searching: return "viewfinder"
         case .starting, .recovering: return "arrow.triangle.2.circlepath"
-        case .away: return "moon.zzz.fill"
+        case .away, .noPerson: return "moon.zzz.fill"
         case .permissionRequired: return "lock.shield.fill"
-        case .failed: return "exclamationmark.triangle.fill"
+        case .failed, .cameraError: return "exclamationmark.triangle.fill"
         case .idle, .stopped, .cameraUnavailable: return "video.slash.fill"
         }
     }
 
     private var centralStatusTitle: String {
         switch monitor.presenceStatus {
-        case .ownerPresent: return "OWNER"
+        case .ownerPresent, .ownerConfirmed: return "OWNER"
+        case .ownerTemporarilyUnavailable: return "AWAY-FACING"
         case .unknownDetected: return "UNKNOWN"
-        case .uncertain: return "CHECKING"
+        case .uncertain, .verifying: return "CHECKING"
+        case .faceDetected: return "DETECTED"
         case .personDetectedNoOwner: return "PERSON"
         case .noFace: return "OBSCURED"
         case .multipleDetected: return "MULTIPLE"
         case .searching: return "SCANNING"
         case .starting: return "STARTING"
         case .recovering: return "RECOVERING"
-        case .away: return "AWAY"
+        case .away, .noPerson: return "AWAY"
         case .permissionRequired: return "PERMISSION"
-        case .failed: return "ERROR"
+        case .failed, .cameraError: return "ERROR"
         case .idle: return "PAUSED"
         case .stopped: return "STOPPED"
         case .cameraUnavailable: return "CAMERA OFF"
@@ -372,18 +372,20 @@ struct PresenceWidgetView: View {
 
     private var centralStatusSubtitle: String {
         switch monitor.presenceStatus {
-        case .ownerPresent: return "Verified Face"
+        case .ownerPresent, .ownerConfirmed: return "Verified Face"
+        case .ownerTemporarilyUnavailable: return "Owner turned away"
         case .unknownDetected: return "Unrecognized"
-        case .uncertain: return "Analyzing..."
+        case .uncertain, .verifying: return "Analyzing..."
+        case .faceDetected: return "Face found"
         case .personDetectedNoOwner: return "No Profile Set"
         case .noFace: return "Turn toward camera"
         case .multipleDetected: return "Group nearby"
         case .searching: return "Looking for user"
         case .starting: return "Starting feed..."
         case .recovering: return "Recovering..."
-        case .away: return "No person seen"
+        case .away, .noPerson: return "No person seen"
         case .permissionRequired: return "Grant access"
-        case .failed: return "Camera error"
+        case .failed, .cameraError: return "Camera error"
         case .idle: return "Monitoring off"
         case .stopped: return "Monitoring stopped"
         case .cameraUnavailable: return "Check permission"
@@ -392,16 +394,17 @@ struct PresenceWidgetView: View {
 
     private var statusColor: Color {
         switch monitor.presenceStatus {
-        case .ownerPresent: return .green
+        case .ownerPresent, .ownerConfirmed: return .green
+        case .ownerTemporarilyUnavailable: return .mint
         case .unknownDetected: return .orange
-        case .uncertain: return .yellow
+        case .uncertain, .verifying, .faceDetected: return .yellow
         case .personDetectedNoOwner: return .cyan
         case .noFace: return .purple
         case .multipleDetected: return .yellow
         case .searching: return .cyan
         case .starting, .recovering: return .yellow
-        case .away: return .gray
-        case .permissionRequired, .failed: return .red
+        case .away, .noPerson: return .gray
+        case .permissionRequired, .failed, .cameraError: return .red
         case .idle, .stopped, .cameraUnavailable: return .red
         }
     }

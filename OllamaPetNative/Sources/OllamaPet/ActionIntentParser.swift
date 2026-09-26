@@ -125,13 +125,8 @@ public class ActionIntentParser {
         }
 
         // G. Focus Control
-        if cleanedLower.contains("start focus") || cleanedLower.contains("focus session") || cleanedLower.contains("start a focus") || cleanedLower.contains("pomodoro") {
-            var duration = 25 * 60
-            if let match = cleanedLower.range(of: #"\d+"#, options: .regularExpression) {
-                if let mins = Int(cleanedLower[match]) {
-                    duration = max(1, mins * 60)
-                }
-            }
+        if cleanedLower.contains("start focus") || cleanedLower.contains("focus session") || cleanedLower.contains("start a focus") || cleanedLower.contains("pomodoro") || cleanedLower.starts(with: "focus for ") {
+            let duration = FocusDurationParser.parseNaturalLanguage(cleanedLower) ?? (25 * 60)
             return MacAction(type: .controlFocus, durationSeconds: duration)
         }
 

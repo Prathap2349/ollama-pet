@@ -9,12 +9,9 @@ public class WalkerManager: ObservableObject {
     public static let shared = WalkerManager()
 
     @Published public var isWalking = false
-    private var autonomousLifeTimer: Timer?
     private var currentWalkTask: Task<Void, Never>?
 
-    public init() {
-        startAutonomousLifeMonitor()
-    }
+    public init() {}
 
     public func startWalk(species: PetSpecies, isTest: Bool = false) {
         guard !isWalking else { return }
@@ -99,75 +96,21 @@ public class WalkerManager: ObservableObject {
             try? await Task.sleep(nanoseconds: frameDelayNano)
         }
 
-        // 4. Brief pause / curious look at arrival destination
+        // 4. Decelerate & Stop
         PetState.shared.animState = .pause
         try? await Task.sleep(nanoseconds: 500_000_000)
 
-        // 5. Turn forward and resume idle
+        // 5. Inquisitive look around at arrival spot
+        PetState.shared.animState = .lookAround
+        try? await Task.sleep(nanoseconds: 1_200_000_000)
+
+        // 6. Turn forward and resume idle
         PetState.shared.animState = .idle
         PetState.shared.movementDirection = .forward
         DataManager.shared.updatePosition(x: Double(petWin.petOrigin.x), y: Double(petWin.petOrigin.y))
     }
 
-    // MARK: - Autonomous Life Loop
-
-    private func startAutonomousLifeMonitor() {
-        autonomousLifeTimer?.invalidate()
-        autonomousLifeTimer = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                guard let self = self else { return }
-                self.evaluateAutonomousTick()
-            }
-        }
-    }
-
-    private func evaluateAutonomousTick() {
-        let saved = DataManager.shared.savedData
-        guard saved.autonomousLifeEnabled ?? true else { return }
-        guard !isWalking else { return }
-        guard !PetState.shared.isChatOpen else { return }
-        guard !PetState.shared.isThinking else { return }
-        guard !FocusGuardian.shared.isSessionActive else { return }
-        guard !(MusicManager.shared.isPlaying && MusicManager.shared.danceWhenMusicDetected) else { return }
-
-        let freq = saved.walkFrequency ?? "normal"
-        guard freq != "off" else { return }
-
-        // Chance roll based on frequency
-        let roll = Int.random(in: 1...100)
-        let walkThreshold: Int
-        switch freq {
-        case "minimal": walkThreshold = 10 // ~every 8-12 min
-        case "normal": walkThreshold = 22  // ~every 3-5 min
-        case "lively": walkThreshold = 50  // ~every 1-2 min
-        default: walkThreshold = 22
-        }
-
-        if roll <= walkThreshold {
-            // Trigger autonomous sequence: Look around or stretch, then walk
-            Task { @MainActor in
-                let idleActions: [PetAnimState] = [.lookAround, .stretch, .watchUser, .curious]
-                PetState.shared.animState = idleActions.randomElement() ?? .lookAround
-                try? await Task.sleep(nanoseconds: 2_000_000_000)
-                guard !PetState.shared.isChatOpen && !self.isWalking else { return }
-                self.startWalk(species: PetState.shared.currentSpecies)
-            }
-        } else if roll <= (walkThreshold + 30) {
-            // In-place organic behaviors (watch user, groom, stretch, look around)
-            let inPlaceBehaviors: [PetAnimState] = [.watchUser, .lookAround, .groom, .stretch]
-            let chosen = inPlaceBehaviors.randomElement() ?? .watchUser
-            PetState.shared.animState = chosen
-            Task { @MainActor in
-                try? await Task.sleep(nanoseconds: 3_500_000_000)
-                if PetState.shared.animState == chosen {
-                    PetState.shared.animState = .idle
-                }
-            }
-        }
-    }
-
     deinit {
-        autonomousLifeTimer?.invalidate()
         currentWalkTask?.cancel()
     }
 }

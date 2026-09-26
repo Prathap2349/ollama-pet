@@ -2453,15 +2453,16 @@ struct PresenceSettingsSection: View {
 
     private var statusColor: Color {
         switch monitor.presenceStatus {
-        case .ownerPresent: return .green
+        case .ownerPresent, .ownerConfirmed: return .green
+        case .ownerTemporarilyUnavailable: return .teal
         case .personDetectedNoOwner: return .blue
-        case .uncertain, .noFace: return .yellow
+        case .faceDetected, .verifying, .uncertain, .noFace: return .yellow
         case .unknownDetected: return .orange
         case .multipleDetected: return .purple
         case .searching: return .cyan
         case .starting, .recovering: return .yellow
-        case .away: return .gray
-        case .permissionRequired, .cameraUnavailable, .failed: return .red
+        case .away, .noPerson: return .gray
+        case .permissionRequired, .cameraUnavailable, .cameraError, .failed: return .red
         case .idle, .stopped: return .secondary
         }
     }
@@ -3100,11 +3101,13 @@ struct FocusDurationEditorView: View {
     @State private var hoursText: String = ""
     @State private var minutesText: String = ""
     @State private var secondsText: String = ""
+    @State private var directInputError: String? = nil
+    @State private var isCustomMode: Bool = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Text("Focus Duration Editor")
+                Text("Focus Duration")
                     .font(.system(size: 13, weight: .semibold))
                 Spacer()
                 if focus.isSessionActive {
@@ -3128,121 +3131,150 @@ struct FocusDurationEditorView: View {
                 }
             }
 
-            // Quick Presets
+            // Presets: [10m] [25m] [45m] [60m] [CUSTOM]
             HStack(spacing: 8) {
-                Text("Quick Presets:")
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary)
-
-                ForEach([10, 25, 45, 60], id: \.self) { mins in
-                    Button("\(mins)m") {
-                        applyPresetMinutes(mins)
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .disabled(focus.isSessionActive)
-                }
+                presetButton(mins: 10)
+                presetButton(mins: 25)
+                presetButton(mins: 45)
+                presetButton(mins: 60)
+                customButton
             }
 
-            // Typeable HH : MM : SS
-            HStack(spacing: 10) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("HH")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundColor(.secondary)
-                    TextField("00", text: $hoursText)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(width: 48)
-                        .multilineTextAlignment(.center)
-                        .font(.system(size: 13, weight: .medium, design: .monospaced))
-                        .disabled(focus.isSessionActive)
-                        .onChange(of: hoursText) { val in
-                            if let h = Int(val.filter({ $0.isNumber })) {
-                                focus.customHours = max(0, min(23, h))
-                                focus.applyPreset(seconds: (focus.customHours * 3600) + (focus.customMinutes * 60) + focus.customSeconds)
-                            }
+            // Custom Configuration Controls (Always accessible, highlighted when custom active)
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 12) {
+                    // Typeable HH : MM : SS
+                    HStack(spacing: 8) {
+                        VStack(alignment: .center, spacing: 2) {
+                            Text("Hours")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundColor(.secondary)
+                            TextField("00", text: $hoursText)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 44)
+                                .multilineTextAlignment(.center)
+                                .font(.system(size: 13, weight: .medium, design: .monospaced))
+                                .disabled(focus.isSessionActive)
+                                .onSubmit { commitCustomTime() }
                         }
-                }
 
-                Text(":")
-                    .font(.system(size: 16, weight: .bold))
-                    .padding(.top, 12)
+                        Text(":")
+                            .font(.system(size: 14, weight: .bold))
+                            .padding(.top, 12)
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("MM")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundColor(.secondary)
-                    TextField("25", text: $minutesText)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(width: 48)
-                        .multilineTextAlignment(.center)
-                        .font(.system(size: 13, weight: .medium, design: .monospaced))
-                        .disabled(focus.isSessionActive)
-                        .onChange(of: minutesText) { val in
-                            if let m = Int(val.filter({ $0.isNumber })) {
-                                focus.customMinutes = max(0, min(59, m))
-                                focus.applyPreset(seconds: (focus.customHours * 3600) + (focus.customMinutes * 60) + focus.customSeconds)
-                            }
+                        VStack(alignment: .center, spacing: 2) {
+                            Text("Minutes")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundColor(.secondary)
+                            TextField("25", text: $minutesText)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 44)
+                                .multilineTextAlignment(.center)
+                                .font(.system(size: 13, weight: .medium, design: .monospaced))
+                                .disabled(focus.isSessionActive)
+                                .onSubmit { commitCustomTime() }
                         }
-                }
 
-                Text(":")
-                    .font(.system(size: 16, weight: .bold))
-                    .padding(.top, 12)
+                        Text(":")
+                            .font(.system(size: 14, weight: .bold))
+                            .padding(.top, 12)
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("SS")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundColor(.secondary)
-                    TextField("00", text: $secondsText)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(width: 48)
-                        .multilineTextAlignment(.center)
-                        .font(.system(size: 13, weight: .medium, design: .monospaced))
-                        .disabled(focus.isSessionActive)
-                        .onChange(of: secondsText) { val in
-                            if let s = Int(val.filter({ $0.isNumber })) {
-                                focus.customSeconds = max(0, min(59, s))
-                                focus.applyPreset(seconds: (focus.customHours * 3600) + (focus.customMinutes * 60) + focus.customSeconds)
-                            }
+                        VStack(alignment: .center, spacing: 2) {
+                            Text("Seconds")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundColor(.secondary)
+                            TextField("00", text: $secondsText)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 44)
+                                .multilineTextAlignment(.center)
+                                .font(.system(size: 13, weight: .medium, design: .monospaced))
+                                .disabled(focus.isSessionActive)
+                                .onSubmit { commitCustomTime() }
                         }
-                }
+                    }
 
-                Spacer()
+                    Divider()
+                        .frame(height: 32)
 
-                // Direct Input Field
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Direct Input (e.g. \"25\", \"45m\", \"1:30:00\")")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundColor(.secondary)
-                    HStack(spacing: 6) {
-                        TextField("Enter duration...", text: $directInput)
-                            .textFieldStyle(.roundedBorder)
-                            .frame(width: 130)
-                            .font(.system(size: 12))
-                            .disabled(focus.isSessionActive)
-                            .onSubmit {
+                    // Direct Input Field (e.g. "90m", "1h30m", "45", "1:30:00")
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Direct input (e.g. \"90m\", \"1h30m\", \"45\")")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(.secondary)
+                        HStack(spacing: 6) {
+                            TextField("e.g. 90m", text: $directInput)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 100)
+                                .font(.system(size: 12))
+                                .disabled(focus.isSessionActive)
+                                .onSubmit { parseAndApplyDirectInput() }
+
+                            Button("Apply") {
                                 parseAndApplyDirectInput()
                             }
-
-                        Button("Apply") {
-                            parseAndApplyDirectInput()
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            .disabled(focus.isSessionActive || directInput.trimmingCharacters(in: .whitespaces).isEmpty)
                         }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                        .disabled(focus.isSessionActive)
                     }
                 }
+
+                if let err = directInputError {
+                    Text(err)
+                        .font(.system(size: 11))
+                        .foregroundColor(.red)
+                }
             }
+            .padding(10)
+            .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.03)))
         }
         .padding(14)
         .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
         .onAppear {
             syncFromFocus()
+            isCustomMode = isNonPresetDuration()
         }
         .onChange(of: focus.customHours) { _ in syncFromFocus() }
         .onChange(of: focus.customMinutes) { _ in syncFromFocus() }
         .onChange(of: focus.customSeconds) { _ in syncFromFocus() }
+    }
+
+    @ViewBuilder
+    private func presetButton(mins: Int) -> some View {
+        let isSelected = !isCustomMode && focus.selectedDurationSeconds == (mins * 60)
+        let btn = Button("\(mins)m") {
+            isCustomMode = false
+            applyPresetMinutes(mins)
+        }
+        .controlSize(.small)
+        .disabled(focus.isSessionActive)
+
+        if isSelected {
+            btn.buttonStyle(.borderedProminent)
+        } else {
+            btn.buttonStyle(.bordered)
+        }
+    }
+
+    @ViewBuilder
+    private var customButton: some View {
+        let isSelected = isCustomMode || isNonPresetDuration()
+        let btn = Button("Custom") {
+            isCustomMode = true
+        }
+        .controlSize(.small)
+        .disabled(focus.isSessionActive)
+
+        if isSelected {
+            btn.buttonStyle(.borderedProminent)
+        } else {
+            btn.buttonStyle(.bordered)
+        }
+    }
+
+    private func isNonPresetDuration() -> Bool {
+        let total = focus.selectedDurationSeconds
+        return total != 600 && total != 1500 && total != 2700 && total != 3600
     }
 
     private func syncFromFocus() {
@@ -3252,74 +3284,36 @@ struct FocusDurationEditorView: View {
     }
 
     private func applyPresetMinutes(_ mins: Int) {
-        focus.customHours = mins / 60
-        focus.customMinutes = mins % 60
-        focus.customSeconds = 0
         focus.applyPreset(seconds: mins * 60)
         syncFromFocus()
+        directInputError = nil
+    }
+
+    private func commitCustomTime() {
+        let h = max(0, min(23, Int(hoursText.filter({ $0.isNumber })) ?? 0))
+        let m = max(0, min(59, Int(minutesText.filter({ $0.isNumber })) ?? 0))
+        let s = max(0, min(59, Int(secondsText.filter({ $0.isNumber })) ?? 0))
+        let total = (h * 3600) + (m * 60) + s
+        if total > 0 {
+            isCustomMode = true
+            focus.setConfiguredDuration(seconds: total)
+            syncFromFocus()
+            directInputError = nil
+        }
     }
 
     private func parseAndApplyDirectInput() {
-        let input = directInput.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !input.isEmpty else { return }
+        directInputError = nil
+        let trimmed = directInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
 
-        if input.contains(":") {
-            let parts = input.components(separatedBy: ":").compactMap { Int($0.trimmingCharacters(in: .whitespaces)) }
-            if parts.count == 3 {
-                let h = max(0, min(23, parts[0]))
-                let m = max(0, min(59, parts[1]))
-                let s = max(0, min(59, parts[2]))
-                focus.customHours = h
-                focus.customMinutes = m
-                focus.customSeconds = s
-                focus.applyPreset(seconds: (h * 3600) + (m * 60) + s)
-                syncFromFocus()
-                directInput = ""
-                return
-            } else if parts.count == 2 {
-                let m = max(0, min(59, parts[0]))
-                let s = max(0, min(59, parts[1]))
-                focus.customHours = 0
-                focus.customMinutes = m
-                focus.customSeconds = s
-                focus.applyPreset(seconds: (m * 60) + s)
-                syncFromFocus()
-                directInput = ""
-                return
-            }
-        }
-
-        var totalSec = 0
-        var foundUnit = false
-        if input.contains("h") || input.contains("m") || input.contains("s") {
-            let tokens = input.components(separatedBy: .whitespaces)
-            for token in tokens {
-                if token.hasSuffix("h"), let h = Int(token.dropLast()) {
-                    totalSec += h * 3600
-                    foundUnit = true
-                } else if token.hasSuffix("m"), let m = Int(token.dropLast()) {
-                    totalSec += m * 60
-                    foundUnit = true
-                } else if token.hasSuffix("s"), let s = Int(token.dropLast()) {
-                    totalSec += s
-                    foundUnit = true
-                }
-            }
-        }
-
-        if foundUnit && totalSec > 0 {
-            focus.customHours = totalSec / 3600
-            focus.customMinutes = (totalSec % 3600) / 60
-            focus.customSeconds = totalSec % 60
-            focus.applyPreset(seconds: totalSec)
+        if let seconds = FocusDurationParser.parse(trimmed) {
+            isCustomMode = true
+            focus.setConfiguredDuration(seconds: seconds)
             syncFromFocus()
             directInput = ""
-            return
-        }
-
-        if let num = Int(input.filter({ $0.isNumber })), num > 0 {
-            applyPresetMinutes(num)
-            directInput = ""
+        } else {
+            directInputError = "Invalid duration. Try '25', '45m', '90m', '1h30m', or '1:30:00'."
         }
     }
 }

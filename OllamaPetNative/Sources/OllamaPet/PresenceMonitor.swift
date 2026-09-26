@@ -43,38 +43,46 @@ public enum PresenceStatus: String {
     case idle = "Camera Off"
     case starting = "Starting..."
     case searching = "Scanning..."
-    case ownerPresent = "Owner Verified 👤"
+    case faceDetected = "Face Detected 🔍"
+    case verifying = "Checking Face 🔍"
+    case ownerConfirmed = "Owner Verified 👤"
+    case ownerPresent = "Owner Present 👤"
+    case ownerTemporarilyUnavailable = "Owner Away-Facing 👤"
     case personDetectedNoOwner = "Person (Owner Not Set) 👤"
-    case uncertain = "Checking Face 🔍"
+    case uncertain = "Uncertain Face 🔍"
     case noFace = "Face Obscured"
     case unknownDetected = "Unknown Subject 👀"
     case multipleDetected = "Multiple People 👥"
-    case away = "No Person Detected 💤"
+    case noPerson = "No Person Detected 💤"
+    case away = "Away 💤"
     case recovering = "Recovering Pipeline..."
     case cameraUnavailable = "Camera Unavailable"
     case permissionRequired = "Permission Required"
-    case failed = "Camera Error"
+    case cameraError = "Camera Error"
+    case failed = "Pipeline Failed"
     case stopped = "Stopped"
 
     public var isPositive: Bool {
-        return self == .ownerPresent
+        return self == .ownerPresent || self == .ownerConfirmed || self == .ownerTemporarilyUnavailable
     }
 
     public var displayIndicator: String {
         switch self {
         case .starting: return "🟡 Starting Camera"
         case .searching: return "● Scanning"
-        case .uncertain: return "🟡 Checking Face"
-        case .ownerPresent: return "🟢 Owner Verified"
+        case .faceDetected: return "🟡 Face Detected"
+        case .verifying, .uncertain: return "🟡 Checking Face"
+        case .ownerConfirmed, .ownerPresent: return "🟢 Owner Verified"
+        case .ownerTemporarilyUnavailable: return "🟢 Owner (Away-Facing)"
         case .unknownDetected: return "🔴 Unknown"
         case .multipleDetected: return "👥 Multiple People"
-        case .away: return "💤 No Person Detected"
+        case .noPerson, .away: return "💤 No Person Detected"
         case .noFace: return "⚪ Face Obscured"
         case .personDetectedNoOwner: return "👤 Person Detected"
         case .recovering: return "🟠 Recovering"
         case .cameraUnavailable: return "⚠️ Camera Unavailable"
         case .permissionRequired: return "🔒 Permission Required"
-        case .failed: return "❌ Camera Error"
+        case .cameraError, .failed: return "❌ Camera Error"
         case .stopped: return "⏹ Stopped"
         case .idle: return "○ Camera Off"
         }
@@ -269,68 +277,124 @@ public final class PresenceAlertController {
 
 public enum OwnerSampleAngle: String, Codable, CaseIterable, Identifiable {
     case front = "front"
-    case leftProfile = "left"
-    case rightProfile = "right"
-    
+    case slightLeft = "slightLeft"
+    case slightRight = "slightRight"
+    case slightUp = "slightUp"
+    case slightDown = "slightDown"
+    case normalExpression = "normalExpression"
+    case optionalGlasses = "optionalGlasses"
+
+    // Backward-compatibility aliases
+    public static var leftProfile: OwnerSampleAngle { .slightLeft }
+    public static var rightProfile: OwnerSampleAngle { .slightRight }
+
     public var id: String { rawValue }
-    
+
     public var stepIndex: Int {
         switch self {
         case .front: return 1
-        case .leftProfile: return 2
-        case .rightProfile: return 3
+        case .slightLeft: return 2
+        case .slightRight: return 3
+        case .slightUp: return 4
+        case .slightDown: return 5
+        case .normalExpression: return 6
+        case .optionalGlasses: return 7
         }
     }
-    
+
     public var title: String {
         switch self {
         case .front: return "Front & Center"
-        case .leftProfile: return "Left Angle"
-        case .rightProfile: return "Right Angle"
+        case .slightLeft: return "Slight Left"
+        case .slightRight: return "Slight Right"
+        case .slightUp: return "Slight Up"
+        case .slightDown: return "Slight Down"
+        case .normalExpression: return "Neutral Face"
+        case .optionalGlasses: return "Accessories / Glasses"
         }
     }
-    
+
     public var instruction: String {
         switch self {
         case .front: return "Look straight into camera with good lighting."
-        case .leftProfile: return "Turn your head gently ~25° to your left."
-        case .rightProfile: return "Turn your head gently ~25° to your right."
+        case .slightLeft: return "Turn your head gently ~20° to your left."
+        case .slightRight: return "Turn your head gently ~20° to your right."
+        case .slightUp: return "Tilt your head gently slightly upward."
+        case .slightDown: return "Tilt your head gently slightly downward."
+        case .normalExpression: return "Hold a relaxed neutral expression facing camera."
+        case .optionalGlasses: return "Wear glasses or everyday accessories facing camera (or skip)."
         }
     }
-    
+
     public var icon: String {
         switch self {
         case .front: return "person.crop.circle"
-        case .leftProfile: return "arrow.turn.up.left"
-        case .rightProfile: return "arrow.turn.up.right"
+        case .slightLeft: return "arrow.turn.up.left"
+        case .slightRight: return "arrow.turn.up.right"
+        case .slightUp: return "arrow.up"
+        case .slightDown: return "arrow.down"
+        case .normalExpression: return "face.smiling"
+        case .optionalGlasses: return "eyeglasses"
         }
     }
-    
-    public func matches(yaw: Double) -> (matches: Bool, feedback: String) {
+
+    public func matches(yaw: Double, pitch: Double = 0.0) -> (matches: Bool, feedback: String) {
         switch self {
         case .front:
-            if abs(yaw) <= 0.22 {
+            if abs(yaw) <= 0.22 && abs(pitch) <= 0.25 {
                 return (true, "Facing forward ✓")
             } else if yaw > 0.22 {
                 return (false, "Turn slightly right to center")
-            } else {
+            } else if yaw < -0.22 {
                 return (false, "Turn slightly left to center")
+            } else if pitch > 0.25 {
+                return (false, "Lower head slightly to center")
+            } else {
+                return (false, "Raise head slightly to center")
             }
-        case .leftProfile:
-            if yaw >= 0.16 && yaw <= 0.85 {
+        case .slightLeft:
+            if yaw >= 0.14 && yaw <= 0.85 {
                 return (true, "Left angle aligned ✓")
-            } else if yaw < 0.16 {
-                return (false, "Turn head gently to your left (towards your left shoulder)")
+            } else if yaw < 0.14 {
+                return (false, "Turn head gently to your left")
             } else {
                 return (false, "Turned too far left, ease back toward center")
             }
-        case .rightProfile:
-            if yaw <= -0.16 && yaw >= -0.85 {
+        case .slightRight:
+            if yaw <= -0.14 && yaw >= -0.85 {
                 return (true, "Right angle aligned ✓")
-            } else if yaw > -0.16 {
-                return (false, "Turn head gently to your right (towards your right shoulder)")
+            } else if yaw > -0.14 {
+                return (false, "Turn head gently to your right")
             } else {
                 return (false, "Turned too far right, ease back toward center")
+            }
+        case .slightUp:
+            if pitch >= 0.08 && pitch <= 0.70 {
+                return (true, "Upward tilt aligned ✓")
+            } else if pitch < 0.08 {
+                return (false, "Tilt chin slightly upward")
+            } else {
+                return (false, "Tilted too high, ease back slightly")
+            }
+        case .slightDown:
+            if pitch <= -0.08 && pitch >= -0.70 {
+                return (true, "Downward tilt aligned ✓")
+            } else if pitch > -0.08 {
+                return (false, "Tilt chin slightly downward")
+            } else {
+                return (false, "Tilted too low, ease back slightly")
+            }
+        case .normalExpression:
+            if abs(yaw) <= 0.25 && abs(pitch) <= 0.25 {
+                return (true, "Neutral pose aligned ✓")
+            } else {
+                return (false, "Center face and relax expression")
+            }
+        case .optionalGlasses:
+            if abs(yaw) <= 0.30 && abs(pitch) <= 0.30 {
+                return (true, "Accessory sample aligned ✓")
+            } else {
+                return (false, "Center face with glasses/accessory")
             }
         }
     }
@@ -364,6 +428,7 @@ public struct TrackedSubject: Identifiable {
     public var isUncertain: Bool
     public var isFaceObscured: Bool
     public var consecutiveOwnerMatches: Int
+    public var confidence: Double // Rolling temporal confidence: 0.0 to 1.0
     public var lastRecognitionTime: Date?
     public var hasCapturedSnapshot: Bool
     public var missedFramesCount: Int
@@ -378,7 +443,7 @@ public struct TrackedSubject: Identifiable {
             return isFaceObscured ? "🟢 Owner (Away-Facing)" : "🟢 Owner Verified"
         } else if isFaceObscured {
             return "⚪ Face Obscured"
-        } else if consecutiveOwnerMatches > 0 || isUncertain {
+        } else if isUncertain || confidence >= 0.30 {
             return "🟡 Checking Face"
         } else {
             return "🔴 Unknown"
@@ -387,15 +452,14 @@ public struct TrackedSubject: Identifiable {
 
     public var statusDescription: String {
         if isOwner {
-            return isFaceObscured ? "Owner present · Face angled away" : "Strong match · \(consecutiveOwnerMatches) confirmations"
+            let confPct = Int(confidence * 100)
+            return isFaceObscured ? "Owner present · Face angled away" : "Owner Verified · Match \(confPct)%"
         } else if isFaceObscured {
             return "Person detected · Face obscured/turned"
-        } else if consecutiveOwnerMatches > 0 {
-            return "Possible match · \(consecutiveOwnerMatches) confirmation"
-        } else if isUncertain {
-            return "Verifying facial features..."
+        } else if isUncertain || confidence >= 0.30 {
+            return "Verifying facial identity..."
         } else {
-            return "No owner match"
+            return "Unrecognized subject"
         }
     }
 
@@ -406,6 +470,7 @@ public struct TrackedSubject: Identifiable {
         isUncertain: Bool = false,
         isFaceObscured: Bool = false,
         consecutiveOwnerMatches: Int = 0,
+        confidence: Double = 0.0,
         lastRecognitionTime: Date? = nil,
         matchDistance: Float? = nil
     ) {
@@ -417,6 +482,7 @@ public struct TrackedSubject: Identifiable {
         self.isUncertain = isUncertain
         self.isFaceObscured = isFaceObscured
         self.consecutiveOwnerMatches = consecutiveOwnerMatches
+        self.confidence = confidence
         self.lastRecognitionTime = lastRecognitionTime
         self.hasCapturedSnapshot = false
         self.missedFramesCount = 0
@@ -515,7 +581,8 @@ private final class EnhancedPresenceTracker {
 
                     // If verified owner and within recent cooldown (12s), keep verification to save CPU
                     if subj.isOwner && timeSinceLastRec < 12.0 {
-                        // Cooldown active, keep isOwner = true
+                        // Cooldown active, keep high confidence and isOwner = true
+                        subj.confidence = max(subj.confidence, 0.85)
                     } else {
                         // Perform recognition
                         let facePrintReq = VNGenerateImageFeaturePrintRequest()
@@ -536,24 +603,30 @@ private final class EnhancedPresenceTracker {
                             }
                             subj.matchDistance = minDistance
 
-                            // Multi-sample evidence evaluation
-                            if strongMatches >= 1 || possibleMatches >= 2 {
+                            // Rolling temporal confidence accumulation and decay
+                            if strongMatches >= 1 {
+                                subj.confidence = min(1.0, subj.confidence + 0.35)
                                 subj.consecutiveOwnerMatches += 1
-                                if subj.consecutiveOwnerMatches >= 2 || subj.isOwner {
-                                    subj.isOwner = true
-                                    subj.isUncertain = false
-                                } else {
-                                    // 1st match: require 2 consecutive samples
-                                    subj.isOwner = false
-                                    subj.isUncertain = true
-                                }
-                            } else if minDistance <= 0.48 {
-                                // Ambiguous borderline: hold as uncertain, DO NOT declare unknown!
-                                subj.consecutiveOwnerMatches = 0
+                            } else if possibleMatches >= 1 {
+                                subj.confidence = min(1.0, subj.confidence + 0.20)
+                                subj.consecutiveOwnerMatches += 1
+                            } else if minDistance <= 0.50 {
+                                // Borderline: slow decay, DO NOT drop instantly!
+                                subj.confidence = max(0.0, subj.confidence - 0.04)
+                            } else {
+                                // Clear non-match: bounded decay (requires several consecutive bad frames to lose identity)
+                                subj.confidence = max(0.0, subj.confidence - 0.25)
+                                subj.consecutiveOwnerMatches = max(0, subj.consecutiveOwnerMatches - 1)
+                            }
+
+                            // Stable Classification based on temporal confidence
+                            if subj.confidence >= 0.60 {
+                                subj.isOwner = true
+                                subj.isUncertain = false
+                            } else if subj.confidence >= 0.30 {
+                                subj.isOwner = false
                                 subj.isUncertain = true
                             } else {
-                                // Clear non-match
-                                subj.consecutiveOwnerMatches = 0
                                 subj.isOwner = false
                                 subj.isUncertain = false
                             }
@@ -568,11 +641,17 @@ private final class EnhancedPresenceTracker {
                     // Face obscured or turned away
                     subj.isFaceObscured = true
                     let timeSinceLastRec = subj.lastRecognitionTime != nil ? now.timeIntervalSince(subj.lastRecognitionTime!) : 999.0
-                    // If owner was verified, retain owner status for up to 15s while body remains tracked!
-                    if subj.isOwner && timeSinceLastRec < 15.0 {
-                        // Owner remains owner, never switch to unknown because head turned
-                        subj.isUncertain = false
-                    } else if !subj.isOwner {
+                    // If owner was confirmed, identity decays gracefully rather than flipping to unknown
+                    if subj.isOwner || subj.confidence >= 0.60 {
+                        subj.confidence = max(0.0, subj.confidence - 0.04)
+                        if subj.confidence >= 0.50 && timeSinceLastRec < 18.0 {
+                            subj.isOwner = true
+                            subj.isUncertain = false
+                        } else {
+                            subj.isOwner = false
+                            subj.isUncertain = true
+                        }
+                    } else {
                         subj.isUncertain = true
                     }
                 } else {
@@ -580,6 +659,7 @@ private final class EnhancedPresenceTracker {
                     subj.isFaceObscured = (pair.face == nil)
                     subj.isOwner = false
                     subj.isUncertain = false
+                    subj.confidence = 0.0
                 }
 
                 updatedSubjects.append(subj)
@@ -590,7 +670,8 @@ private final class EnhancedPresenceTracker {
                     isOwner: false,
                     isUncertain: true,
                     isFaceObscured: (pair.face == nil),
-                    consecutiveOwnerMatches: 0
+                    consecutiveOwnerMatches: 0,
+                    confidence: 0.0
                 )
                 newSubj.lastSeen = now
 
@@ -613,18 +694,18 @@ private final class EnhancedPresenceTracker {
                         }
                         newSubj.matchDistance = minDistance
 
-                        if strongMatches >= 1 || possibleMatches >= 2 {
-                            newSubj.consecutiveOwnerMatches = 1 // Sample 1 of 2
-                            newSubj.isOwner = false
+                        if strongMatches >= 1 {
+                            newSubj.confidence = 0.45
+                            newSubj.consecutiveOwnerMatches = 1
                             newSubj.isUncertain = true
-                        } else if minDistance <= 0.48 {
-                            newSubj.consecutiveOwnerMatches = 0
-                            newSubj.isOwner = false
+                        } else if possibleMatches >= 1 {
+                            newSubj.confidence = 0.30
+                            newSubj.consecutiveOwnerMatches = 1
                             newSubj.isUncertain = true
                         } else {
+                            newSubj.confidence = 0.0
                             newSubj.consecutiveOwnerMatches = 0
-                            newSubj.isOwner = false
-                            newSubj.isUncertain = true // Held in verifying state by grace period
+                            newSubj.isUncertain = true
                         }
                         newSubj.lastRecognitionTime = now
                     }
@@ -647,10 +728,10 @@ private final class EnhancedPresenceTracker {
 
         self.subjects = updatedSubjects
 
-        // Determine Overall Presence Status
+        // Determine Overall Presence Status using stable state machine
         let status: PresenceStatus
         if updatedSubjects.isEmpty {
-            status = .away
+            status = .noPerson
         } else if updatedSubjects.count > 1 {
             status = .multipleDetected
         } else {
@@ -658,13 +739,19 @@ private final class EnhancedPresenceTracker {
             if ownerPrints.isEmpty {
                 status = .personDetectedNoOwner
             } else if s.isOwner {
-                status = .ownerPresent
-            } else if s.isUncertain || s.consecutiveOwnerMatches > 0 {
-                status = .uncertain
-            } else if s.lastRecognitionTime != nil {
+                if s.isFaceObscured {
+                    status = .ownerTemporarilyUnavailable
+                } else {
+                    status = .ownerConfirmed
+                }
+            } else if s.isUncertain || s.confidence >= 0.30 {
+                status = .verifying
+            } else if s.isFaceObscured {
+                status = .noFace
+            } else if s.lastRecognitionTime != nil && s.confidence < 0.25 {
                 status = .unknownDetected
             } else {
-                status = .noFace
+                status = .faceDetected
             }
         }
 
@@ -713,6 +800,7 @@ private final class PresenceCaptureCoordinator: NSObject, AVCaptureVideoDataOutp
 
     var intervalSeconds: Double = 1.0
     var isLivePreviewRequested: Bool = false
+    var currentSessionId: UUID = UUID()
 
     private var isAnalyzing: Bool = false
     private var lastAnalysisTimestamp: TimeInterval = 0
@@ -730,18 +818,22 @@ private final class PresenceCaptureCoordinator: NSObject, AVCaptureVideoDataOutp
         self.trackerRef = tracker
     }
 
-    func start(interval: Double, centerStageEnabled: Bool = true, completion: @escaping (Result<Void, MonitoringError>) -> Void) {
+    func start(interval: Double, centerStageEnabled: Bool = true, sessionId: UUID = UUID(), completion: @escaping (Result<Void, MonitoringError>) -> Void) {
         self.intervalSeconds = interval
+        self.currentSessionId = sessionId
 
         sessionQueue.async { [weak self] in
-            guard let self = self else { return }
+            guard let self = self, self.currentSessionId == sessionId else { return }
 
             // 1. Cleanly tear down any prior session
-            self.teardownCurrentSession()
+            self.teardownCurrentSession(preservingSessionId: sessionId)
 
             // 2. Discover default video device
             guard let camera = AVCaptureDevice.default(for: .video) else {
-                DispatchQueue.main.async { completion(.failure(.noCameraDevice)) }
+                DispatchQueue.main.async {
+                    guard self.currentSessionId == sessionId else { return }
+                    completion(.failure(.noCameraDevice))
+                }
                 return
             }
 
@@ -755,13 +847,19 @@ private final class PresenceCaptureCoordinator: NSObject, AVCaptureVideoDataOutp
                 input = try AVCaptureDeviceInput(device: camera)
             } catch {
                 session.commitConfiguration()
-                DispatchQueue.main.async { completion(.failure(.cannotAddInput(error.localizedDescription))) }
+                DispatchQueue.main.async {
+                    guard self.currentSessionId == sessionId else { return }
+                    completion(.failure(.cannotAddInput(error.localizedDescription)))
+                }
                 return
             }
 
             guard session.canAddInput(input) else {
                 session.commitConfiguration()
-                DispatchQueue.main.async { completion(.failure(.cannotAddInput("Session rejected camera input"))) }
+                DispatchQueue.main.async {
+                    guard self.currentSessionId == sessionId else { return }
+                    completion(.failure(.cannotAddInput("Session rejected camera input")))
+                }
                 return
             }
             session.addInput(input)
@@ -787,21 +885,34 @@ private final class PresenceCaptureCoordinator: NSObject, AVCaptureVideoDataOutp
             guard session.canAddOutput(output) else {
                 session.commitConfiguration()
                 self.teardownCurrentSession()
-                DispatchQueue.main.async { completion(.failure(.cannotAddOutput)) }
+                DispatchQueue.main.async {
+                    guard self.currentSessionId == sessionId else { return }
+                    completion(.failure(.cannotAddOutput))
+                }
                 return
             }
             session.addOutput(output)
             self.currentVideoOutput = output
 
             session.commitConfiguration()
+
+            guard self.currentSessionId == sessionId else {
+                session.stopRunning()
+                return
+            }
+
             session.startRunning()
 
             self.captureSession = session
-            DispatchQueue.main.async { completion(.success(())) }
+            DispatchQueue.main.async {
+                guard self.currentSessionId == sessionId else { return }
+                completion(.success(()))
+            }
         }
     }
 
     func stop(completion: (() -> Void)? = nil) {
+        self.currentSessionId = UUID()
         sessionQueue.async { [weak self] in
             guard let self = self else {
                 DispatchQueue.main.async { completion?() }
@@ -812,7 +923,7 @@ private final class PresenceCaptureCoordinator: NSObject, AVCaptureVideoDataOutp
         }
     }
 
-    private func teardownCurrentSession() {
+    private func teardownCurrentSession(preservingSessionId: UUID? = nil) {
         if let session = self.captureSession {
             if session.isRunning {
                 session.stopRunning()
@@ -832,6 +943,11 @@ private final class PresenceCaptureCoordinator: NSObject, AVCaptureVideoDataOutp
         analysisFrameLock.lock()
         self._latestAnalysisFrame = nil
         analysisFrameLock.unlock()
+        if let preserved = preservingSessionId {
+            self.currentSessionId = preserved
+        } else {
+            self.currentSessionId = UUID()
+        }
     }
 
     func captureOutput(
@@ -839,6 +955,8 @@ private final class PresenceCaptureCoordinator: NSObject, AVCaptureVideoDataOutp
         didOutput sampleBuffer: CMSampleBuffer,
         from connection: AVCaptureConnection
     ) {
+        let sid = self.currentSessionId
+        guard self.captureSession?.isRunning == true else { return }
         // Record camera alive signal for watchdog
         onHeartbeat?()
 
@@ -849,6 +967,7 @@ private final class PresenceCaptureCoordinator: NSObject, AVCaptureVideoDataOutp
         if isLivePreviewRequested && (now - lastPreviewTimestamp >= minPreviewInterval) {
             lastPreviewTimestamp = now
             if let cg = renderCGImage(from: pixelBuffer) {
+                guard self.currentSessionId == sid else { return }
                 onPreviewFrameReady?(cg)
             }
         }
@@ -856,14 +975,16 @@ private final class PresenceCaptureCoordinator: NSObject, AVCaptureVideoDataOutp
         // 2. Controlled Vision Detection Pipeline (Gated by performance sampling interval)
         guard now - lastAnalysisTimestamp >= intervalSeconds else { return }
         guard !isAnalyzing else { return } // Prevent queued Vision requests from piling up
+        guard self.currentSessionId == sid else { return }
         isAnalyzing = true
         lastAnalysisTimestamp = now
 
-        processVisionFrame(pixelBuffer: pixelBuffer)
+        processVisionFrame(pixelBuffer: pixelBuffer, sessionId: sid)
     }
 
-    private func processVisionFrame(pixelBuffer: CVPixelBuffer) {
+    private func processVisionFrame(pixelBuffer: CVPixelBuffer, sessionId: UUID) {
         defer { isAnalyzing = false }
+        guard self.currentSessionId == sessionId else { return }
 
         // Cache analysis frame for snapshots even when live preview is not requested
         if let cg = renderCGImage(from: pixelBuffer) {
@@ -880,10 +1001,12 @@ private final class PresenceCaptureCoordinator: NSObject, AVCaptureVideoDataOutp
             try handler.perform([humanRequest])
             let humanResults = humanRequest.results ?? []
 
+            guard self.currentSessionId == sessionId else { return }
+
             if humanResults.isEmpty {
-                // Zero humans detected -> Publish away state immediately; skip faces and feature prints!
+                // Zero humans detected -> Publish away/noPerson state immediately; skip faces and feature prints!
                 self.trackerRef?.clear()
-                self.onFrameProcessed?([], .away)
+                self.onFrameProcessed?([], .noPerson)
                 return
             }
 
@@ -902,6 +1025,7 @@ private final class PresenceCaptureCoordinator: NSObject, AVCaptureVideoDataOutp
                     ownerPrints: self.ownerFeaturePrints,
                     handler: handler
                 )
+                guard self.currentSessionId == sessionId else { return }
                 self.onFrameProcessed?(subjects, status)
             }
         } catch {
@@ -966,6 +1090,7 @@ private final class PresenceCaptureCoordinator: NSObject, AVCaptureVideoDataOutp
 public final class PresenceMonitor: ObservableObject {
     public static let shared = PresenceMonitor()
 
+    @Published public private(set) var currentSessionId: UUID = UUID()
     @Published public var isRunning: Bool = false
     @Published public var monitoringState: MonitoringState = .idle
     @Published public var presenceStatus: PresenceStatus = .idle
@@ -1045,14 +1170,15 @@ public final class PresenceMonitor: ObservableObject {
         // 1. Detection Results Callback (Runs on controlled analysis schedule)
         coordinator.onFrameProcessed = { [weak self] subjects, status in
             Task { @MainActor [weak self] in
-                self?.handleProcessedFrame(subjects: subjects, status: status)
+                guard let self = self, self.isRunning, self.currentSessionId == self.coordinator.currentSessionId else { return }
+                self.handleProcessedFrame(subjects: subjects, status: status)
             }
         }
 
         // 2. Throttled Preview Callback (Runs at ~8 FPS only when requested)
         coordinator.onPreviewFrameReady = { [weak self] cgImage in
             Task { @MainActor [weak self] in
-                guard let self = self, self.isLivePreviewRequested else { return }
+                guard let self = self, self.isRunning, self.isLivePreviewRequested, self.currentSessionId == self.coordinator.currentSessionId else { return }
                 self.latestPreviewImage = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
             }
         }
@@ -1074,9 +1200,9 @@ public final class PresenceMonitor: ObservableObject {
 
     private func updateSamplingFrequency() {
         let interval: Double
-        if presenceStatus == .ownerPresent {
+        if presenceStatus == .ownerPresent || presenceStatus == .ownerConfirmed {
             interval = performanceMode.ownerRelaxedInterval
-        } else if presenceStatus == .away || presenceStatus == .idle {
+        } else if presenceStatus == .away || presenceStatus == .noPerson || presenceStatus == .idle || presenceStatus == .stopped {
             interval = performanceMode.baseInterval
         } else {
             interval = performanceMode.activeInterval
@@ -1123,6 +1249,9 @@ public final class PresenceMonitor: ObservableObject {
     }
 
     public func stop() {
+        let newSessionId = UUID()
+        self.currentSessionId = newSessionId
+        self.coordinator.currentSessionId = newSessionId
         isRunning = false
         monitoringState = .stopped
         presenceStatus = .stopped
@@ -1148,14 +1277,16 @@ public final class PresenceMonitor: ObservableObject {
     }
 
     private func setupAndStartCapture() {
+        let sessionId = UUID()
+        self.currentSessionId = sessionId
         updateSamplingFrequency()
         lastCameraFrameTime = Date()
         lastSuccessfulAnalysisTime = Date()
 
         let centerStage = DataManager.shared.savedData.presenceCenterStageEnabled ?? true
-        coordinator.start(interval: coordinator.intervalSeconds, centerStageEnabled: centerStage) { [weak self] result in
+        coordinator.start(interval: coordinator.intervalSeconds, centerStageEnabled: centerStage, sessionId: sessionId) { [weak self] result in
             DispatchQueue.main.async {
-                guard let self = self else { return }
+                guard let self = self, self.currentSessionId == sessionId else { return }
                 switch result {
                 case .success:
                     self.isRunning = true
@@ -1235,7 +1366,7 @@ public final class PresenceMonitor: ObservableObject {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
                     guard let self = self, self.isRunning else { return }
                     let centerStage = DataManager.shared.savedData.presenceCenterStageEnabled ?? true
-                    self.coordinator.start(interval: self.coordinator.intervalSeconds, centerStageEnabled: centerStage) { [weak self] result in
+                    self.coordinator.start(interval: self.coordinator.intervalSeconds, centerStageEnabled: centerStage, sessionId: self.currentSessionId) { [weak self] result in
                         DispatchQueue.main.async {
                             guard let self = self else { return }
                             self.isRecovering = false
@@ -1487,6 +1618,25 @@ public final class PresenceMonitor: ObservableObject {
         return 0.0
     }
 
+    private func estimateHeadPitch(face: VNFaceObservation) -> Double {
+        if let pitchNum = face.pitch {
+            return pitchNum.doubleValue
+        }
+        if let landmarks = face.landmarks,
+           let nose = landmarks.nose?.normalizedPoints.first,
+           let leftEye = landmarks.leftEye?.normalizedPoints.first,
+           let rightEye = landmarks.rightEye?.normalizedPoints.first,
+           let mouth = landmarks.outerLips?.normalizedPoints.first {
+            let eyeY = (leftEye.y + rightEye.y) / 2.0
+            let totalHeight = eyeY - mouth.y
+            if totalHeight > 0.02 {
+                let nosePos = (eyeY - nose.y) / totalHeight
+                return Double((0.45 - nosePos) * 1.5)
+            }
+        }
+        return 0.0
+    }
+
     public func evaluateEnrollmentFrame(for angle: OwnerSampleAngle) -> EnrollmentQualityReport {
         guard let image = latestPreviewImage,
               let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
@@ -1562,7 +1712,8 @@ public final class PresenceMonitor: ObservableObject {
         let isGoodQuality = qualityScore >= 0.30
 
         let yaw = estimateHeadYaw(face: face)
-        let angleCheck = angle.matches(yaw: yaw)
+        let pitch = estimateHeadPitch(face: face)
+        let angleCheck = angle.matches(yaw: yaw, pitch: pitch)
 
         let message: String
         if !isCentered {
@@ -1650,7 +1801,8 @@ public final class PresenceMonitor: ObservableObject {
         // 3. Save metadata
         let qualityScore = (qualityReq.results?.first as? VNFaceObservation)?.faceCaptureQuality
         let yaw = estimateHeadYaw(face: face)
-        saveAngleMetadata(angle: angle, quality: qualityScore, yaw: yaw)
+        let pitch = estimateHeadPitch(face: face)
+        saveAngleMetadata(angle: angle, quality: qualityScore, yaw: yaw, pitch: pitch)
 
         // 4. Reload all angle files and compile aggregated prints
         loadOwnerProfile()
@@ -1673,10 +1825,10 @@ public final class PresenceMonitor: ObservableObject {
         let targetAngle: OwnerSampleAngle
         if !isSampleEnrolled(angle: .front) {
             targetAngle = .front
-        } else if !isSampleEnrolled(angle: .leftProfile) {
-            targetAngle = .leftProfile
-        } else if !isSampleEnrolled(angle: .rightProfile) {
-            targetAngle = .rightProfile
+        } else if !isSampleEnrolled(angle: .slightLeft) {
+            targetAngle = .slightLeft
+        } else if !isSampleEnrolled(angle: .slightRight) {
+            targetAngle = .slightRight
         } else {
             targetAngle = .front
         }
@@ -1689,7 +1841,15 @@ public final class PresenceMonitor: ObservableObject {
 
     public func getSamplePhoto(angle: OwnerSampleAngle) -> NSImage? {
         let photoURL = ownerURL.appendingPathComponent("owner_\(angle.rawValue).jpg")
-        return NSImage(contentsOf: photoURL)
+        if let img = NSImage(contentsOf: photoURL) {
+            return img
+        }
+        if angle == .slightLeft {
+            return NSImage(contentsOf: ownerURL.appendingPathComponent("owner_left.jpg"))
+        } else if angle == .slightRight {
+            return NSImage(contentsOf: ownerURL.appendingPathComponent("owner_right.jpg"))
+        }
+        return nil
     }
 
     public func deleteSample(angle: OwnerSampleAngle) {
@@ -1697,6 +1857,13 @@ public final class PresenceMonitor: ObservableObject {
         let photoURL = ownerURL.appendingPathComponent("owner_\(angle.rawValue).jpg")
         try? fileManager.removeItem(at: fileURL)
         try? fileManager.removeItem(at: photoURL)
+        if angle == .slightLeft {
+            try? fileManager.removeItem(at: ownerURL.appendingPathComponent("owner_left.data"))
+            try? fileManager.removeItem(at: ownerURL.appendingPathComponent("owner_left.jpg"))
+        } else if angle == .slightRight {
+            try? fileManager.removeItem(at: ownerURL.appendingPathComponent("owner_right.data"))
+            try? fileManager.removeItem(at: ownerURL.appendingPathComponent("owner_right.jpg"))
+        }
         loadOwnerProfile()
 
         // Re-save aggregate prints archive
@@ -1714,6 +1881,12 @@ public final class PresenceMonitor: ObservableObject {
             try? fileManager.removeItem(at: fileURL)
             try? fileManager.removeItem(at: photoURL)
         }
+        // Also clean legacy filenames if any
+        try? fileManager.removeItem(at: ownerURL.appendingPathComponent("owner_left.data"))
+        try? fileManager.removeItem(at: ownerURL.appendingPathComponent("owner_left.jpg"))
+        try? fileManager.removeItem(at: ownerURL.appendingPathComponent("owner_right.data"))
+        try? fileManager.removeItem(at: ownerURL.appendingPathComponent("owner_right.jpg"))
+
         let printsURL = ownerURL.appendingPathComponent("owner_prints.data")
         let legacyPrintURL = ownerURL.appendingPathComponent("owner_print.data")
         let photoURL = ownerURL.appendingPathComponent("owner.jpg")
@@ -1737,7 +1910,7 @@ public final class PresenceMonitor: ObservableObject {
         return NSImage(contentsOf: photoURL)
     }
 
-    private func saveAngleMetadata(angle: OwnerSampleAngle, quality: Float?, yaw: Double?) {
+    private func saveAngleMetadata(angle: OwnerSampleAngle, quality: Float?, yaw: Double?, pitch: Double?) {
         let metaURL = ownerURL.appendingPathComponent("owner_metadata.json")
         var currentMeta: [String: [String: Any]] = [:]
         if let data = try? Data(contentsOf: metaURL),
@@ -1748,7 +1921,8 @@ public final class PresenceMonitor: ObservableObject {
             "angle": angle.rawValue,
             "timestamp": Date().timeIntervalSince1970,
             "quality": quality ?? 0.5,
-            "yaw": yaw ?? 0.0
+            "yaw": yaw ?? 0.0,
+            "pitch": pitch ?? 0.0
         ]
         if let outData = try? JSONSerialization.data(withJSONObject: currentMeta, options: [.prettyPrinted]) {
             try? outData.write(to: metaURL)
@@ -1763,7 +1937,20 @@ public final class PresenceMonitor: ObservableObject {
         var angleObservations: [VNFeaturePrintObservation] = []
 
         for angle in OwnerSampleAngle.allCases {
-            let fileURL = ownerURL.appendingPathComponent("owner_\(angle.rawValue).data")
+            var fileURL = ownerURL.appendingPathComponent("owner_\(angle.rawValue).data")
+            if !fileManager.fileExists(atPath: fileURL.path) {
+                if angle == .slightLeft {
+                    let legacyURL = ownerURL.appendingPathComponent("owner_left.data")
+                    if fileManager.fileExists(atPath: legacyURL.path) {
+                        fileURL = legacyURL
+                    }
+                } else if angle == .slightRight {
+                    let legacyURL = ownerURL.appendingPathComponent("owner_right.data")
+                    if fileManager.fileExists(atPath: legacyURL.path) {
+                        fileURL = legacyURL
+                    }
+                }
+            }
             if let data = try? Data(contentsOf: fileURL),
                let obs = try? NSKeyedUnarchiver.unarchivedObject(ofClass: VNFeaturePrintObservation.self, from: data) {
                 detectedAngles.insert(angle)

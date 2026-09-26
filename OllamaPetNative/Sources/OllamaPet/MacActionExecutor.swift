@@ -146,27 +146,33 @@ public class MacActionExecutor {
             guard let urlStr = action.url, let url = URL(string: urlStr) else {
                 throw NSError(domain: "MacAction", code: 400, userInfo: [NSLocalizedDescriptionKey: "Invalid website URL."])
             }
+            let siteName = friendlySiteName(for: url)
+
             if let browserName = action.browser, !browserName.isEmpty {
+                let dispBrowser = displayBrowserName(browserName)
                 guard let browserURL = findBrowserAppURL(browserName: browserName) else {
-                    throw NSError(domain: "MacAction", code: 404, userInfo: [NSLocalizedDescriptionKey: "\(browserName) is not installed."])
+                    // Never fall back silently to default browser when a specific browser was requested!
+                    throw NSError(domain: "MacAction", code: 404, userInfo: [NSLocalizedDescriptionKey: "\(dispBrowser) is not installed on this Mac."])
                 }
                 let config = NSWorkspace.OpenConfiguration()
                 config.activates = true
                 _ = try await NSWorkspace.shared.open([url], withApplicationAt: browserURL, configuration: config)
 
-                // Tab / Process Verification
-                try? await Task.sleep(nanoseconds: 500_000_000)
+                // Process & Frontmost Verification
+                try? await Task.sleep(nanoseconds: 700_000_000)
                 let bId = bundleId(for: browserName)
-                let isRunning = !bId.isEmpty && !NSRunningApplication.runningApplications(withBundleIdentifier: bId).isEmpty
+                let apps = !bId.isEmpty ? NSRunningApplication.runningApplications(withBundleIdentifier: bId) : []
+                let isRunning = !apps.isEmpty
+
                 if isRunning {
-                    return ActionExecutionResult("Opened \(urlStr) in \(browserName)", status: .success)
+                    return ActionExecutionResult("Opened \(siteName) in \(dispBrowser).", status: .success)
                 } else {
-                    return ActionExecutionResult("Dispatched \(urlStr) to \(browserName) (window opening)", status: .partial)
+                    return ActionExecutionResult("Dispatched \(siteName) to \(dispBrowser).", status: .partial)
                 }
             } else {
                 let success = NSWorkspace.shared.open(url)
                 if success {
-                    return ActionExecutionResult("Opened \(urlStr)", status: .success)
+                    return ActionExecutionResult("Opened \(siteName).", status: .success)
                 } else {
                     throw NSError(domain: "MacAction", code: 500, userInfo: [NSLocalizedDescriptionKey: "Unable to open URL in browser."])
                 }
@@ -179,24 +185,25 @@ public class MacActionExecutor {
             let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
             let searchURL = URL(string: "https://www.google.com/search?q=\(encoded)")!
             if let browserName = action.browser, !browserName.isEmpty {
+                let dispBrowser = displayBrowserName(browserName)
                 guard let browserURL = findBrowserAppURL(browserName: browserName) else {
-                    throw NSError(domain: "MacAction", code: 404, userInfo: [NSLocalizedDescriptionKey: "\(browserName) is not installed."])
+                    throw NSError(domain: "MacAction", code: 404, userInfo: [NSLocalizedDescriptionKey: "\(dispBrowser) is not installed on this Mac."])
                 }
                 let config = NSWorkspace.OpenConfiguration()
                 config.activates = true
                 _ = try await NSWorkspace.shared.open([searchURL], withApplicationAt: browserURL, configuration: config)
 
-                try? await Task.sleep(nanoseconds: 500_000_000)
+                try? await Task.sleep(nanoseconds: 700_000_000)
                 let bId = bundleId(for: browserName)
                 let isRunning = !bId.isEmpty && !NSRunningApplication.runningApplications(withBundleIdentifier: bId).isEmpty
                 return ActionExecutionResult(
-                    isRunning ? "Searched web for '\(query)' in \(browserName)" : "Sent search for '\(query)' to \(browserName)",
+                    isRunning ? "Searched for '\(query)' in \(dispBrowser)." : "Dispatched search for '\(query)' to \(dispBrowser).",
                     status: isRunning ? .success : .partial
                 )
             } else {
                 let success = NSWorkspace.shared.open(searchURL)
                 if success {
-                    return ActionExecutionResult("Searched web for '\(query)'", status: .success)
+                    return ActionExecutionResult("Searched for '\(query)'.", status: .success)
                 } else {
                     throw NSError(domain: "MacAction", code: 500, userInfo: [NSLocalizedDescriptionKey: "Unable to open browser search."])
                 }
@@ -387,21 +394,76 @@ public class MacActionExecutor {
         )
     }
 
+    private func friendlySiteName(for url: URL) -> String {
+        let host = url.host?.lowercased() ?? ""
+        if host.contains("youtube.com") || host.contains("youtu.be") {
+            return "YouTube"
+        } else if host.contains("github.com") {
+            return "GitHub"
+        } else if host.contains("google.com") {
+            return "Google"
+        } else if host.contains("twitter.com") || host.contains("x.com") {
+            return "X"
+        } else if host.contains("reddit.com") {
+            return "Reddit"
+        } else if host.contains("wikipedia.org") {
+            return "Wikipedia"
+        } else if !host.isEmpty {
+            return host.replacingOccurrences(of: "www.", with: "")
+        }
+        return url.absoluteString
+    }
+
+    private func displayBrowserName(_ name: String) -> String {
+        let lower = name.lowercased()
+        if lower.contains("chrome") { return "Google Chrome" }
+        if lower.contains("safari") { return "Safari" }
+        if lower.contains("firefox") { return "Firefox" }
+        if lower.contains("edge") { return "Microsoft Edge" }
+        if lower.contains("brave") { return "Brave" }
+        return name
+    }
+
     private func findBrowserAppURL(browserName: String) -> URL? {
         let bId = bundleId(for: browserName)
         if !bId.isEmpty, let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bId) {
             return url
         }
-        let candidates = [
-            "/Applications/\(browserName).app",
-            "/Applications/Google Chrome.app",
-            "/Applications/Safari.app",
-            "/Applications/Firefox.app",
-            "/Applications/Microsoft Edge.app",
-            "/Applications/Brave Browser.app",
-            FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications/\(browserName).app").path
-        ]
-        for path in candidates {
+        let lower = browserName.lowercased()
+        var specificPaths: [String] = []
+        if lower.contains("chrome") {
+            specificPaths = [
+                "/Applications/Google Chrome.app",
+                FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications/Google Chrome.app").path
+            ]
+        } else if lower.contains("safari") {
+            specificPaths = [
+                "/Applications/Safari.app",
+                "/System/Volumes/Preboot/Cryptexes/App/System/Applications/Safari.app",
+                "/System/Applications/Safari.app"
+            ]
+        } else if lower.contains("firefox") {
+            specificPaths = [
+                "/Applications/Firefox.app",
+                FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications/Firefox.app").path
+            ]
+        } else if lower.contains("edge") {
+            specificPaths = [
+                "/Applications/Microsoft Edge.app",
+                FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications/Microsoft Edge.app").path
+            ]
+        } else if lower.contains("brave") {
+            specificPaths = [
+                "/Applications/Brave Browser.app",
+                FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications/Brave Browser.app").path
+            ]
+        } else {
+            specificPaths = [
+                "/Applications/\(browserName).app",
+                FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications/\(browserName).app").path
+            ]
+        }
+        for path in specificPaths {
             if FileManager.default.fileExists(atPath: path) {
                 return URL(fileURLWithPath: path)
             }

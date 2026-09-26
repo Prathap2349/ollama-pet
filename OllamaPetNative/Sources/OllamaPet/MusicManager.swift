@@ -243,14 +243,17 @@ public class MusicManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
         switch (oldState, newState) {
         case (.noMedia, .playing), (.paused, .playing), (.unknown, .playing):
             // Sequence: NO_MEDIA -> PLAYING -> CURIOUS -> EXCITED -> DANCE
+            startExternalBeatClock()
             triggerMusicStartReaction(track: track, artist: artist, source: source)
 
         case (.playing, .paused):
             // Sequence: PLAYING -> PAUSED -> RELAXED
+            stopExternalBeatClock()
             triggerMusicPauseReaction()
 
         case (.playing, .noMedia):
             // Sequence: PLAYING -> NO_MEDIA -> RELAXED
+            stopExternalBeatClock()
             triggerMusicStopReaction()
 
         default:
@@ -283,16 +286,35 @@ public class MusicManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
             try? await Task.sleep(nanoseconds: 2_000_000_000)
             guard !Task.isCancelled else { return }
 
-            // Step 3: DANCE (8.0s) - If dance setting is enabled
+            // Step 3: DANCE CONTINUOUSLY while media is playing
             if danceWhenMusicDetected {
                 PetState.shared.animState = .dance
-                try? await Task.sleep(nanoseconds: 8_000_000_000)
-                guard !Task.isCancelled else { return }
+                PetState.shared.currentMood = .happy
 
-                // Gracefully return to joyful/relaxed groove rather than infinite dancing
+                // Continuous dance loop while music is active
+                while !Task.isCancelled && (self.isMediaPlaying || self.isPlaying) && self.danceWhenMusicDetected {
+                    // Priority guard: yield immediately during higher priority activities
+                    let priority = PetState.shared.activeEventPriority
+                    if priority > .musicReaction ||
+                       PetState.shared.isChatOpen ||
+                       PetState.shared.isThinking ||
+                       VoiceAssistant.shared.isSpeaking ||
+                       FocusGuardian.shared.isSessionActive {
+                        if PetState.shared.animState == .dance {
+                            PetState.shared.animState = .idle
+                        }
+                    } else {
+                        if PetState.shared.animState != .dance && PetState.shared.animState != .walk {
+                            PetState.shared.animState = .dance
+                        }
+                    }
+                    try? await Task.sleep(nanoseconds: 1_000_000_000)
+                }
+
+                // Gracefully finish motion when stopped or paused
                 if PetState.shared.animState == .dance {
                     PetState.shared.animState = .idle
-                    PetState.shared.setTemporaryMood(.joyful, duration: 4.0)
+                    PetState.shared.setTemporaryMood(.relaxed, duration: 4.0)
                 }
             } else {
                 PetState.shared.setTemporaryMood(.relaxed, duration: 4.0)
@@ -303,7 +325,9 @@ public class MusicManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
     private func triggerMusicPauseReaction() {
         reactionTask?.cancel()
+        reactionTask = nil
         isReacting = false
+        stopExternalBeatClock()
         if PetState.shared.animState == .dance {
             PetState.shared.animState = .idle
         }
@@ -312,11 +336,53 @@ public class MusicManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
     private func triggerMusicStopReaction() {
         reactionTask?.cancel()
+        reactionTask = nil
         isReacting = false
+        stopExternalBeatClock()
         if PetState.shared.animState == .dance {
             PetState.shared.animState = .idle
         }
-        PetState.shared.setTemporaryMood(.relaxed, duration: 3.0)
+        PetState.shared.setTemporaryMood(.relaxed, duration: 3.5)
+    }
+
+    // MARK: - Deterministic External Rhythm Clock (~118 BPM / 2.0 Hz)
+
+    private var externalBeatTimer: Timer?
+
+    private func startExternalBeatClock() {
+        externalBeatTimer?.invalidate()
+        let bpm: Double = 118.0
+        let beatInterval = 60.0 / bpm // ~0.508s
+        let frameInterval = 0.05
+        var phase: Double = 0.0
+
+        externalBeatTimer = Timer.scheduledTimer(withTimeInterval: frameInterval, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self = self, self.isMediaPlaying && !(self.audioPlayer?.isPlaying ?? false) else {
+                    return
+                }
+                phase += frameInterval
+                let beatCycle = sin(phase * (2.0 * .pi / beatInterval))
+                let normalized = max(0.2, CGFloat((beatCycle + 1.0) / 2.0))
+
+                var newLevels: [CGFloat] = []
+                for i in 0..<8 {
+                    let lag = Double(i) * 0.06
+                    let barCycle = sin((phase - lag) * (2.0 * .pi / beatInterval))
+                    let barNorm = max(0.15, min(1.0, CGFloat((barCycle + 1.0) / 2.0 * 0.85 + Double.random(in: 0.05...0.15))))
+                    newLevels.append(barNorm)
+                }
+                self.beatLevels = newLevels
+                self.currentBeatAmplitude = normalized
+                self.currentBeatIntensity = normalized > 0.75 ? .strong : (normalized > 0.45 ? .medium : .low)
+                self.currentEnergyLevel = normalized > 0.65 ? .high : .medium
+            }
+        }
+    }
+
+    private func stopExternalBeatClock() {
+        externalBeatTimer?.invalidate()
+        externalBeatTimer = nil
     }
 
     // MARK: - System-Wide MediaRemote Dynamic Loader

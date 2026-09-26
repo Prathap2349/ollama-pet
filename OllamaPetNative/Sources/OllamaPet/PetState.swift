@@ -7,7 +7,21 @@ public class PetState: ObservableObject {
     public static let shared = PetState()
 
     @Published public var currentSpecies: PetSpecies = .cat
-    @Published public var animState: PetAnimState = .idle
+    @Published public var animState: PetAnimState = .idle {
+        didSet {
+            guard oldValue != animState else { return }
+            switch animState {
+            case .walk, .run:
+                CharacterMotionStateMachine.shared.transitionTo(.walking(gait: CharacterMotionStateMachine.shared.gaitPreset))
+            case .dance:
+                CharacterMotionStateMachine.shared.transitionTo(.dancing(phase: 1))
+            case .thinking:
+                CharacterMotionStateMachine.shared.transitionTo(.thinking)
+            default:
+                CharacterMotionStateMachine.shared.transitionTo(.idle)
+            }
+        }
+    }
     @Published public var currentMood: PetMood = .happy
     @Published public var moodPoints: Double = 100.0
     @Published public var streak: Int = 0
@@ -40,7 +54,6 @@ public class PetState: ObservableObject {
     // Autonomous Life Cycle
     @Published public var autonomousLifeMode: String = "normal"
     @Published public var autonomousLifeSetting: AutonomousLifeSetting = .normal
-    private var autonomousLifeTimer: Timer?
 
     // 3D Locomotion Direction
     @Published public var movementDirection: MovementDirection = .forward
@@ -53,7 +66,6 @@ public class PetState: ObservableObject {
 
     private var bubbleTimer: Timer?
     private var dreamTimer: Timer?
-    private var sleepTimer: Timer?
     private var animTimer: Timer?
 
     private let dreams = ["🍕", "🌈", "⭐", "🐟", "🎮", "🏖️", "🚀", "💤", "🌙", "🎵", "🍦", "🦋"]
@@ -104,7 +116,7 @@ public class PetState: ObservableObject {
                 }
             }
         }
-        resetSleepTimer()
+        CompanionLifeScheduler.shared.recordUserInteraction()
     }
 
     public func goToSleep() {
@@ -148,7 +160,15 @@ public class PetState: ObservableObject {
         }
 
         self.streak = data.streak
-        self.moodPoints = data.moodPoints
+        // Sanitize mood points: if <= 35.0 (migrating from legacy zero/low defaults), set to healthy 85.0
+        let loadedMood = data.moodPoints
+        if loadedMood <= 35.0 {
+            self.moodPoints = 85.0
+            DataManager.shared.savedData.moodPoints = 85.0
+            DataManager.shared.saveData()
+        } else {
+            self.moodPoints = loadedMood
+        }
         self.activeTab = data.activeTab ?? "chat"
         self.autonomousLifeMode = data.autonomousLifeMode ?? "normal"
         if let setting = AutonomousLifeSetting(rawValue: self.autonomousLifeMode.uppercased()) {
@@ -241,18 +261,10 @@ public class PetState: ObservableObject {
     }
 
     public func resetSleepTimer() {
-        sleepTimer?.invalidate()
         if animState == .sleep {
             animState = .idle
         }
-        sleepTimer = Timer.scheduledTimer(withTimeInterval: 300.0, repeats: false) { [weak self] _ in
-            Task { @MainActor in
-                guard let self = self, !self.isChatOpen, !self.isThinking else { return }
-                self.animState = .sleep
-                self.currentMood = .sleepy
-                self.showBubble("zZz... 😴", duration: 3.5)
-            }
-        }
+        CompanionLifeScheduler.shared.recordUserInteraction()
     }
 
     private func startAnimationLoop() {
@@ -266,16 +278,7 @@ public class PetState: ObservableObject {
     }
 
     private func startIdleAndDreamTimers() {
-        resetSleepTimer()
-        restartAutonomousLifeTimer()
-
-        Timer.scheduledTimer(withTimeInterval: 15.0, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                if Double.random(in: 0...1) < 0.35 {
-                    self?.showDream()
-                }
-            }
-        }
+        CompanionLifeScheduler.shared.startScheduler()
     }
 
     public func setAutonomousLifeSetting(_ setting: AutonomousLifeSetting) {
@@ -283,7 +286,7 @@ public class PetState: ObservableObject {
         self.autonomousLifeMode = setting.rawValue.lowercased()
         DataManager.shared.savedData.autonomousLifeMode = setting.rawValue.lowercased()
         DataManager.shared.saveData()
-        restartAutonomousLifeTimer()
+        CompanionLifeScheduler.shared.restartScheduler()
     }
 
     public func setAutonomousLifeMode(_ mode: String) {
@@ -301,72 +304,11 @@ public class PetState: ObservableObject {
         }
         DataManager.shared.savedData.autonomousLifeMode = mode
         DataManager.shared.saveData()
-        restartAutonomousLifeTimer()
+        CompanionLifeScheduler.shared.restartScheduler()
     }
 
     public func restartAutonomousLifeTimer() {
-        autonomousLifeTimer?.invalidate()
-        autonomousLifeTimer = nil
-        guard autonomousLifeSetting != .off else { return }
-        scheduleNextAutonomousLifeEvent()
-    }
-
-    private func scheduleNextAutonomousLifeEvent() {
-        autonomousLifeTimer?.invalidate()
-        guard autonomousLifeSetting != .off else { return }
-
-        let range = autonomousLifeSetting.intervalRangeSeconds
-        let interval = Double.random(in: range)
-
-        autonomousLifeTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) { [weak self] _ in
-            Task { @MainActor in
-                self?.performSubtleAutonomousAction()
-                self?.scheduleNextAutonomousLifeEvent()
-            }
-        }
-    }
-
-    private func performSubtleAutonomousAction() {
-        // Pauses when user is interacting: chatting, AI is thinking/responding, speaking, or during Focus sessions
-        guard !isChatOpen, !isThinking else { return }
-        guard !VoiceAssistant.shared.isSpeaking else { return }
-        guard animState == .idle || animState == .sleep else { return }
-        guard !FocusGuardian.shared.isSessionActive else { return }
-        guard activeEventPriority == .idleBehavior else { return }
-
-        if animState == .sleep {
-            if Double.random(in: 0...1) < 0.4 {
-                showDream()
-            }
-            return
-        }
-
-        let roll = Double.random(in: 0...1)
-        if roll < 0.22 {
-            // 1. Curious look around
-            setTemporaryMood(.concerned, duration: 3.5)
-        } else if roll < 0.42 {
-            // 2. Loving or relaxed gaze at user
-            setTemporaryMood(.love, duration: 4.0)
-        } else if roll < 0.60 {
-            // 3. Gentle stretch / yawn
-            let emotes = ["*stretches paws* 🐾", "*curious ear swivel*", "*gentle sigh* 🫧", "*purrs softly*"]
-            if let emote = emotes.randomElement() {
-                showBubble(emote, duration: 2.2)
-            }
-        } else if roll < 0.78 {
-            // 4. Species Special Ability or Happy emote
-            if Double.random(in: 0...1) < 0.5 {
-                triggerSpecialAbility()
-            } else {
-                setTemporaryMood(.happy, duration: 3.0)
-            }
-        } else {
-            // 5. Gentle stroll across screen
-            if !isChatOpen {
-                WalkerManager.shared.startWalk(species: currentSpecies, isTest: false)
-            }
-        }
+        CompanionLifeScheduler.shared.restartScheduler()
     }
 
     public func triggerDragonFireBreath() {
@@ -443,12 +385,11 @@ public class PetState: ObservableObject {
             currentMood = .happy
         } else if moodPoints > 60 {
             currentMood = .excited
-        } else if moodPoints > 45 {
+        } else if moodPoints > 40 {
             currentMood = .hungry
-        } else if moodPoints > 25 {
-            currentMood = .sad
         } else {
-            currentMood = .crying
+            // Note: .crying is never a permanent baseline mood; it is only triggered as a temporary emotion event
+            currentMood = .sad
         }
     }
 

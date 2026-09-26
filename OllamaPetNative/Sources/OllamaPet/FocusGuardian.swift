@@ -276,8 +276,114 @@ public class FocusGuardian: ObservableObject {
         )
     }
 
+    public func setConfiguredDuration(seconds: Int) {
+        guard !isSessionActive else { return }
+        let total = max(1, min(24 * 3600, seconds))
+        customHours = total / 3600
+        customMinutes = (total % 3600) / 60
+        customSeconds = total % 60
+        isCustomDurationActive = true
+        sessionTotalSeconds = total
+        remainingSeconds = total
+    }
+
     deinit {
         sessionTimer?.invalidate()
         hydrationTimer?.invalidate()
+    }
+}
+
+// MARK: - Centralized Focus Duration Parser (Requirements 25, 26, 27)
+
+public struct FocusDurationParser {
+    /// Parses any user-typed or spoken duration string into seconds (e.g. "25", "25m", "90m", "1h", "1h30m", "1:30:00", "00:25:00")
+    public static func parse(_ rawInput: String) -> Int? {
+        let input = rawInput.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !input.isEmpty else { return nil }
+
+        // 1. Check for HH:MM:SS or MM:SS
+        if input.contains(":") {
+            let parts = input.components(separatedBy: ":").compactMap { Int($0.trimmingCharacters(in: .whitespaces)) }
+            if parts.count == 3 {
+                let h = max(0, min(23, parts[0]))
+                let m = max(0, min(59, parts[1]))
+                let s = max(0, min(59, parts[2]))
+                let total = (h * 3600) + (m * 60) + s
+                return total > 0 ? total : nil
+            } else if parts.count == 2 {
+                let m = max(0, parts[0])
+                let s = max(0, min(59, parts[1]))
+                let total = (m * 60) + s
+                return total > 0 ? total : nil
+            }
+        }
+
+        // 2. Check for pure numeric input (e.g. "25", "90", "45") -> interpreted as minutes!
+        if let pureMinutes = Int(input), pureMinutes > 0 {
+            return min(24 * 3600, pureMinutes * 60)
+        }
+
+        // 3. Compound duration with regex / tokens (e.g. "1h30m", "1h 30m", "90m", "2h", "45s", "1 hour 30 mins")
+        var totalSeconds = 0
+        var matched = false
+
+        // Extract hours
+        if let hMatch = input.range(of: #"(\d+)\s*(?:h|hr|hrs|hour|hours)"#, options: .regularExpression) {
+            let sub = String(input[hMatch])
+            if let digits = Int(sub.filter { $0.isNumber }) {
+                totalSeconds += digits * 3600
+                matched = true
+            }
+        }
+
+        // Extract minutes
+        if let mMatch = input.range(of: #"(\d+)\s*(?:m|min|mins|minute|minutes)"#, options: .regularExpression) {
+            let sub = String(input[mMatch])
+            if let digits = Int(sub.filter { $0.isNumber }) {
+                totalSeconds += digits * 60
+                matched = true
+            }
+        }
+
+        // Extract seconds
+        if let sMatch = input.range(of: #"(\d+)\s*(?:s|sec|secs|second|seconds)"#, options: .regularExpression) {
+            let sub = String(input[sMatch])
+            if let digits = Int(sub.filter { $0.isNumber }) {
+                totalSeconds += digits
+                matched = true
+            }
+        }
+
+        if matched && totalSeconds > 0 {
+            return min(24 * 3600, totalSeconds)
+        }
+
+        return nil
+    }
+
+    /// Natural language extractor for AI queries (e.g. "Start focus for 25 minutes", "Focus for 90 minutes", "Start a 1 hour 30 minute focus session")
+    public static func parseNaturalLanguage(_ text: String) -> Int? {
+        let lower = text.lowercased()
+
+        // Check if there is explicit duration mentioned directly
+        if let duration = parse(lower) {
+            return duration
+        }
+
+        // Strip prefix phrases
+        var cleaned = lower
+        let phrasesToRemove = [
+            "start focus session for ", "start a focus session for ", "start focus for ",
+            "start focus ", "focus session for ", "focus for ", "pomodoro for ", "take a focus for ",
+            "focus session", "focus"
+        ]
+        for phrase in phrasesToRemove {
+            if let range = cleaned.range(of: phrase) {
+                cleaned.removeSubrange(range)
+            }
+        }
+        cleaned = cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        return parse(cleaned)
     }
 }

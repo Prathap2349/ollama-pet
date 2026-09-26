@@ -165,7 +165,7 @@ public class MacActionExecutor {
                 let isRunning = !apps.isEmpty
 
                 if isRunning {
-                    return ActionExecutionResult("Opened \(siteName) in \(dispBrowser).", status: .success)
+                    return ActionExecutionResult("\(dispBrowser) opened and the \(siteName) URL was dispatched, but I couldn't verify the active tab.", status: .success)
                 } else {
                     return ActionExecutionResult("Dispatched \(siteName) to \(dispBrowser).", status: .partial)
                 }
@@ -285,7 +285,7 @@ public class MacActionExecutor {
             if service.lowercased() == "whatsapp" {
                 if let url = URL(string: "whatsapp://send?text=\(encodedText)"), NSWorkspace.shared.open(url) {
                     return ActionExecutionResult(
-                        "WhatsApp opened with message draft for \(recipient). Please press Send in WhatsApp to deliver.",
+                        "WhatsApp opened with the message draft ready. Press Send to deliver it.",
                         status: .partial
                     )
                 }
@@ -293,7 +293,7 @@ public class MacActionExecutor {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(text, forType: .string)
                 return ActionExecutionResult(
-                    "WhatsApp opened. Message draft copied to clipboard for \(recipient). Please paste and press Send.",
+                    "WhatsApp opened with the message draft ready. Press Send to deliver it.",
                     status: .partial
                 )
             } else {

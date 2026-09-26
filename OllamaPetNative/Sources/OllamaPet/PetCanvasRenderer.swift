@@ -1530,7 +1530,7 @@ public struct PetCanvasRenderer {
                     rBrow.move(to: CGPoint(x: rightEyeX - 4, y: gazeY - 6))
                     rBrow.addLine(to: CGPoint(x: rightEyeX + 4, y: gazeY - 9))
                     context.stroke(rBrow, with: .color(Color(white: 0.15)), lineWidth: 1.8)
-                } else if (mood == .sad || mood == .crying) && !isGrayscale {
+                } else if mood == .crying && !isGrayscale {
                     let tearY = gazeY + 5 + CGFloat(fmod(snapshot.time * 6.0, 8.0))
                     let lTear = Ellipse().path(in: CGRect(x: leftEyeX - 1.5, y: tearY, width: 3, height: 4.5))
                     context.fill(lTear, with: .color(Color(red: 0.4, green: 0.7, blue: 1.0).opacity(0.85)))

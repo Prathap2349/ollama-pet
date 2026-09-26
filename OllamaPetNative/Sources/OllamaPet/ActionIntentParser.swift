@@ -1,4 +1,52 @@
 import Foundation
+import AppKit
+
+// MARK: - Speech Normalization & Alias Layer
+
+public struct SpeechNormalizer {
+    public static func normalize(_ input: String) -> String {
+        var text = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return "" }
+
+        // 1. Lowercase and normalize common punctuation / quotes / hyphens
+        var norm = text.lowercased()
+        norm = norm.replacingOccurrences(of: "“", with: "\"").replacingOccurrences(of: "”", with: "\"")
+        norm = norm.replacingOccurrences(of: "’", with: "'")
+        norm = norm.replacingOccurrences(of: "—", with: " ")
+        norm = norm.replacingOccurrences(of: "–", with: " ")
+
+        // 2. Phonetic & ASR Misrecognition Alias Dictionary
+        let aliases: [(pattern: String, replacement: String)] = [
+            // GitHub variations
+            ("\\b(gita hub|geeta hub|gita get up|geeta get up|git hub|git-hub|gita|geeta)\\b", "github"),
+            // YouTube variations
+            ("\\b(you tube|u tube|u-tube|yt)\\b", "youtube"),
+            // WhatsApp variations
+            ("\\b(what's app|what sap|wat zap|whats app|what app|whats-app)\\b", "whatsapp"),
+            // Google Chrome variations
+            ("\\b(google chrom|google crome|g chrome|crome|chrom)\\b", "google chrome"),
+            // VS Code variations
+            ("\\b(visual studio code|v s code|vs-code)\\b", "vscode"),
+            // Safari variations
+            ("\\b(saphari|safari browser)\\b", "safari"),
+            // Spotify variations
+            ("\\b(spotfy|spot-ify)\\b", "spotify"),
+            // Discord variations
+            ("\\b(dis cord|dis-cord)\\b", "discord"),
+            // Ollama variations
+            ("\\b(olama|o llama|allama)\\b", "ollama")
+        ]
+
+        for (pattern, replacement) in aliases {
+            if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) {
+                let range = NSRange(location: 0, length: norm.utf16.count)
+                norm = regex.stringByReplacingMatches(in: norm, options: [], range: range, withTemplate: replacement)
+            }
+        }
+
+        return norm
+    }
+}
 
 // MARK: - Action Intent Parser
 
@@ -15,10 +63,12 @@ public class ActionIntentParser {
     ]
 
     public func parseIntent(from userText: String) async -> MacAction? {
-        let trimmed = userText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
+        let trimmedRaw = userText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedRaw.isEmpty else { return nil }
 
-        let lower = trimmed.lowercased()
+        // Speech normalization before intent parsing
+        let normalized = SpeechNormalizer.normalize(trimmedRaw)
+        let lower = normalized
 
         // 1. Immediate Safety Intercept for Dangerous Requests
         for blocked in blockedPhrases {
@@ -28,13 +78,13 @@ public class ActionIntentParser {
         }
 
         // 2. Fast Deterministic Natural Language Parser
-        if let directAction = parseFastPattern(text: trimmed, lower: lower) {
+        if let directAction = parseFastPattern(text: trimmedRaw, lower: lower) {
             return directAction
         }
 
         // 3. Fallback to Local Ollama Structured Intent Parser if keywords suggest an action
         if looksLikeSystemCommand(lower: lower) && OllamaClient.shared.isOnline {
-            if let ollamaAction = await parseWithOllama(text: trimmed) {
+            if let ollamaAction = await parseWithOllama(text: trimmedRaw) {
                 return ollamaAction
             }
         }
@@ -55,7 +105,7 @@ public class ActionIntentParser {
             return timerAction
         }
 
-        // C. Extract specific browser target if present (e.g. "in Google Chrome", "in Safari", "in Firefox")
+        // C. Extract specific browser target if present (e.g. "in Google Chrome", "using Chrome", "through Chrome", "with Safari")
         let (cleanedText, cleanedLower, targetBrowser) = extractBrowser(from: text, lower: lower)
 
         // D. Search Web & Media
@@ -216,24 +266,34 @@ public class ActionIntentParser {
             (" on google chrome", "Google Chrome"),
             (" using google chrome", "Google Chrome"),
             (" with google chrome", "Google Chrome"),
+            (" through google chrome", "Google Chrome"),
+            (" via google chrome", "Google Chrome"),
             (" in chrome", "Google Chrome"),
             (" on chrome", "Google Chrome"),
             (" using chrome", "Google Chrome"),
             (" with chrome", "Google Chrome"),
+            (" through chrome", "Google Chrome"),
+            (" via chrome", "Google Chrome"),
             (" in safari", "Safari"),
             (" on safari", "Safari"),
             (" using safari", "Safari"),
             (" with safari", "Safari"),
+            (" through safari", "Safari"),
+            (" via safari", "Safari"),
             (" in firefox", "Firefox"),
             (" on firefox", "Firefox"),
             (" using firefox", "Firefox"),
             (" with firefox", "Firefox"),
+            (" through firefox", "Firefox"),
+            (" via firefox", "Firefox"),
             (" in microsoft edge", "Microsoft Edge"),
             (" on microsoft edge", "Microsoft Edge"),
             (" using microsoft edge", "Microsoft Edge"),
+            (" with microsoft edge", "Microsoft Edge"),
             (" in edge", "Microsoft Edge"),
             (" on edge", "Microsoft Edge"),
             (" using edge", "Microsoft Edge"),
+            (" with edge", "Microsoft Edge"),
             (" in brave browser", "Brave Browser"),
             (" on brave browser", "Brave Browser"),
             (" using brave browser", "Brave Browser"),

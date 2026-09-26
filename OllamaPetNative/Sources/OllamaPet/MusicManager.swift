@@ -587,6 +587,10 @@ public class MusicManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
             }
         }
 
+        if mediaRemotePlaying {
+            return AppMediaResult(isPlaying: true, title: "Web / System Audio", artist: "Playing", source: "macOS Audio")
+        }
+
         return AppMediaResult(isPlaying: false, title: "", artist: "", source: "")
     }
 

@@ -162,9 +162,9 @@ public class PetState: ObservableObject {
         }
 
         self.streak = data.streak
-        // Sanitize mood points: if <= 35.0 (migrating from legacy zero/low defaults), set to healthy 85.0
+        // Sanitize mood points: if <= 50.0 (migrating from legacy low defaults), set to healthy 85.0
         let loadedMood = data.moodPoints
-        if loadedMood <= 35.0 {
+        if loadedMood <= 50.0 {
             self.moodPoints = 85.0
             DataManager.shared.savedData.moodPoints = 85.0
             DataManager.shared.saveData()

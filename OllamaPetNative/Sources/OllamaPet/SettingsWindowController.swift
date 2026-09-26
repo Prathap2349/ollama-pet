@@ -2454,14 +2454,15 @@ struct PresenceSettingsSection: View {
     private var statusColor: Color {
         switch monitor.presenceStatus {
         case .ownerPresent, .ownerConfirmed: return .green
-        case .ownerTemporarilyUnavailable: return .teal
-        case .personDetectedNoOwner: return .blue
-        case .faceDetected, .verifying, .uncertain, .noFace: return .yellow
+        case .faceDetected: return .blue
+        case .verifying, .uncertain: return .yellow
         case .unknownDetected: return .orange
+        case .ownerTemporarilyUnavailable, .noFace: return Color(white: 0.8)
+        case .personDetectedNoOwner: return .cyan
         case .multipleDetected: return .purple
         case .searching: return .cyan
         case .starting, .recovering: return .yellow
-        case .away, .noPerson: return .gray
+        case .away, .noPerson: return .indigo
         case .permissionRequired, .cameraUnavailable, .cameraError, .failed: return .red
         case .idle, .stopped: return .secondary
         }

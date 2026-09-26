@@ -392,8 +392,12 @@ public struct Pet3DSceneView: NSViewRepresentable {
                     targetUpperLid = 0.22 // Attentive narrowed gaze
                     targetLowerLid = 0.22
 
-                case .sad, .crying:
-                    targetUpperLid = max(0.38, blinkProgress)
+                case .crying:
+                    targetUpperLid = max(0.55, blinkProgress)
+                    targetLowerLid = 0.25
+
+                case .sad:
+                    targetUpperLid = max(0.24, blinkProgress)
                     targetLowerLid = 0.05
 
                 case .concerned:
@@ -840,15 +844,28 @@ public struct Pet3DSceneView: NSViewRepresentable {
             if isBreathingFire, let emitter = rig.fireEmitterNode {
                 let fireElapsed = t - fireStartTime
                 if fireElapsed <= 0.4 {
-                    // Phase 1: Inhale & prepare
-                    targetJaw = 0.15
+                    // Phase 1: Inhale & prepare (jaw opens, head tilts back slightly)
+                    targetJaw = 0.25
                     targetHeadPitch = 0.22
-                    scaleXZ = 1.10
+                    scaleXZ = 1.08
                 } else if fireElapsed <= 2.2 {
-                    // Phase 2: Fire burst!
-                    targetJaw = 0.55
-                    rig.jawNode?.eulerAngles.x = 0.55
+                    // Phase 2: Fire burst & forward head lurch!
+                    targetJaw = 0.60
+                    targetHeadPitch = -0.12 // Head lurches forward
+                    rig.jawNode?.eulerAngles.x = 0.60
+
                     if activeFlameBurstNodes.isEmpty {
+                        // Create orange/red mouth glow light
+                        let mouthLight = SCNLight()
+                        mouthLight.type = .omni
+                        mouthLight.color = NSColor(red: 1.0, green: 0.4, blue: 0.0, alpha: 1.0)
+                        mouthLight.intensity = 1500
+                        let mouthLightNode = SCNNode()
+                        mouthLightNode.light = mouthLight
+                        mouthLightNode.name = "dragonMouthLight"
+                        emitter.addChildNode(mouthLightNode)
+                        activeFlameBurstNodes.append(mouthLightNode)
+
                         for fi in 0..<3 {
                             let flameGeo = SCNCone(topRadius: 0.01, bottomRadius: CGFloat(0.045 + Double(fi) * 0.025), height: CGFloat(0.14 + Double(fi) * 0.09))
                             let flameMat = Pet3DCharacterBuilder.pbrMaterial(
@@ -865,17 +882,19 @@ public struct Pet3DSceneView: NSViewRepresentable {
                         }
                     }
                     for (fi, fn) in activeFlameBurstNodes.enumerated() {
+                        if fn.light != nil { continue }
                         let flutter = CGFloat(sin(t * 24.0 + Double(fi) * 2.0)) * 0.016
                         fn.position.x = flutter
                         fn.scale = SCNVector3(1.0 + flutter * 3.0, 1.0 + flutter * 3.0, 1.0 + flutter * 3.0)
                     }
                 } else if fireElapsed <= 2.8 {
-                    // Phase 3: Flames dissipate
+                    // Phase 3: Flames dissipate & mouth closes
                     for fn in activeFlameBurstNodes {
                         fn.removeFromParentNode()
                     }
                     activeFlameBurstNodes.removeAll()
                     targetJaw = 0.0
+                    targetHeadPitch = 0.0
                 } else {
                     isBreathingFire = false
                 }
@@ -965,11 +984,17 @@ public struct Pet3DSceneView: NSViewRepresentable {
                     scaleY = 0.94
                     bobY -= 0.04
 
-                case .sad, .crying:
-                    targetHeadPitch = -0.32 // Drooped sad head
-                    rig.leftEarNode?.eulerAngles.z = -CGFloat(Double.pi / 5)
-                    rig.rightEarNode?.eulerAngles.z = CGFloat(Double.pi / 5)
-                    bobY -= 0.03
+                case .crying:
+                    targetHeadPitch = -0.34 // Drooped crying head
+                    rig.leftEarNode?.eulerAngles.z = -CGFloat(Double.pi / 4.5)
+                    rig.rightEarNode?.eulerAngles.z = CGFloat(Double.pi / 4.5)
+                    bobY -= 0.04
+
+                case .sad:
+                    targetHeadPitch = -0.16 // Gentle sad head tilt
+                    rig.leftEarNode?.eulerAngles.z = -CGFloat(Double.pi / 7)
+                    rig.rightEarNode?.eulerAngles.z = CGFloat(Double.pi / 7)
+                    bobY -= 0.015
 
                 case .concerned:
                     targetHeadRoll = 0.22

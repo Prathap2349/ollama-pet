@@ -70,21 +70,21 @@ public enum PresenceStatus: String {
         switch self {
         case .starting: return "🟡 Starting Camera"
         case .searching: return "● Scanning"
-        case .faceDetected: return "🟡 Face Detected"
-        case .verifying, .uncertain: return "🟡 Checking Face"
+        case .faceDetected: return "🔵 Face Detected"
+        case .verifying, .uncertain: return "🟡 Verifying..."
         case .ownerConfirmed, .ownerPresent: return "🟢 Owner Verified"
-        case .ownerTemporarilyUnavailable: return "🟢 Owner (Away-Facing)"
-        case .unknownDetected: return "🔴 Unknown"
+        case .ownerTemporarilyUnavailable: return "⚪ Face Temporarily Unavailable"
+        case .unknownDetected: return "🟠 Unknown Person"
         case .multipleDetected: return "👥 Multiple People"
         case .noPerson, .away: return "💤 No Person Detected"
-        case .noFace: return "⚪ Face Obscured"
+        case .noFace: return "⚪ Face Temporarily Unavailable"
         case .personDetectedNoOwner: return "👤 Person Detected"
         case .recovering: return "🟠 Recovering"
         case .cameraUnavailable: return "⚠️ Camera Unavailable"
         case .permissionRequired: return "🔒 Permission Required"
         case .cameraError, .failed: return "❌ Camera Error"
-        case .stopped: return "⏹ Stopped"
-        case .idle: return "○ Camera Off"
+        case .stopped: return "⚫ Monitoring Stopped"
+        case .idle: return "⚫ Monitoring Stopped"
         }
     }
 }
@@ -522,13 +522,20 @@ public enum MonitoringPerformanceMode: String, CaseIterable, Codable, Identifiab
     }
 }
 
-// MARK: - Enhanced IoU & Proximity Tracker
+// MARK: - Detected Entity & Face-First Spatial Tracker
+
+private struct DetectedPresenceEntity {
+    let face: VNFaceObservation?
+    let human: VNHumanObservation?
+    let boundingBox: CGRect
+}
 
 private final class EnhancedPresenceTracker {
     private var subjects: [TrackedSubject] = []
-    private let scoreThreshold: CGFloat = 0.30
-    private let maxMissedCycles = 3
-    private let maxTimeWithoutUpdate: TimeInterval = 3.2
+    private var ownerLockUntil: Date = Date.distantPast
+    private let scoreThreshold: CGFloat = 0.25
+    private let maxMissedCycles = 4
+    private let maxTimeWithoutUpdate: TimeInterval = 3.5
 
     func currentSubjects() -> [TrackedSubject] {
         return subjects
@@ -536,10 +543,42 @@ private final class EnhancedPresenceTracker {
 
     func clear() {
         subjects.removeAll()
+        ownerLockUntil = Date.distantPast
+    }
+
+    func updateNoDetections() -> ([TrackedSubject], PresenceStatus) {
+        let now = Date()
+        var updatedSubjects: [TrackedSubject] = []
+
+        for mutSubj in subjects {
+            var subj = mutSubj
+            subj.missedFramesCount += 1
+            let timeSinceLast = now.timeIntervalSince(subj.lastSeen)
+
+            // If owner lock is active, grant grace period for temporary occlusion/blink
+            if (subj.isOwner || now < ownerLockUntil) && timeSinceLast < maxTimeWithoutUpdate {
+                subj.isFaceObscured = true
+                subj.confidence = max(0.40, subj.confidence - 0.05)
+                updatedSubjects.append(subj)
+            } else if subj.missedFramesCount <= maxMissedCycles && timeSinceLast < maxTimeWithoutUpdate {
+                updatedSubjects.append(subj)
+            }
+        }
+
+        self.subjects = updatedSubjects
+        if updatedSubjects.isEmpty {
+            return ([], .noPerson)
+        } else if updatedSubjects.count > 1 {
+            return (updatedSubjects, .multipleDetected)
+        } else if updatedSubjects[0].isOwner || now < ownerLockUntil {
+            return (updatedSubjects, .ownerTemporarilyUnavailable)
+        } else {
+            return (updatedSubjects, .verifying)
+        }
     }
 
     func update(
-        matchedPairs: [(human: VNHumanObservation, face: VNFaceObservation?)],
+        entities: [DetectedPresenceEntity],
         ownerPrints: [VNFeaturePrintObservation],
         handler: VNImageRequestHandler
     ) -> ([TrackedSubject], PresenceStatus) {
@@ -547,14 +586,14 @@ private final class EnhancedPresenceTracker {
         var matchedSubjectIndices = Set<Int>()
         var updatedSubjects: [TrackedSubject] = []
 
-        for pair in matchedPairs {
-            let hRect = pair.human.boundingBox
+        for entity in entities {
+            let entityBox = entity.boundingBox
             var bestScore: CGFloat = 0.0
             var bestIdx: Int? = nil
 
             for (idx, subj) in subjects.enumerated() {
                 if matchedSubjectIndices.contains(idx) { continue }
-                let score = computeMatchScore(subj.rect, hRect)
+                let score = computeMatchScore(subj.rect, entityBox)
                 if score > bestScore && score >= scoreThreshold {
                     bestScore = score
                     bestIdx = idx
@@ -565,26 +604,26 @@ private final class EnhancedPresenceTracker {
                 matchedSubjectIndices.insert(matchedIdx)
                 var subj = subjects[matchedIdx]
 
-                // Smooth exponential box update to eliminate jumping
-                let smoothX = subj.rect.origin.x * 0.35 + hRect.origin.x * 0.65
-                let smoothY = subj.rect.origin.y * 0.35 + hRect.origin.y * 0.65
-                let smoothW = subj.rect.size.width * 0.35 + hRect.size.width * 0.65
-                let smoothH = subj.rect.size.height * 0.35 + hRect.size.height * 0.65
+                // Smooth exponential box update to eliminate visual jitter
+                let smoothX = subj.rect.origin.x * 0.35 + entityBox.origin.x * 0.65
+                let smoothY = subj.rect.origin.y * 0.35 + entityBox.origin.y * 0.65
+                let smoothW = subj.rect.size.width * 0.35 + entityBox.size.width * 0.65
+                let smoothH = subj.rect.size.height * 0.35 + entityBox.size.height * 0.65
                 subj.rect = CGRect(x: smoothX, y: smoothY, width: smoothW, height: smoothH)
                 subj.lastSeen = now
                 subj.missedFramesCount = 0
 
                 // Face Recognition & Verification
-                if let face = pair.face, !ownerPrints.isEmpty {
+                if let face = entity.face, !ownerPrints.isEmpty {
                     subj.isFaceObscured = false
                     let timeSinceLastRec = subj.lastRecognitionTime != nil ? now.timeIntervalSince(subj.lastRecognitionTime!) : 999.0
 
-                    // If verified owner and within recent cooldown (12s), keep verification to save CPU
-                    if subj.isOwner && timeSinceLastRec < 12.0 {
-                        // Cooldown active, keep high confidence and isOwner = true
+                    // Dynamic recognition frequency: if owner lock is active, throttle expensive feature print to every 4.0s
+                    let isLocked = subj.isOwner && now < ownerLockUntil
+                    if isLocked && timeSinceLastRec < 4.0 {
                         subj.confidence = max(subj.confidence, 0.85)
                     } else {
-                        // Perform recognition
+                        // Perform multi-sample feature print comparison
                         let facePrintReq = VNGenerateImageFeaturePrintRequest()
                         facePrintReq.regionOfInterest = face.boundingBox
                         try? handler.perform([facePrintReq])
@@ -593,6 +632,7 @@ private final class EnhancedPresenceTracker {
                             var minDistance: Float = 1.0
                             var strongMatches = 0
                             var possibleMatches = 0
+
                             for op in ownerPrints {
                                 var d: Float = 1.0
                                 if (try? obs.computeDistance(&d, to: op)) != nil {
@@ -603,7 +643,7 @@ private final class EnhancedPresenceTracker {
                             }
                             subj.matchDistance = minDistance
 
-                            // Rolling temporal confidence accumulation and decay
+                            // Rolling temporal confidence accumulation and graceful decay
                             if strongMatches >= 1 {
                                 subj.confidence = min(1.0, subj.confidence + 0.35)
                                 subj.consecutiveOwnerMatches += 1
@@ -611,52 +651,55 @@ private final class EnhancedPresenceTracker {
                                 subj.confidence = min(1.0, subj.confidence + 0.20)
                                 subj.consecutiveOwnerMatches += 1
                             } else if minDistance <= 0.50 {
-                                // Borderline: slow decay, DO NOT drop instantly!
+                                // Borderline/angled: small decay
                                 subj.confidence = max(0.0, subj.confidence - 0.04)
                             } else {
-                                // Clear non-match: bounded decay (requires several consecutive bad frames to lose identity)
+                                // Clear non-match
                                 subj.confidence = max(0.0, subj.confidence - 0.25)
                                 subj.consecutiveOwnerMatches = max(0, subj.consecutiveOwnerMatches - 1)
                             }
 
-                            // Stable Classification based on temporal confidence
+                            // Update Owner Lock and Classification
                             if subj.confidence >= 0.60 {
                                 subj.isOwner = true
                                 subj.isUncertain = false
+                                self.ownerLockUntil = now.addingTimeInterval(8.0) // 8-second owner lock
                             } else if subj.confidence >= 0.30 {
-                                subj.isOwner = false
-                                subj.isUncertain = true
+                                if now < self.ownerLockUntil {
+                                    subj.isOwner = true
+                                    subj.isUncertain = false
+                                } else {
+                                    subj.isOwner = false
+                                    subj.isUncertain = true
+                                }
                             } else {
-                                subj.isOwner = false
-                                subj.isUncertain = false
+                                if now >= self.ownerLockUntil {
+                                    subj.isOwner = false
+                                    subj.isUncertain = false
+                                }
                             }
                             subj.lastRecognitionTime = now
                         } else {
-                            if timeSinceLastRec > 8.0 && !subj.isOwner {
+                            if timeSinceLastRec > 6.0 && !subj.isOwner {
                                 subj.isUncertain = true
                             }
                         }
                     }
-                } else if pair.face == nil {
-                    // Face obscured or turned away
+                } else if entity.face == nil {
+                    // Face obscured or turned away, but body/head detected
                     subj.isFaceObscured = true
                     let timeSinceLastRec = subj.lastRecognitionTime != nil ? now.timeIntervalSince(subj.lastRecognitionTime!) : 999.0
-                    // If owner was confirmed, identity decays gracefully rather than flipping to unknown
-                    if subj.isOwner || subj.confidence >= 0.60 {
-                        subj.confidence = max(0.0, subj.confidence - 0.04)
-                        if subj.confidence >= 0.50 && timeSinceLastRec < 18.0 {
-                            subj.isOwner = true
-                            subj.isUncertain = false
-                        } else {
-                            subj.isOwner = false
-                            subj.isUncertain = true
-                        }
+                    if (subj.isOwner || now < self.ownerLockUntil) && timeSinceLastRec < 15.0 {
+                        subj.confidence = max(0.40, subj.confidence - 0.04)
+                        subj.isOwner = true
+                        subj.isUncertain = false
                     } else {
+                        subj.isOwner = false
                         subj.isUncertain = true
                     }
                 } else {
-                    // Owner prints empty (no owner enrolled)
-                    subj.isFaceObscured = (pair.face == nil)
+                    // No owner profile enrolled
+                    subj.isFaceObscured = (entity.face == nil)
                     subj.isOwner = false
                     subj.isUncertain = false
                     subj.confidence = 0.0
@@ -664,18 +707,18 @@ private final class EnhancedPresenceTracker {
 
                 updatedSubjects.append(subj)
             } else {
-                // New subject entering frame — starts in verifying/uncertain grace state!
+                // New subject entering frame
                 var newSubj = TrackedSubject(
-                    rect: hRect,
+                    rect: entityBox,
                     isOwner: false,
                     isUncertain: true,
-                    isFaceObscured: (pair.face == nil),
+                    isFaceObscured: (entity.face == nil),
                     consecutiveOwnerMatches: 0,
                     confidence: 0.0
                 )
                 newSubj.lastSeen = now
 
-                if let face = pair.face, !ownerPrints.isEmpty {
+                if let face = entity.face, !ownerPrints.isEmpty {
                     let facePrintReq = VNGenerateImageFeaturePrintRequest()
                     facePrintReq.regionOfInterest = face.boundingBox
                     try? handler.perform([facePrintReq])
@@ -715,12 +758,13 @@ private final class EnhancedPresenceTracker {
             }
         }
 
-        // Retain un-matched subjects within short missed-frame tolerance
+        // Retain unmatched subjects within short missed-frame tolerance
         for (idx, var subj) in subjects.enumerated() {
             if !matchedSubjectIndices.contains(idx) {
                 subj.missedFramesCount += 1
                 let timeSinceLast = now.timeIntervalSince(subj.lastSeen)
-                if subj.missedFramesCount <= maxMissedCycles && timeSinceLast < maxTimeWithoutUpdate {
+                if (subj.isOwner || now < self.ownerLockUntil || subj.missedFramesCount <= maxMissedCycles) && timeSinceLast < maxTimeWithoutUpdate {
+                    subj.isFaceObscured = true
                     updatedSubjects.append(subj)
                 }
             }
@@ -737,18 +781,18 @@ private final class EnhancedPresenceTracker {
         } else {
             let s = updatedSubjects[0]
             if ownerPrints.isEmpty {
-                status = .personDetectedNoOwner
+                status = s.isFaceObscured ? .ownerTemporarilyUnavailable : .personDetectedNoOwner
             } else if s.isOwner {
                 if s.isFaceObscured {
                     status = .ownerTemporarilyUnavailable
                 } else {
                     status = .ownerConfirmed
                 }
-            } else if s.isUncertain || s.confidence >= 0.30 {
-                status = .verifying
             } else if s.isFaceObscured {
-                status = .noFace
-            } else if s.lastRecognitionTime != nil && s.confidence < 0.25 {
+                status = .ownerTemporarilyUnavailable
+            } else if s.isUncertain || s.confidence >= 0.30 || s.lastRecognitionTime == nil {
+                status = .verifying
+            } else if s.confidence < 0.25 {
                 status = .unknownDetected
             } else {
                 status = .faceDetected
@@ -806,6 +850,10 @@ private final class PresenceCaptureCoordinator: NSObject, AVCaptureVideoDataOutp
     private var lastAnalysisTimestamp: TimeInterval = 0
     private var lastPreviewTimestamp: TimeInterval = 0
     private let minPreviewInterval: TimeInterval = 0.12 // Controlled 8 FPS preview cap
+    private var sequenceHandler = VNSequenceRequestHandler()
+    private var activeTrackRequests: [VNTrackObjectRequest] = []
+    private var frameCycleCount: Int = 0
+    private let trackingRefreshInterval: Int = 8 // Refresh full face detection every 8 frames (~1.5s)
 
     private var ownerFeaturePrints: [VNFeaturePrintObservation] = []
     private weak var trackerRef: EnhancedPresenceTracker?
@@ -865,7 +913,7 @@ private final class PresenceCaptureCoordinator: NSObject, AVCaptureVideoDataOutp
             session.addInput(input)
             self.currentVideoInput = input
 
-            // 4. Safe Center Stage Handling: ONLY touch if controlMode allows programmatic control!
+            // 4. Safe Center Stage Handling
             if #available(macOS 12.3, *) {
                 if AVCaptureDevice.centerStageControlMode == .cooperative || AVCaptureDevice.centerStageControlMode == .app {
                     AVCaptureDevice.isCenterStageEnabled = centerStageEnabled
@@ -940,6 +988,8 @@ private final class PresenceCaptureCoordinator: NSObject, AVCaptureVideoDataOutp
         self.currentVideoInput = nil
         self.captureSession = nil
         self.isAnalyzing = false
+        self.activeTrackRequests.removeAll()
+        self.frameCycleCount = 0
         analysisFrameLock.lock()
         self._latestAnalysisFrame = nil
         analysisFrameLock.unlock()
@@ -957,13 +1007,11 @@ private final class PresenceCaptureCoordinator: NSObject, AVCaptureVideoDataOutp
     ) {
         let sid = self.currentSessionId
         guard self.captureSession?.isRunning == true else { return }
-        // Record camera alive signal for watchdog
         onHeartbeat?()
 
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
         let now = Date().timeIntervalSince1970
 
-        // 1. Controlled Preview Pipeline (Only when expanded/requested, capped at ~8 FPS)
         if isLivePreviewRequested && (now - lastPreviewTimestamp >= minPreviewInterval) {
             lastPreviewTimestamp = now
             if let cg = renderCGImage(from: pixelBuffer) {
@@ -972,9 +1020,8 @@ private final class PresenceCaptureCoordinator: NSObject, AVCaptureVideoDataOutp
             }
         }
 
-        // 2. Controlled Vision Detection Pipeline (Gated by performance sampling interval)
         guard now - lastAnalysisTimestamp >= intervalSeconds else { return }
-        guard !isAnalyzing else { return } // Prevent queued Vision requests from piling up
+        guard !isAnalyzing else { return }
         guard self.currentSessionId == sid else { return }
         isAnalyzing = true
         lastAnalysisTimestamp = now
@@ -986,96 +1033,161 @@ private final class PresenceCaptureCoordinator: NSObject, AVCaptureVideoDataOutp
         defer { isAnalyzing = false }
         guard self.currentSessionId == sessionId else { return }
 
-        // Cache analysis frame for snapshots even when live preview is not requested
         if let cg = renderCGImage(from: pixelBuffer) {
             analysisFrameLock.lock()
             self._latestAnalysisFrame = cg
             analysisFrameLock.unlock()
         }
 
-        // Step 1: Human Detection First (Lightweight filter)
-        let humanRequest = VNDetectHumanRectanglesRequest()
         let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: .up, options: [:])
+        var faceResults: [VNFaceObservation] = []
+        var humanResults: [VNHumanObservation] = []
 
-        do {
-            try handler.perform([humanRequest])
-            let humanResults = humanRequest.results ?? []
+        let isRefreshCycle = activeTrackRequests.isEmpty || frameCycleCount >= trackingRefreshInterval
 
-            guard self.currentSessionId == sessionId else { return }
-
-            if humanResults.isEmpty {
-                // Zero humans detected -> Publish away/noPerson state immediately; skip faces and feature prints!
-                self.trackerRef?.clear()
-                self.onFrameProcessed?([], .noPerson)
-                return
-            }
-
-            // Step 2: Humans are present -> Detect Faces for Identification
+        if isRefreshCycle {
+            // DETECT / REFRESH cycle
             let faceRequest = VNDetectFaceRectanglesRequest()
-            try handler.perform([faceRequest])
-            let faceResults = faceRequest.results ?? []
+            let humanRequest = VNDetectHumanRectanglesRequest()
+            try? handler.perform([faceRequest, humanRequest])
+            faceResults = faceRequest.results ?? []
+            humanResults = humanRequest.results ?? []
+            frameCycleCount = 0
 
-            // Step 3: Strict 1-to-1 Bipartite Face Matching
-            let matchedPairs = matchFacesToHumans(humans: humanResults, faces: faceResults)
+            activeTrackRequests = faceResults.map { face in
+                VNTrackObjectRequest(detectedObjectObservation: face)
+            }
+        } else {
+            // TRACK cycle: track detected faces across frames
+            do {
+                try sequenceHandler.perform(activeTrackRequests, on: pixelBuffer, orientation: .up)
+                frameCycleCount += 1
+                var trackedBoxes: [CGRect] = []
+                var validTrackers: [VNTrackObjectRequest] = []
 
-            // Step 4: Authoritative Tracker Update with Strict Identity & Multi-Sample Verification
+                for req in activeTrackRequests {
+                    if let obs = req.results?.first as? VNDetectedObjectObservation, obs.confidence > 0.3 {
+                        trackedBoxes.append(obs.boundingBox)
+                        validTrackers.append(req)
+                    }
+                }
+                activeTrackRequests = validTrackers
+
+                if trackedBoxes.isEmpty {
+                    // Tracking lost: fall back to immediate detection
+                    let faceRequest = VNDetectFaceRectanglesRequest()
+                    let humanRequest = VNDetectHumanRectanglesRequest()
+                    try? handler.perform([faceRequest, humanRequest])
+                    faceResults = faceRequest.results ?? []
+                    humanResults = humanRequest.results ?? []
+                    frameCycleCount = 0
+                    activeTrackRequests = faceResults.map { face in
+                        VNTrackObjectRequest(detectedObjectObservation: face)
+                    }
+                } else {
+                    faceResults = trackedBoxes.map { box in
+                        VNFaceObservation(boundingBox: box)
+                    }
+                    let humanRequest = VNDetectHumanRectanglesRequest()
+                    try? handler.perform([humanRequest])
+                    humanResults = humanRequest.results ?? []
+                }
+            } catch {
+                let faceRequest = VNDetectFaceRectanglesRequest()
+                let humanRequest = VNDetectHumanRectanglesRequest()
+                try? handler.perform([faceRequest, humanRequest])
+                faceResults = faceRequest.results ?? []
+                humanResults = humanRequest.results ?? []
+                frameCycleCount = 0
+            }
+        }
+
+        guard self.currentSessionId == sessionId else { return }
+
+        if faceResults.isEmpty && humanResults.isEmpty {
             if let tracker = self.trackerRef {
-                let (subjects, status) = tracker.update(
-                    matchedPairs: matchedPairs,
-                    ownerPrints: self.ownerFeaturePrints,
-                    handler: handler
-                )
+                let (subjects, status) = tracker.updateNoDetections()
                 guard self.currentSessionId == sessionId else { return }
                 self.onFrameProcessed?(subjects, status)
+            } else {
+                self.onFrameProcessed?([], .noPerson)
             }
-        } catch {
-            // Ignore temporary Vision exceptions safely
+            return
+        }
+
+        let detectedEntities = correlateFacesAndHumans(faces: faceResults, humans: humanResults)
+
+        if let tracker = self.trackerRef {
+            let (subjects, status) = tracker.update(
+                entities: detectedEntities,
+                ownerPrints: self.ownerFeaturePrints,
+                handler: handler
+            )
+            guard self.currentSessionId == sessionId else { return }
+            self.onFrameProcessed?(subjects, status)
         }
     }
 
-    /// 1-to-1 Bipartite spatial matching: ensures a face cannot be assigned to multiple humans
-    private func matchFacesToHumans(
-        humans: [VNHumanObservation],
-        faces: [VNFaceObservation]
-    ) -> [(human: VNHumanObservation, face: VNFaceObservation?)] {
-        var availableFaceIndices = Set(0..<faces.count)
-        var results: [(human: VNHumanObservation, face: VNFaceObservation?)] = []
+    /// Face-first correlation: every detected face produces a subject entity,
+    /// complemented by human torso geometry if present, or synthesized bounds if body detection failed.
+    private func correlateFacesAndHumans(
+        faces: [VNFaceObservation],
+        humans: [VNHumanObservation]
+    ) -> [DetectedPresenceEntity] {
+        var availableHumanIndices = Set(0..<humans.count)
+        var entities: [DetectedPresenceEntity] = []
 
-        for human in humans {
-            let hRect = human.boundingBox
-            // Upper torso / head anchor in Vision coordinates (origin bottom-left, y=1 is top)
-            let headAnchor = CGPoint(x: hRect.midX, y: hRect.maxY - (hRect.height * 0.15))
-
-            var bestFaceIdx: Int? = nil
+        // 1. For each detected face, find the best enclosing or overlapping human body
+        for face in faces {
+            let fRect = face.boundingBox
+            var bestHumanIdx: Int? = nil
             var bestDistance: CGFloat = .infinity
 
-            for faceIdx in availableFaceIndices {
-                let faceRect = faces[faceIdx].boundingBox
-                let faceCenter = CGPoint(x: faceRect.midX, y: faceRect.midY)
+            for hIdx in availableHumanIndices {
+                let hRect = humans[hIdx].boundingBox
+                let xDist = abs(fRect.midX - hRect.midX)
+                let isHorizOverlap = fRect.minX >= (hRect.minX - 0.20) && fRect.maxX <= (hRect.maxX + 0.20)
+                let isUpperTorso = fRect.midY >= (hRect.midY - 0.15)
 
-                // Face must be vertically in the upper half of human rectangle or slightly above
-                let isVerticallyAligned = faceCenter.y >= (hRect.midY - 0.12)
-                // Face must be horizontally within human bounds (+ generous margin for side turns)
-                let isHorizontallyAligned = faceCenter.x >= (hRect.minX - 0.15) && faceCenter.x <= (hRect.maxX + 0.15)
-
-                if isVerticallyAligned && isHorizontallyAligned {
-                    let d = hypot(faceCenter.x - headAnchor.x, faceCenter.y - headAnchor.y)
-                    if d < bestDistance {
-                        bestDistance = d
-                        bestFaceIdx = faceIdx
+                if isHorizOverlap && isUpperTorso {
+                    if xDist < bestDistance {
+                        bestDistance = xDist
+                        bestHumanIdx = hIdx
                     }
                 }
             }
 
-            if let matchedIdx = bestFaceIdx {
-                availableFaceIndices.remove(matchedIdx)
-                results.append((human: human, face: faces[matchedIdx]))
+            let matchedHuman: VNHumanObservation?
+            let finalBox: CGRect
+
+            if let hIdx = bestHumanIdx {
+                availableHumanIndices.remove(hIdx)
+                matchedHuman = humans[hIdx]
+                finalBox = humans[hIdx].boundingBox
             } else {
-                results.append((human: human, face: nil))
+                matchedHuman = nil
+                // Face detected alone without full-body detection (e.g. webcam close-up)
+                // Synthesize smooth presence anchor around the face
+                let w = fRect.width * 1.6
+                let h = fRect.height * 2.8
+                finalBox = CGRect(
+                    x: max(0.0, fRect.midX - (w / 2.0)),
+                    y: max(0.0, fRect.maxY - h),
+                    width: min(1.0, w),
+                    height: min(1.0, h)
+                )
             }
+
+            entities.append(DetectedPresenceEntity(face: face, human: matchedHuman, boundingBox: finalBox))
         }
 
-        return results
+        // 2. Any remaining humans without detected faces (e.g. facing away, face obscured)
+        for hIdx in availableHumanIndices {
+            let human = humans[hIdx]
+            entities.append(DetectedPresenceEntity(face: nil, human: human, boundingBox: human.boundingBox))
+        }
+
+        return entities
     }
 
     private func renderCGImage(from pixelBuffer: CVPixelBuffer) -> CGImage? {
@@ -1937,24 +2049,33 @@ public final class PresenceMonitor: ObservableObject {
         var angleObservations: [VNFeaturePrintObservation] = []
 
         for angle in OwnerSampleAngle.allCases {
-            var fileURL = ownerURL.appendingPathComponent("owner_\(angle.rawValue).data")
-            if !fileManager.fileExists(atPath: fileURL.path) {
-                if angle == .slightLeft {
-                    let legacyURL = ownerURL.appendingPathComponent("owner_left.data")
-                    if fileManager.fileExists(atPath: legacyURL.path) {
-                        fileURL = legacyURL
-                    }
-                } else if angle == .slightRight {
-                    let legacyURL = ownerURL.appendingPathComponent("owner_right.data")
-                    if fileManager.fileExists(atPath: legacyURL.path) {
-                        fileURL = legacyURL
+            let prefix = "owner_\(angle.rawValue)"
+            if let files = try? fileManager.contentsOfDirectory(atPath: ownerURL.path) {
+                for f in files {
+                    if f.hasPrefix(prefix) && f.hasSuffix(".data") {
+                        let fileURL = ownerURL.appendingPathComponent(f)
+                        if let data = try? Data(contentsOf: fileURL),
+                           let obs = try? NSKeyedUnarchiver.unarchivedObject(ofClass: VNFeaturePrintObservation.self, from: data) {
+                            detectedAngles.insert(angle)
+                            angleObservations.append(obs)
+                        }
                     }
                 }
             }
-            if let data = try? Data(contentsOf: fileURL),
-               let obs = try? NSKeyedUnarchiver.unarchivedObject(ofClass: VNFeaturePrintObservation.self, from: data) {
-                detectedAngles.insert(angle)
-                angleObservations.append(obs)
+            if angle == .slightLeft && !detectedAngles.contains(.slightLeft) {
+                let legacyURL = ownerURL.appendingPathComponent("owner_left.data")
+                if let data = try? Data(contentsOf: legacyURL),
+                   let obs = try? NSKeyedUnarchiver.unarchivedObject(ofClass: VNFeaturePrintObservation.self, from: data) {
+                    detectedAngles.insert(.slightLeft)
+                    angleObservations.append(obs)
+                }
+            } else if angle == .slightRight && !detectedAngles.contains(.slightRight) {
+                let legacyURL = ownerURL.appendingPathComponent("owner_right.data")
+                if let data = try? Data(contentsOf: legacyURL),
+                   let obs = try? NSKeyedUnarchiver.unarchivedObject(ofClass: VNFeaturePrintObservation.self, from: data) {
+                    detectedAngles.insert(.slightRight)
+                    angleObservations.append(obs)
+                }
             }
         }
 

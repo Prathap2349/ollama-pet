@@ -260,10 +260,14 @@ public class CharacterMotionStateMachine: ObservableObject {
                     headTiltAngle = Angle(degrees: sin(time * 16.0) * 2.0)
                     levitationOffset = 0.0
                     squashStretch = CGSize(width: 1.06, height: 0.94)
-                case .sad, .crying:
-                    headTiltAngle = Angle(degrees: 5.5 + sin(time * 1.0) * 1.5)
-                    levitationOffset = -4.5
-                    squashStretch = CGSize(width: 0.97, height: 0.94)
+                case .crying:
+                    headTiltAngle = Angle(degrees: 6.5 + sin(time * 1.5) * 2.0)
+                    levitationOffset = -5.0
+                    squashStretch = CGSize(width: 0.96, height: 0.93)
+                case .sad:
+                    headTiltAngle = Angle(degrees: 3.5 + sin(time * 0.8) * 1.0)
+                    levitationOffset = -2.5
+                    squashStretch = CGSize(width: 0.98, height: 0.96)
                 case .excited:
                     headTiltAngle = Angle(degrees: sin(time * 6.0) * 6.0)
                     levitationOffset = CGFloat(abs(sin(time * 6.0)) * 8.0)

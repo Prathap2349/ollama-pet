@@ -333,11 +333,11 @@ struct PresenceWidgetView: View {
     private var centralStatusIcon: String {
         switch monitor.presenceStatus {
         case .ownerPresent, .ownerConfirmed: return "person.crop.circle.badge.checkmark"
-        case .ownerTemporarilyUnavailable: return "person.crop.circle.badge.questionmark"
+        case .ownerTemporarilyUnavailable, .noFace: return "person.crop.circle.badge.questionmark"
         case .unknownDetected: return "person.crop.circle.badge.exclamationmark"
-        case .uncertain, .verifying, .faceDetected: return "person.crop.circle.badge.questionmark"
+        case .faceDetected: return "face.smiling"
+        case .uncertain, .verifying: return "person.crop.circle.badge.questionmark"
         case .personDetectedNoOwner: return "person.crop.circle"
-        case .noFace: return "eye.slash.fill"
         case .multipleDetected: return "person.2.fill"
         case .searching: return "viewfinder"
         case .starting, .recovering: return "arrow.triangle.2.circlepath"
@@ -351,17 +351,16 @@ struct PresenceWidgetView: View {
     private var centralStatusTitle: String {
         switch monitor.presenceStatus {
         case .ownerPresent, .ownerConfirmed: return "OWNER"
-        case .ownerTemporarilyUnavailable: return "AWAY-FACING"
+        case .ownerTemporarilyUnavailable, .noFace: return "AWAY-FACING"
         case .unknownDetected: return "UNKNOWN"
-        case .uncertain, .verifying: return "CHECKING"
-        case .faceDetected: return "DETECTED"
+        case .faceDetected: return "FACE DETECTED"
+        case .uncertain, .verifying: return "VERIFYING"
         case .personDetectedNoOwner: return "PERSON"
-        case .noFace: return "OBSCURED"
         case .multipleDetected: return "MULTIPLE"
         case .searching: return "SCANNING"
         case .starting: return "STARTING"
         case .recovering: return "RECOVERING"
-        case .away, .noPerson: return "AWAY"
+        case .away, .noPerson: return "NO PERSON"
         case .permissionRequired: return "PERMISSION"
         case .failed, .cameraError: return "ERROR"
         case .idle: return "PAUSED"
@@ -372,22 +371,20 @@ struct PresenceWidgetView: View {
 
     private var centralStatusSubtitle: String {
         switch monitor.presenceStatus {
-        case .ownerPresent, .ownerConfirmed: return "Verified Face"
-        case .ownerTemporarilyUnavailable: return "Owner turned away"
-        case .unknownDetected: return "Unrecognized"
-        case .uncertain, .verifying: return "Analyzing..."
-        case .faceDetected: return "Face found"
-        case .personDetectedNoOwner: return "No Profile Set"
-        case .noFace: return "Turn toward camera"
-        case .multipleDetected: return "Group nearby"
+        case .ownerPresent, .ownerConfirmed: return "Owner Verified"
+        case .ownerTemporarilyUnavailable, .noFace: return "Face Temporarily Unavailable"
+        case .unknownDetected: return "Unknown Person"
+        case .faceDetected: return "Face Detected"
+        case .uncertain, .verifying: return "Verifying..."
+        case .personDetectedNoOwner: return "Person Detected"
+        case .multipleDetected: return "Multiple People"
         case .searching: return "Looking for user"
         case .starting: return "Starting feed..."
         case .recovering: return "Recovering..."
-        case .away, .noPerson: return "No person seen"
-        case .permissionRequired: return "Grant access"
+        case .away, .noPerson: return "No Person Detected"
+        case .permissionRequired: return "Grant camera access"
         case .failed, .cameraError: return "Camera error"
-        case .idle: return "Monitoring off"
-        case .stopped: return "Monitoring stopped"
+        case .idle, .stopped: return "Monitoring Stopped"
         case .cameraUnavailable: return "Check permission"
         }
     }
@@ -395,17 +392,17 @@ struct PresenceWidgetView: View {
     private var statusColor: Color {
         switch monitor.presenceStatus {
         case .ownerPresent, .ownerConfirmed: return .green
-        case .ownerTemporarilyUnavailable: return .mint
+        case .faceDetected: return .blue
+        case .uncertain, .verifying: return .yellow
         case .unknownDetected: return .orange
-        case .uncertain, .verifying, .faceDetected: return .yellow
+        case .ownerTemporarilyUnavailable, .noFace: return Color(white: 0.8)
         case .personDetectedNoOwner: return .cyan
-        case .noFace: return .purple
         case .multipleDetected: return .yellow
         case .searching: return .cyan
         case .starting, .recovering: return .yellow
-        case .away, .noPerson: return .gray
+        case .away, .noPerson: return .indigo
         case .permissionRequired, .failed, .cameraError: return .red
-        case .idle, .stopped, .cameraUnavailable: return .red
+        case .idle, .stopped, .cameraUnavailable: return .gray
         }
     }
 

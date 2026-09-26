@@ -156,7 +156,7 @@ public class NotificationScheduler {
 
         // 2. Trigger Pet expressive emotion, celebration pulse, audio & haptic feedback
         DispatchQueue.main.async {
-            PetState.shared.setTemporaryMood(.proud, duration: 8.0)
+            PetState.shared.setTemporaryMood(.celebrating, duration: 8.0)
             PetState.shared.triggerCelebration(color: Color(red: 1.0, green: 0.85, blue: 0.2), duration: 5.0)
             PetState.shared.showBubble("🎉 Focus complete! Your \(mins)m focus time is finished. Great job!", duration: 5.5)
             SoundEffect.receive.play()

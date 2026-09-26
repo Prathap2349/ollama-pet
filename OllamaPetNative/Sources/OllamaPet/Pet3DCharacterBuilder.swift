@@ -2,33 +2,75 @@ import Foundation
 import SceneKit
 import AppKit
 
-// MARK: - 3D Rig Structure Representing Character Anatomy
+// MARK: - 3D Rig Structure Representing Comprehensive Character Anatomy
 
 public struct Pet3DRig {
     public let rootNode: SCNNode
     public let bodyNode: SCNNode
+    public let neckNode: SCNNode?
     public let headNode: SCNNode
+
+    // Facial System: Eyes & Eyelids (Requirement 2)
     public let leftEyeNode: SCNNode?
     public let rightEyeNode: SCNNode?
+    public let leftPupilNode: SCNNode?
+    public let rightPupilNode: SCNNode?
+    public let leftUpperLid: SCNNode?
+    public let rightUpperLid: SCNNode?
+    public let leftLowerLid: SCNNode?
+    public let rightLowerLid: SCNNode?
+
+    // Facial System: Jaw & Mouth (Requirement 3)
+    public let jawNode: SCNNode?
+    public let tongueNode: SCNNode?
+    public let upperTeethNode: SCNNode?
+    public let lowerTeethNode: SCNNode?
+
+    // Features
     public let leftEarNode: SCNNode?
     public let rightEarNode: SCNNode?
     public let tailNode: SCNNode?
     public let tailSegments: [SCNNode]
     public let leftWingNode: SCNNode?
     public let rightWingNode: SCNNode?
-    public let frontLeftLeg: SCNNode?
+
+    // Articulated 4-Leg Limb Hierarchy (Requirements 5 & 7)
+    public let frontLeftLeg: SCNNode?   // Thigh / upper arm
+    public let frontLeftShin: SCNNode?  // Lower arm / shin
+    public let frontLeftPaw: SCNNode?   // Paw / foot / claws
+
     public let frontRightLeg: SCNNode?
-    public let backLeftLeg: SCNNode?
+    public let frontRightShin: SCNNode?
+    public let frontRightPaw: SCNNode?
+
+    public let backLeftLeg: SCNNode?    // Hip / upper thigh
+    public let backLeftShin: SCNNode?   // Knee / hock / lower leg
+    public let backLeftPaw: SCNNode?    // Hind paw / claws
+
     public let backRightLeg: SCNNode?
+    public let backRightShin: SCNNode?
+    public let backRightPaw: SCNNode?
+
     public let hornsNode: SCNNode?
     public let accessoriesNode: SCNNode?
 
     public init(
         rootNode: SCNNode,
         bodyNode: SCNNode,
+        neckNode: SCNNode? = nil,
         headNode: SCNNode,
         leftEyeNode: SCNNode? = nil,
         rightEyeNode: SCNNode? = nil,
+        leftPupilNode: SCNNode? = nil,
+        rightPupilNode: SCNNode? = nil,
+        leftUpperLid: SCNNode? = nil,
+        rightUpperLid: SCNNode? = nil,
+        leftLowerLid: SCNNode? = nil,
+        rightLowerLid: SCNNode? = nil,
+        jawNode: SCNNode? = nil,
+        tongueNode: SCNNode? = nil,
+        upperTeethNode: SCNNode? = nil,
+        lowerTeethNode: SCNNode? = nil,
         leftEarNode: SCNNode? = nil,
         rightEarNode: SCNNode? = nil,
         tailNode: SCNNode? = nil,
@@ -36,17 +78,36 @@ public struct Pet3DRig {
         leftWingNode: SCNNode? = nil,
         rightWingNode: SCNNode? = nil,
         frontLeftLeg: SCNNode? = nil,
+        frontLeftShin: SCNNode? = nil,
+        frontLeftPaw: SCNNode? = nil,
         frontRightLeg: SCNNode? = nil,
+        frontRightShin: SCNNode? = nil,
+        frontRightPaw: SCNNode? = nil,
         backLeftLeg: SCNNode? = nil,
+        backLeftShin: SCNNode? = nil,
+        backLeftPaw: SCNNode? = nil,
         backRightLeg: SCNNode? = nil,
+        backRightShin: SCNNode? = nil,
+        backRightPaw: SCNNode? = nil,
         hornsNode: SCNNode? = nil,
         accessoriesNode: SCNNode? = nil
     ) {
         self.rootNode = rootNode
         self.bodyNode = bodyNode
+        self.neckNode = neckNode
         self.headNode = headNode
         self.leftEyeNode = leftEyeNode
         self.rightEyeNode = rightEyeNode
+        self.leftPupilNode = leftPupilNode
+        self.rightPupilNode = rightPupilNode
+        self.leftUpperLid = leftUpperLid
+        self.rightUpperLid = rightUpperLid
+        self.leftLowerLid = leftLowerLid
+        self.rightLowerLid = rightLowerLid
+        self.jawNode = jawNode
+        self.tongueNode = tongueNode
+        self.upperTeethNode = upperTeethNode
+        self.lowerTeethNode = lowerTeethNode
         self.leftEarNode = leftEarNode
         self.rightEarNode = rightEarNode
         self.tailNode = tailNode
@@ -54,9 +115,17 @@ public struct Pet3DRig {
         self.leftWingNode = leftWingNode
         self.rightWingNode = rightWingNode
         self.frontLeftLeg = frontLeftLeg
+        self.frontLeftShin = frontLeftShin
+        self.frontLeftPaw = frontLeftPaw
         self.frontRightLeg = frontRightLeg
+        self.frontRightShin = frontRightShin
+        self.frontRightPaw = frontRightPaw
         self.backLeftLeg = backLeftLeg
+        self.backLeftShin = backLeftShin
+        self.backLeftPaw = backLeftPaw
         self.backRightLeg = backRightLeg
+        self.backRightShin = backRightShin
+        self.backRightPaw = backRightPaw
         self.hornsNode = hornsNode
         self.accessoriesNode = accessoriesNode
     }
@@ -69,7 +138,7 @@ public class Pet3DCharacterBuilder {
     // MARK: - Material Factory
     public static func pbrMaterial(
         color: NSColor,
-        roughness: CGFloat = 0.45,
+        roughness: CGFloat = 0.42,
         metalness: CGFloat = 0.05,
         emission: NSColor? = nil
     ) -> SCNMaterial {
@@ -82,6 +151,168 @@ public class Pet3DCharacterBuilder {
             mat.emission.contents = em
         }
         return mat
+    }
+
+    // MARK: - Component Builders
+
+    public struct FacialEyeComponents {
+        public let eyeNode: SCNNode
+        public let pupilNode: SCNNode
+        public let upperLidNode: SCNNode
+        public let lowerLidNode: SCNNode
+    }
+
+    private static func makeFacialEye(
+        eyeMat: SCNMaterial,
+        pupilMat: SCNMaterial,
+        lidMat: SCNMaterial,
+        radius: CGFloat = 0.055,
+        isDragonPupil: Bool = false
+    ) -> FacialEyeComponents {
+        let eye = SCNNode()
+
+        // Sclera / Iris sphere
+        let scleraGeo = SCNSphere(radius: radius)
+        scleraGeo.materials = [eyeMat]
+        let scleraNode = SCNNode(geometry: scleraGeo)
+        eye.addChildNode(scleraNode)
+
+        // Saccade-capable Pupil
+        let pupilGeo = SCNSphere(radius: radius * 0.52)
+        pupilGeo.materials = [pupilMat]
+        let pupilNode = SCNNode(geometry: pupilGeo)
+        if isDragonPupil {
+            pupilNode.scale = SCNVector3(0.35, 1.25, 0.45) // Dragon slit pupil
+        } else {
+            pupilNode.scale = SCNVector3(0.95, 0.95, 0.5) // Round warm mammalian pupil
+        }
+        pupilNode.position = SCNVector3(0, 0, radius * 0.72)
+        eye.addChildNode(pupilNode)
+
+        // Upper Eyelid Shell
+        let upperLidGeo = SCNSphere(radius: radius * 1.06)
+        upperLidGeo.materials = [lidMat]
+        let upperLid = SCNNode(geometry: upperLidGeo)
+        upperLid.position = SCNVector3(0, radius * 0.52, 0.005)
+        upperLid.scale = SCNVector3(1.06, 0.02, 1.06)
+        eye.addChildNode(upperLid)
+
+        // Lower Eyelid Shell (Cheek raise for smiling/squinting)
+        let lowerLidGeo = SCNSphere(radius: radius * 1.05)
+        lowerLidGeo.materials = [lidMat]
+        let lowerLid = SCNNode(geometry: lowerLidGeo)
+        lowerLid.position = SCNVector3(0, -radius * 0.62, 0.005)
+        lowerLid.scale = SCNVector3(1.06, 0.02, 1.06)
+        eye.addChildNode(lowerLid)
+
+        return FacialEyeComponents(
+            eyeNode: eye,
+            pupilNode: pupilNode,
+            upperLidNode: upperLid,
+            lowerLidNode: lowerLid
+        )
+    }
+
+    public struct JawComponents {
+        public let jawNode: SCNNode
+        public let tongueNode: SCNNode
+        public let teethNode: SCNNode
+    }
+
+    private static func makeArticulatedJaw(
+        primaryMat: SCNMaterial,
+        length: CGFloat = 0.22,
+        width: CGFloat = 0.16
+    ) -> JawComponents {
+        let jawPivot = SCNNode() // Pivots on X-axis at base of mandible
+
+        // Mandible bone
+        let mandibleGeo = SCNCapsule(capRadius: width * 0.42, height: length)
+        mandibleGeo.materials = [primaryMat]
+        let mandible = SCNNode(geometry: mandibleGeo)
+        mandible.position = SCNVector3(0, -0.025, length * 0.42)
+        mandible.eulerAngles = SCNVector3(Float.pi / 2.1, 0, 0)
+        mandible.scale = SCNVector3(1.0, 0.5, 1.0)
+        jawPivot.addChildNode(mandible)
+
+        // Tongue
+        let tongueMat = pbrMaterial(color: NSColor(red: 0.95, green: 0.48, blue: 0.58, alpha: 1.0), roughness: 0.3)
+        let tongueGeo = SCNCapsule(capRadius: width * 0.22, height: length * 0.55)
+        tongueGeo.materials = [tongueMat]
+        let tongue = SCNNode(geometry: tongueGeo)
+        tongue.position = SCNVector3(0, 0.015, length * 0.38)
+        tongue.eulerAngles = SCNVector3(Float.pi / 2.0, 0, 0)
+        tongue.scale = SCNVector3(1.0, 0.35, 1.0)
+        jawPivot.addChildNode(tongue)
+
+        // Teeth ridge
+        let teethMat = pbrMaterial(color: NSColor(white: 0.97, alpha: 1.0), roughness: 0.25)
+        let teethGeo = SCNBox(width: width * 0.65, height: 0.018, length: length * 0.65, chamferRadius: 0.005)
+        teethGeo.materials = [teethMat]
+        let teeth = SCNNode(geometry: teethGeo)
+        teeth.position = SCNVector3(0, 0.025, length * 0.42)
+        teeth.eulerAngles = SCNVector3(Float.pi / 2.1, 0, 0)
+        jawPivot.addChildNode(teeth)
+
+        return JawComponents(jawNode: jawPivot, tongueNode: tongue, teethNode: teeth)
+    }
+
+    public struct ArticulatedLegComponents {
+        public let upperLegNode: SCNNode
+        public let shinNode: SCNNode
+        public let pawNode: SCNNode
+    }
+
+    private static func makeArticulatedLeg(
+        mat: SCNMaterial,
+        clawMat: SCNMaterial,
+        upperLength: CGFloat = 0.16,
+        lowerLength: CGFloat = 0.16,
+        radius: CGFloat = 0.055,
+        addClaws: Bool = true
+    ) -> ArticulatedLegComponents {
+        let upper = SCNNode() // Hip / shoulder pivot
+
+        let upperBoneGeo = SCNCapsule(capRadius: radius, height: upperLength + (radius * 1.5))
+        upperBoneGeo.materials = [mat]
+        let upperBone = SCNNode(geometry: upperBoneGeo)
+        upperBone.position = SCNVector3(0, -upperLength * 0.5, 0)
+        upper.addChildNode(upperBone)
+
+        // Knee / Elbow joint
+        let shin = SCNNode()
+        shin.position = SCNVector3(0, -upperLength, 0)
+        upper.addChildNode(shin)
+
+        let shinBoneGeo = SCNCapsule(capRadius: radius * 0.88, height: lowerLength + (radius * 1.2))
+        shinBoneGeo.materials = [mat]
+        let shinBone = SCNNode(geometry: shinBoneGeo)
+        shinBone.position = SCNVector3(0, -lowerLength * 0.5, 0)
+        shin.addChildNode(shinBone)
+
+        // Ankle / Paw joint
+        let paw = SCNNode()
+        paw.position = SCNVector3(0, -lowerLength, 0.02)
+        shin.addChildNode(paw)
+
+        let pawPadGeo = SCNBox(width: radius * 2.1, height: radius * 0.85, length: radius * 2.6, chamferRadius: 0.015)
+        pawPadGeo.materials = [mat]
+        let pawPad = SCNNode(geometry: pawPadGeo)
+        pawPad.position = SCNVector3(0, -radius * 0.4, radius * 0.5)
+        paw.addChildNode(pawPad)
+
+        if addClaws {
+            for c in [-1, 0, 1] {
+                let clawGeo = SCNCone(topRadius: 0.003, bottomRadius: 0.012, height: 0.038)
+                clawGeo.materials = [clawMat]
+                let claw = SCNNode(geometry: clawGeo)
+                claw.position = SCNVector3(CGFloat(c) * (radius * 0.65), -radius * 0.4, radius * 1.8)
+                claw.eulerAngles = SCNVector3(Float.pi / 2, 0, 0)
+                paw.addChildNode(claw)
+            }
+        }
+
+        return ArticulatedLegComponents(upperLegNode: upper, shinNode: shin, pawNode: paw)
     }
 
     // MARK: - Build Character Rig for Species
@@ -109,108 +340,138 @@ public class Pet3DCharacterBuilder {
         }
     }
 
-    // MARK: - 1. Dragon (Ember)
+    // MARK: - 1. Dragon (Ember - Full Anatomy Upgrade)
     private static func buildDragon(customHorn: Bool, customWings: Bool, accessory: String) -> Pet3DRig {
         let root = SCNNode()
         let body = SCNNode()
         body.position = SCNVector3(0, 0.28, 0)
         root.addChildNode(body)
 
-        let primaryMat = pbrMaterial(color: NSColor(red: 0.95, green: 0.32, blue: 0.12, alpha: 1.0), roughness: 0.35, metalness: 0.1)
-        let bellyMat = pbrMaterial(color: NSColor(red: 1.0, green: 0.85, blue: 0.4, alpha: 1.0), roughness: 0.5)
-        let hornMat = pbrMaterial(color: NSColor(red: 1.0, green: 0.65, blue: 0.1, alpha: 1.0), roughness: 0.2, metalness: 0.3, emission: NSColor(red: 0.8, green: 0.4, blue: 0.05, alpha: 1.0))
-        let eyeMat = pbrMaterial(color: NSColor(red: 1.0, green: 0.9, blue: 0.1, alpha: 1.0), roughness: 0.1, metalness: 0.0, emission: NSColor(red: 0.7, green: 0.5, blue: 0.0, alpha: 1.0))
-        let pupilMat = pbrMaterial(color: NSColor.black, roughness: 0.1)
+        let primaryMat = pbrMaterial(color: NSColor(red: 0.95, green: 0.32, blue: 0.12, alpha: 1.0), roughness: 0.38, metalness: 0.12)
+        let bellyMat = pbrMaterial(color: NSColor(red: 1.0, green: 0.85, blue: 0.4, alpha: 1.0), roughness: 0.45)
+        let hornMat = pbrMaterial(color: NSColor(red: 1.0, green: 0.68, blue: 0.15, alpha: 1.0), roughness: 0.22, metalness: 0.35, emission: NSColor(red: 0.85, green: 0.42, blue: 0.05, alpha: 1.0))
+        let eyeMat = pbrMaterial(color: NSColor(red: 1.0, green: 0.92, blue: 0.15, alpha: 1.0), roughness: 0.08, emission: NSColor(red: 0.75, green: 0.55, blue: 0.05, alpha: 1.0))
+        let pupilMat = pbrMaterial(color: NSColor(red: 0.05, green: 0.02, blue: 0.02, alpha: 1.0), roughness: 0.1)
+        let clawMat = pbrMaterial(color: NSColor(red: 0.92, green: 0.85, blue: 0.75, alpha: 1.0), roughness: 0.25)
 
-        // Torso
-        let torsoGeo = SCNCapsule(capRadius: 0.28, height: 0.65)
+        // 1. Muscular Torso & Dorsal Ridge
+        let torsoGeo = SCNCapsule(capRadius: 0.26, height: 0.65)
         torsoGeo.materials = [primaryMat]
         let torsoNode = SCNNode(geometry: torsoGeo)
-        torsoNode.eulerAngles = SCNVector3(Float.pi / 2.5, 0, 0)
+        torsoNode.eulerAngles = SCNVector3(Float.pi / 2.4, 0, 0)
         body.addChildNode(torsoNode)
 
-        // Belly Plate
-        let bellyGeo = SCNCapsule(capRadius: 0.22, height: 0.5)
+        // Ventral Belly Plates
+        let bellyGeo = SCNCapsule(capRadius: 0.21, height: 0.52)
         bellyGeo.materials = [bellyMat]
         let bellyNode = SCNNode(geometry: bellyGeo)
         bellyNode.position = SCNVector3(0, -0.06, 0.12)
-        bellyNode.eulerAngles = SCNVector3(Float.pi / 2.5, 0, 0)
+        bellyNode.eulerAngles = SCNVector3(Float.pi / 2.4, 0, 0)
         body.addChildNode(bellyNode)
 
-        // Head Node
+        // Dorsal Fin Spines along back
+        for s in 0..<4 {
+            let spineGeo = SCNPyramid(width: 0.045, height: 0.08, length: 0.06)
+            spineGeo.materials = [hornMat]
+            let spine = SCNNode(geometry: spineGeo)
+            spine.position = SCNVector3(0, 0.14 - (Double(s) * 0.06), -0.08 - (Double(s) * 0.08))
+            spine.eulerAngles = SCNVector3(Float.pi / 4, 0, 0)
+            body.addChildNode(spine)
+        }
+
+        // 2. Flexible Neck
+        let neck = SCNNode()
+        neck.position = SCNVector3(0, 0.26, 0.18)
+        neck.eulerAngles = SCNVector3(-Float.pi / 12, 0, 0)
+        let neckGeo = SCNCylinder(radius: 0.14, height: 0.22)
+        neckGeo.materials = [primaryMat]
+        neck.addChildNode(SCNNode(geometry: neckGeo))
+        body.addChildNode(neck)
+
+        // 3. Head & Snout Architecture
         let head = SCNNode()
-        head.position = SCNVector3(0, 0.38, 0.28)
-        body.addChildNode(head)
+        head.position = SCNVector3(0, 0.15, 0.12)
+        neck.addChildNode(head)
 
-        let headGeo = SCNSphere(radius: 0.24)
+        // Sculpted cranial skull
+        let headGeo = SCNSphere(radius: 0.22)
         headGeo.materials = [primaryMat]
-        head.addChildNode(SCNNode(geometry: headGeo))
+        let headBase = SCNNode(geometry: headGeo)
+        headBase.scale = SCNVector3(0.95, 0.95, 1.2)
+        head.addChildNode(headBase)
 
-        // Snout
-        let snoutGeo = SCNCapsule(capRadius: 0.12, height: 0.3)
+        // Upper Snout Bridge
+        let snoutGeo = SCNCapsule(capRadius: 0.11, height: 0.28)
         snoutGeo.materials = [primaryMat]
         let snout = SCNNode(geometry: snoutGeo)
-        snout.position = SCNVector3(0, -0.04, 0.18)
+        snout.position = SCNVector3(0, -0.01, 0.18)
         snout.eulerAngles = SCNVector3(Float.pi / 2, 0, 0)
         head.addChildNode(snout)
 
-        // Horns
+        // Nostrils
+        let nostrilMat = pbrMaterial(color: NSColor(red: 0.4, green: 0.15, blue: 0.05, alpha: 1.0), roughness: 0.8)
+        for side in [-1.0, 1.0] {
+            let nostril = SCNNode(geometry: SCNSphere(radius: 0.016))
+            nostril.geometry?.materials = [nostrilMat]
+            nostril.position = SCNVector3(CGFloat(side) * 0.045, 0.04, 0.31)
+            head.addChildNode(nostril)
+        }
+
+        // Upper Teeth Row
+        let upperTeethGeo = SCNBox(width: 0.12, height: 0.016, length: 0.18, chamferRadius: 0.004)
+        upperTeethGeo.materials = [clawMat]
+        let upperTeeth = SCNNode(geometry: upperTeethGeo)
+        upperTeeth.position = SCNVector3(0, -0.055, 0.20)
+        head.addChildNode(upperTeeth)
+
+        // 4. Articulated Lower Jaw (Requirement 3)
+        let jawComp = makeArticulatedJaw(primaryMat: primaryMat, length: 0.22, width: 0.15)
+        jawComp.jawNode.position = SCNVector3(0, -0.065, 0.08)
+        head.addChildNode(jawComp.jawNode)
+
+        // 5. Expressive Dragon Eyes with Eyelids (Requirement 2)
+        let leftEyeComp = makeFacialEye(eyeMat: eyeMat, pupilMat: pupilMat, lidMat: primaryMat, radius: 0.058, isDragonPupil: true)
+        leftEyeComp.eyeNode.position = SCNVector3(-0.125, 0.08, 0.15)
+        leftEyeComp.eyeNode.eulerAngles = SCNVector3(0, -Float.pi / 16, 0)
+        head.addChildNode(leftEyeComp.eyeNode)
+
+        let rightEyeComp = makeFacialEye(eyeMat: eyeMat, pupilMat: pupilMat, lidMat: primaryMat, radius: 0.058, isDragonPupil: true)
+        rightEyeComp.eyeNode.position = SCNVector3(0.125, 0.08, 0.15)
+        rightEyeComp.eyeNode.eulerAngles = SCNVector3(0, Float.pi / 16, 0)
+        head.addChildNode(rightEyeComp.eyeNode)
+
+        // 6. Sculpted Horns
         var hornsNode: SCNNode? = nil
         if customHorn {
             let hGroup = SCNNode()
-            let hornGeo = SCNCone(topRadius: 0.02, bottomRadius: 0.07, height: 0.32)
+            let hornGeo = SCNCone(topRadius: 0.018, bottomRadius: 0.065, height: 0.32)
             hornGeo.materials = [hornMat]
 
             let leftHorn = SCNNode(geometry: hornGeo)
-            leftHorn.position = SCNVector3(-0.14, 0.22, -0.08)
-            leftHorn.eulerAngles = SCNVector3(-Float.pi / 6, 0, -Float.pi / 5)
+            leftHorn.position = SCNVector3(-0.13, 0.21, -0.06)
+            leftHorn.eulerAngles = SCNVector3(-Float.pi / 5.5, 0, -Float.pi / 5)
             hGroup.addChildNode(leftHorn)
 
             let rightHorn = SCNNode(geometry: hornGeo)
-            rightHorn.position = SCNVector3(0.14, 0.22, -0.08)
-            rightHorn.eulerAngles = SCNVector3(-Float.pi / 6, 0, Float.pi / 5)
+            rightHorn.position = SCNVector3(0.13, 0.21, -0.06)
+            rightHorn.eulerAngles = SCNVector3(-Float.pi / 5.5, 0, Float.pi / 5)
             hGroup.addChildNode(rightHorn)
 
             head.addChildNode(hGroup)
             hornsNode = hGroup
         }
 
-        // Eyes
-        let leftEye = SCNNode()
-        leftEye.position = SCNVector3(-0.13, 0.08, 0.16)
-        let eyeScleraGeo = SCNSphere(radius: 0.06)
-        eyeScleraGeo.materials = [eyeMat]
-        let eyeScleraNode = SCNNode(geometry: eyeScleraGeo)
-        leftEye.addChildNode(eyeScleraNode)
-        let pupilGeo = SCNSphere(radius: 0.035)
-        pupilGeo.materials = [pupilMat]
-        let pupilNode = SCNNode(geometry: pupilGeo)
-        pupilNode.position = SCNVector3(0, 0, 0.04)
-        pupilNode.scale = SCNVector3(0.4, 1.2, 0.5)
-        leftEye.addChildNode(pupilNode)
-        head.addChildNode(leftEye)
-
-        let rightEye = SCNNode()
-        rightEye.position = SCNVector3(0.13, 0.08, 0.16)
-        let rightEyeSclera = SCNNode(geometry: eyeScleraGeo)
-        rightEye.addChildNode(rightEyeSclera)
-        let rightPupil = SCNNode(geometry: pupilGeo)
-        rightPupil.position = SCNVector3(0, 0, 0.04)
-        rightPupil.scale = SCNVector3(0.4, 1.2, 0.5)
-        rightEye.addChildNode(rightPupil)
-        head.addChildNode(rightEye)
-
-        // Wings
+        // 7. Wings with articulated joints
         var leftWing: SCNNode? = nil
         var rightWing: SCNNode? = nil
         if customWings {
-            let wingArmGeo = SCNCylinder(radius: 0.025, height: 0.42)
+            let wingArmGeo = SCNCylinder(radius: 0.024, height: 0.44)
             wingArmGeo.materials = [primaryMat]
-            let wingMembraneGeo = SCNBox(width: 0.4, height: 0.01, length: 0.25, chamferRadius: 0.02)
+            let wingMembraneGeo = SCNBox(width: 0.42, height: 0.01, length: 0.26, chamferRadius: 0.02)
             wingMembraneGeo.materials = [hornMat]
 
             let lw = SCNNode()
-            lw.position = SCNVector3(-0.25, 0.18, -0.05)
+            lw.position = SCNVector3(-0.24, 0.18, -0.05)
             let armL = SCNNode(geometry: wingArmGeo)
             armL.eulerAngles = SCNVector3(0, 0, Float.pi / 3)
             armL.position = SCNVector3(-0.16, 0.1, 0)
@@ -223,7 +484,7 @@ public class Pet3DCharacterBuilder {
             leftWing = lw
 
             let rw = SCNNode()
-            rw.position = SCNVector3(0.25, 0.18, -0.05)
+            rw.position = SCNVector3(0.24, 0.18, -0.05)
             let armR = SCNNode(geometry: wingArmGeo)
             armR.eulerAngles = SCNVector3(0, 0, -Float.pi / 3)
             armR.position = SCNVector3(0.16, 0.1, 0)
@@ -236,72 +497,86 @@ public class Pet3DCharacterBuilder {
             rightWing = rw
         }
 
-        // Tail
+        // 8. Multi-Segment Tail ending in Dragon Spade
         let tailRoot = SCNNode()
         tailRoot.position = SCNVector3(0, -0.15, -0.28)
         body.addChildNode(tailRoot)
 
         var tailSegs: [SCNNode] = []
         var prevNode = tailRoot
-        for i in 0..<3 {
-            let segGeo = SCNCone(topRadius: CGFloat(0.08 - (Double(i) * 0.02)), bottomRadius: CGFloat(0.12 - (Double(i) * 0.02)), height: 0.24)
+        for i in 0..<4 {
+            let topR = CGFloat(0.08 - (Double(i) * 0.015))
+            let botR = CGFloat(0.11 - (Double(i) * 0.015))
+            let segGeo = SCNCone(topRadius: topR, bottomRadius: botR, height: 0.20)
             segGeo.materials = [primaryMat]
             let seg = SCNNode(geometry: segGeo)
-            seg.position = SCNVector3(0, -0.08, -0.16)
-            seg.eulerAngles = SCNVector3(Float.pi / 3, 0, 0)
+            seg.position = SCNVector3(0, -0.06, -0.14)
+            seg.eulerAngles = SCNVector3(Float.pi / 3.2, 0, 0)
             prevNode.addChildNode(seg)
             tailSegs.append(seg)
             prevNode = seg
         }
+
         // Tail spade tip
-        let spadeGeo = SCNPyramid(width: 0.14, height: 0.22, length: 0.14)
+        let spadeGeo = SCNPyramid(width: 0.15, height: 0.24, length: 0.15)
         spadeGeo.materials = [hornMat]
         let spade = SCNNode(geometry: spadeGeo)
-        spade.position = SCNVector3(0, -0.12, -0.08)
+        spade.position = SCNVector3(0, -0.10, -0.08)
         spade.eulerAngles = SCNVector3(-Float.pi / 2, 0, 0)
         prevNode.addChildNode(spade)
 
-        // 4 Legs
-        let legGeo = SCNCapsule(capRadius: 0.065, height: 0.28)
-        legGeo.materials = [primaryMat]
-        let footGeo = SCNBox(width: 0.11, height: 0.05, length: 0.15, chamferRadius: 0.02)
-        footGeo.materials = [primaryMat]
+        // 9. Articulated 4-Leg Limb Hierarchy (Requirements 5 & 7)
+        let flLeg = makeArticulatedLeg(mat: primaryMat, clawMat: clawMat, upperLength: 0.15, lowerLength: 0.14, radius: 0.055, addClaws: true)
+        flLeg.upperLegNode.position = SCNVector3(-0.20, -0.04, 0.16)
+        body.addChildNode(flLeg.upperLegNode)
 
-        func makeLeg(x: Float, y: Float, z: Float) -> SCNNode {
-            let leg = SCNNode()
-            leg.position = SCNVector3(x, y, z)
-            let upper = SCNNode(geometry: legGeo)
-            upper.position = SCNVector3(0, -0.12, 0)
-            leg.addChildNode(upper)
-            let foot = SCNNode(geometry: footGeo)
-            foot.position = SCNVector3(0, -0.24, 0.04)
-            leg.addChildNode(foot)
-            body.addChildNode(leg)
-            return leg
-        }
+        let frLeg = makeArticulatedLeg(mat: primaryMat, clawMat: clawMat, upperLength: 0.15, lowerLength: 0.14, radius: 0.055, addClaws: true)
+        frLeg.upperLegNode.position = SCNVector3(0.20, -0.04, 0.16)
+        body.addChildNode(frLeg.upperLegNode)
 
-        let fl = makeLeg(x: -0.22, y: -0.08, z: 0.16)
-        let fr = makeLeg(x: 0.22, y: -0.08, z: 0.16)
-        let bl = makeLeg(x: -0.22, y: -0.14, z: -0.18)
-        let br = makeLeg(x: 0.22, y: -0.14, z: -0.18)
+        let blLeg = makeArticulatedLeg(mat: primaryMat, clawMat: clawMat, upperLength: 0.16, lowerLength: 0.15, radius: 0.060, addClaws: true)
+        blLeg.upperLegNode.position = SCNVector3(-0.20, -0.08, -0.18)
+        body.addChildNode(blLeg.upperLegNode)
 
-        // Accessory
+        let brLeg = makeArticulatedLeg(mat: primaryMat, clawMat: clawMat, upperLength: 0.16, lowerLength: 0.15, radius: 0.060, addClaws: true)
+        brLeg.upperLegNode.position = SCNVector3(0.20, -0.08, -0.18)
+        body.addChildNode(brLeg.upperLegNode)
+
         let accNode = buildAccessory(accessory, headNode: head)
 
         return Pet3DRig(
             rootNode: root,
             bodyNode: body,
+            neckNode: neck,
             headNode: head,
-            leftEyeNode: leftEye,
-            rightEyeNode: rightEye,
+            leftEyeNode: leftEyeComp.eyeNode,
+            rightEyeNode: rightEyeComp.eyeNode,
+            leftPupilNode: leftEyeComp.pupilNode,
+            rightPupilNode: rightEyeComp.pupilNode,
+            leftUpperLid: leftEyeComp.upperLidNode,
+            rightUpperLid: rightEyeComp.upperLidNode,
+            leftLowerLid: leftEyeComp.lowerLidNode,
+            rightLowerLid: rightEyeComp.lowerLidNode,
+            jawNode: jawComp.jawNode,
+            tongueNode: jawComp.tongueNode,
+            upperTeethNode: upperTeeth,
+            lowerTeethNode: jawComp.teethNode,
             tailNode: tailRoot,
             tailSegments: tailSegs,
             leftWingNode: leftWing,
             rightWingNode: rightWing,
-            frontLeftLeg: fl,
-            frontRightLeg: fr,
-            backLeftLeg: bl,
-            backRightLeg: br,
+            frontLeftLeg: flLeg.upperLegNode,
+            frontLeftShin: flLeg.shinNode,
+            frontLeftPaw: flLeg.pawNode,
+            frontRightLeg: frLeg.upperLegNode,
+            frontRightShin: frLeg.shinNode,
+            frontRightPaw: frLeg.pawNode,
+            backLeftLeg: blLeg.upperLegNode,
+            backLeftShin: blLeg.shinNode,
+            backLeftPaw: blLeg.pawNode,
+            backRightLeg: brLeg.upperLegNode,
+            backRightShin: brLeg.shinNode,
+            backRightPaw: brLeg.pawNode,
             hornsNode: hornsNode,
             accessoriesNode: accNode
         )
@@ -318,9 +593,10 @@ public class Pet3DCharacterBuilder {
         let innerEarMat = pbrMaterial(color: NSColor(red: 0.98, green: 0.65, blue: 0.78, alpha: 1.0), roughness: 0.6)
         let eyeMat = pbrMaterial(color: NSColor(red: 0.2, green: 0.85, blue: 0.6, alpha: 1.0), roughness: 0.1, emission: NSColor(red: 0.05, green: 0.3, blue: 0.2, alpha: 1.0))
         let pupilMat = pbrMaterial(color: NSColor.black, roughness: 0.1)
+        let clawMat = pbrMaterial(color: NSColor(white: 0.95, alpha: 1.0), roughness: 0.3)
 
-        // Body
-        let torsoGeo = SCNCapsule(capRadius: 0.24, height: 0.58)
+        // Torso
+        let torsoGeo = SCNCapsule(capRadius: 0.23, height: 0.58)
         torsoGeo.materials = [furMat]
         let torsoNode = SCNNode(geometry: torsoGeo)
         torsoNode.eulerAngles = SCNVector3(Float.pi / 2.3, 0, 0)
@@ -359,14 +635,19 @@ public class Pet3DCharacterBuilder {
         rightEar.addChildNode(inR)
         head.addChildNode(rightEar)
 
-        // Eyes
-        let leftEye = makeRoundEye(eyeMat: eyeMat, pupilMat: pupilMat)
-        leftEye.position = SCNVector3(-0.11, 0.04, 0.18)
-        head.addChildNode(leftEye)
+        // Articulated Jaw
+        let jawComp = makeArticulatedJaw(primaryMat: furMat, length: 0.16, width: 0.13)
+        jawComp.jawNode.position = SCNVector3(0, -0.08, 0.12)
+        head.addChildNode(jawComp.jawNode)
 
-        let rightEye = makeRoundEye(eyeMat: eyeMat, pupilMat: pupilMat)
-        rightEye.position = SCNVector3(0.11, 0.04, 0.18)
-        head.addChildNode(rightEye)
+        // Facial Eyes with Eyelids
+        let leftEyeComp = makeFacialEye(eyeMat: eyeMat, pupilMat: pupilMat, lidMat: furMat, radius: 0.052, isDragonPupil: false)
+        leftEyeComp.eyeNode.position = SCNVector3(-0.11, 0.04, 0.18)
+        head.addChildNode(leftEyeComp.eyeNode)
+
+        let rightEyeComp = makeFacialEye(eyeMat: eyeMat, pupilMat: pupilMat, lidMat: furMat, radius: 0.052, isDragonPupil: false)
+        rightEyeComp.eyeNode.position = SCNVector3(0.11, 0.04, 0.18)
+        head.addChildNode(rightEyeComp.eyeNode)
 
         // Tail
         let tailRoot = SCNNode()
@@ -386,23 +667,22 @@ public class Pet3DCharacterBuilder {
             prevNode = seg
         }
 
-        // 4 Legs
-        let legGeo = SCNCapsule(capRadius: 0.055, height: 0.24)
-        legGeo.materials = [furMat]
-        func makeLeg(x: Float, y: Float, z: Float) -> SCNNode {
-            let leg = SCNNode()
-            leg.position = SCNVector3(x, y, z)
-            let cylinder = SCNNode(geometry: legGeo)
-            cylinder.position = SCNVector3(0, -0.1, 0)
-            leg.addChildNode(cylinder)
-            body.addChildNode(leg)
-            return leg
-        }
+        // Articulated Legs
+        let fl = makeArticulatedLeg(mat: furMat, clawMat: clawMat, upperLength: 0.13, lowerLength: 0.12, radius: 0.048, addClaws: false)
+        fl.upperLegNode.position = SCNVector3(-0.16, -0.06, 0.14)
+        body.addChildNode(fl.upperLegNode)
 
-        let fl = makeLeg(x: -0.16, y: -0.06, z: 0.14)
-        let fr = makeLeg(x: 0.16, y: -0.06, z: 0.14)
-        let bl = makeLeg(x: -0.16, y: -0.08, z: -0.16)
-        let br = makeLeg(x: 0.16, y: -0.08, z: -0.16)
+        let fr = makeArticulatedLeg(mat: furMat, clawMat: clawMat, upperLength: 0.13, lowerLength: 0.12, radius: 0.048, addClaws: false)
+        fr.upperLegNode.position = SCNVector3(0.16, -0.06, 0.14)
+        body.addChildNode(fr.upperLegNode)
+
+        let bl = makeArticulatedLeg(mat: furMat, clawMat: clawMat, upperLength: 0.14, lowerLength: 0.13, radius: 0.052, addClaws: false)
+        bl.upperLegNode.position = SCNVector3(-0.16, -0.08, -0.16)
+        body.addChildNode(bl.upperLegNode)
+
+        let br = makeArticulatedLeg(mat: furMat, clawMat: clawMat, upperLength: 0.14, lowerLength: 0.13, radius: 0.052, addClaws: false)
+        br.upperLegNode.position = SCNVector3(0.16, -0.08, -0.16)
+        body.addChildNode(br.upperLegNode)
 
         let accNode = buildAccessory(accessory, headNode: head)
 
@@ -410,16 +690,32 @@ public class Pet3DCharacterBuilder {
             rootNode: root,
             bodyNode: body,
             headNode: head,
-            leftEyeNode: leftEye,
-            rightEyeNode: rightEye,
+            leftEyeNode: leftEyeComp.eyeNode,
+            rightEyeNode: rightEyeComp.eyeNode,
+            leftPupilNode: leftEyeComp.pupilNode,
+            rightPupilNode: rightEyeComp.pupilNode,
+            leftUpperLid: leftEyeComp.upperLidNode,
+            rightUpperLid: rightEyeComp.upperLidNode,
+            leftLowerLid: leftEyeComp.lowerLidNode,
+            rightLowerLid: rightEyeComp.lowerLidNode,
+            jawNode: jawComp.jawNode,
+            tongueNode: jawComp.tongueNode,
             leftEarNode: leftEar,
             rightEarNode: rightEar,
             tailNode: tailRoot,
             tailSegments: tailSegs,
-            frontLeftLeg: fl,
-            frontRightLeg: fr,
-            backLeftLeg: bl,
-            backRightLeg: br,
+            frontLeftLeg: fl.upperLegNode,
+            frontLeftShin: fl.shinNode,
+            frontLeftPaw: fl.pawNode,
+            frontRightLeg: fr.upperLegNode,
+            frontRightShin: fr.shinNode,
+            frontRightPaw: fr.pawNode,
+            backLeftLeg: bl.upperLegNode,
+            backLeftShin: bl.shinNode,
+            backLeftPaw: bl.pawNode,
+            backRightLeg: br.upperLegNode,
+            backRightShin: br.shinNode,
+            backRightPaw: br.pawNode,
             accessoriesNode: accNode
         )
     }
@@ -436,21 +732,18 @@ public class Pet3DCharacterBuilder {
         let blackMat = pbrMaterial(color: NSColor(red: 0.15, green: 0.15, blue: 0.15, alpha: 1.0), roughness: 0.5)
         let eyeMat = pbrMaterial(color: NSColor(red: 0.95, green: 0.75, blue: 0.2, alpha: 1.0), roughness: 0.1)
 
-        // Body
         let torsoGeo = SCNCapsule(capRadius: 0.22, height: 0.6)
         torsoGeo.materials = [orangeMat]
         let torsoNode = SCNNode(geometry: torsoGeo)
         torsoNode.eulerAngles = SCNVector3(Float.pi / 2.3, 0, 0)
         body.addChildNode(torsoNode)
 
-        // White chest fluff
         let chestGeo = SCNSphere(radius: 0.18)
         chestGeo.materials = [whiteMat]
         let chestNode = SCNNode(geometry: chestGeo)
         chestNode.position = SCNVector3(0, 0.06, 0.16)
         body.addChildNode(chestNode)
 
-        // Head
         let head = SCNNode()
         head.position = SCNVector3(0, 0.34, 0.26)
         body.addChildNode(head)
@@ -459,7 +752,6 @@ public class Pet3DCharacterBuilder {
         headGeo.materials = [orangeMat]
         head.addChildNode(SCNNode(geometry: headGeo))
 
-        // Pointed Muzzle
         let snoutGeo = SCNCone(topRadius: 0.03, bottomRadius: 0.11, height: 0.24)
         snoutGeo.materials = [whiteMat]
         let snout = SCNNode(geometry: snoutGeo)
@@ -473,7 +765,6 @@ public class Pet3DCharacterBuilder {
         nose.position = SCNVector3(0, -0.04, 0.32)
         head.addChildNode(nose)
 
-        // Large Fox Ears
         let earGeo = SCNCone(topRadius: 0.015, bottomRadius: 0.09, height: 0.25)
         earGeo.materials = [orangeMat]
         let innerEarGeo = SCNCone(topRadius: 0.01, bottomRadius: 0.06, height: 0.2)
@@ -497,16 +788,20 @@ public class Pet3DCharacterBuilder {
         rightEar.addChildNode(inR)
         head.addChildNode(rightEar)
 
-        // Eyes
-        let leftEye = makeRoundEye(eyeMat: eyeMat, pupilMat: blackMat)
-        leftEye.position = SCNVector3(-0.11, 0.05, 0.17)
-        head.addChildNode(leftEye)
+        // Articulated Fox Jaw
+        let jawComp = makeArticulatedJaw(primaryMat: whiteMat, length: 0.18, width: 0.11)
+        jawComp.jawNode.position = SCNVector3(0, -0.07, 0.14)
+        head.addChildNode(jawComp.jawNode)
 
-        let rightEye = makeRoundEye(eyeMat: eyeMat, pupilMat: blackMat)
-        rightEye.position = SCNVector3(0.11, 0.05, 0.17)
-        head.addChildNode(rightEye)
+        // Eyes with lids
+        let leftEyeComp = makeFacialEye(eyeMat: eyeMat, pupilMat: blackMat, lidMat: orangeMat, radius: 0.052, isDragonPupil: false)
+        leftEyeComp.eyeNode.position = SCNVector3(-0.11, 0.05, 0.17)
+        head.addChildNode(leftEyeComp.eyeNode)
 
-        // Massive Bushy Tail with White Tip
+        let rightEyeComp = makeFacialEye(eyeMat: eyeMat, pupilMat: blackMat, lidMat: orangeMat, radius: 0.052, isDragonPupil: false)
+        rightEyeComp.eyeNode.position = SCNVector3(0.11, 0.05, 0.17)
+        head.addChildNode(rightEyeComp.eyeNode)
+
         let tailRoot = SCNNode()
         tailRoot.position = SCNVector3(0, -0.04, -0.28)
         body.addChildNode(tailRoot)
@@ -525,23 +820,21 @@ public class Pet3DCharacterBuilder {
         tailTip.eulerAngles = SCNVector3(Float.pi / 3, 0, 0)
         tailRoot.addChildNode(tailTip)
 
-        // 4 Legs with Black Socks
-        let legGeo = SCNCapsule(capRadius: 0.05, height: 0.28)
-        legGeo.materials = [blackMat]
-        func makeLeg(x: Float, y: Float, z: Float) -> SCNNode {
-            let leg = SCNNode()
-            leg.position = SCNVector3(x, y, z)
-            let cylinder = SCNNode(geometry: legGeo)
-            cylinder.position = SCNVector3(0, -0.12, 0)
-            leg.addChildNode(cylinder)
-            body.addChildNode(leg)
-            return leg
-        }
+        let fl = makeArticulatedLeg(mat: blackMat, clawMat: blackMat, upperLength: 0.14, lowerLength: 0.14, radius: 0.046, addClaws: false)
+        fl.upperLegNode.position = SCNVector3(-0.16, -0.06, 0.14)
+        body.addChildNode(fl.upperLegNode)
 
-        let fl = makeLeg(x: -0.16, y: -0.06, z: 0.14)
-        let fr = makeLeg(x: 0.16, y: -0.06, z: 0.14)
-        let bl = makeLeg(x: -0.16, y: -0.08, z: -0.16)
-        let br = makeLeg(x: 0.16, y: -0.08, z: -0.16)
+        let fr = makeArticulatedLeg(mat: blackMat, clawMat: blackMat, upperLength: 0.14, lowerLength: 0.14, radius: 0.046, addClaws: false)
+        fr.upperLegNode.position = SCNVector3(0.16, -0.06, 0.14)
+        body.addChildNode(fr.upperLegNode)
+
+        let bl = makeArticulatedLeg(mat: blackMat, clawMat: blackMat, upperLength: 0.15, lowerLength: 0.14, radius: 0.050, addClaws: false)
+        bl.upperLegNode.position = SCNVector3(-0.16, -0.08, -0.16)
+        body.addChildNode(bl.upperLegNode)
+
+        let br = makeArticulatedLeg(mat: blackMat, clawMat: blackMat, upperLength: 0.15, lowerLength: 0.14, radius: 0.050, addClaws: false)
+        br.upperLegNode.position = SCNVector3(0.16, -0.08, -0.16)
+        body.addChildNode(br.upperLegNode)
 
         let accNode = buildAccessory(accessory, headNode: head)
 
@@ -549,15 +842,31 @@ public class Pet3DCharacterBuilder {
             rootNode: root,
             bodyNode: body,
             headNode: head,
-            leftEyeNode: leftEye,
-            rightEyeNode: rightEye,
+            leftEyeNode: leftEyeComp.eyeNode,
+            rightEyeNode: rightEyeComp.eyeNode,
+            leftPupilNode: leftEyeComp.pupilNode,
+            rightPupilNode: rightEyeComp.pupilNode,
+            leftUpperLid: leftEyeComp.upperLidNode,
+            rightUpperLid: rightEyeComp.upperLidNode,
+            leftLowerLid: leftEyeComp.lowerLidNode,
+            rightLowerLid: rightEyeComp.lowerLidNode,
+            jawNode: jawComp.jawNode,
+            tongueNode: jawComp.tongueNode,
             leftEarNode: leftEar,
             rightEarNode: rightEar,
             tailNode: tailRoot,
-            frontLeftLeg: fl,
-            frontRightLeg: fr,
-            backLeftLeg: bl,
-            backRightLeg: br,
+            frontLeftLeg: fl.upperLegNode,
+            frontLeftShin: fl.shinNode,
+            frontLeftPaw: fl.pawNode,
+            frontRightLeg: fr.upperLegNode,
+            frontRightShin: fr.shinNode,
+            frontRightPaw: fr.pawNode,
+            backLeftLeg: bl.upperLegNode,
+            backLeftShin: bl.shinNode,
+            backLeftPaw: bl.pawNode,
+            backRightLeg: br.upperLegNode,
+            backRightShin: br.shinNode,
+            backRightPaw: br.pawNode,
             accessoriesNode: accNode
         )
     }
@@ -572,15 +881,14 @@ public class Pet3DCharacterBuilder {
         let coatMat = pbrMaterial(color: NSColor(red: 0.96, green: 0.65, blue: 0.78, alpha: 1.0), roughness: 0.6)
         let innerPinkMat = pbrMaterial(color: NSColor(red: 1.0, green: 0.82, blue: 0.88, alpha: 1.0), roughness: 0.65)
         let darkEyeMat = pbrMaterial(color: NSColor(red: 0.1, green: 0.1, blue: 0.15, alpha: 1.0), roughness: 0.1)
+        let pupilMat = pbrMaterial(color: NSColor.black, roughness: 0.05)
 
-        // Plump Teardrop Body
         let torsoGeo = SCNSphere(radius: 0.28)
         torsoGeo.materials = [coatMat]
         let torsoNode = SCNNode(geometry: torsoGeo)
         torsoNode.scale = SCNVector3(0.95, 1.1, 1.05)
         body.addChildNode(torsoNode)
 
-        // Head
         let head = SCNNode()
         head.position = SCNVector3(0, 0.32, 0.18)
         body.addChildNode(head)
@@ -589,74 +897,74 @@ public class Pet3DCharacterBuilder {
         headGeo.materials = [coatMat]
         head.addChildNode(SCNNode(geometry: headGeo))
 
-        // Nose
         let noseGeo = SCNSphere(radius: 0.025)
         noseGeo.materials = [innerPinkMat]
         let nose = SCNNode(geometry: noseGeo)
         nose.position = SCNVector3(0, 0, 0.22)
         head.addChildNode(nose)
 
-        // Long Tall Rabbit Ears
+        // Articulated Rabbit Jaw
+        let jawComp = makeArticulatedJaw(primaryMat: coatMat, length: 0.14, width: 0.11)
+        jawComp.jawNode.position = SCNVector3(0, -0.06, 0.12)
+        head.addChildNode(jawComp.jawNode)
+
+        // Rabbit Ears
         let earGeo = SCNCapsule(capRadius: 0.045, height: 0.42)
         earGeo.materials = [coatMat]
-        let innerEarGeo = SCNCapsule(capRadius: 0.03, height: 0.34)
-        innerEarGeo.materials = [innerPinkMat]
+        let inEarGeo = SCNCapsule(capRadius: 0.028, height: 0.34)
+        inEarGeo.materials = [innerPinkMat]
 
         let leftEar = SCNNode()
-        leftEar.position = SCNVector3(-0.11, 0.28, 0.0)
+        leftEar.position = SCNVector3(-0.11, 0.28, 0)
         leftEar.eulerAngles = SCNVector3(0, 0, -Float.pi / 16)
         leftEar.addChildNode(SCNNode(geometry: earGeo))
-        let inL = SCNNode(geometry: innerEarGeo)
+        let inL = SCNNode(geometry: inEarGeo)
         inL.position = SCNVector3(0, 0, 0.02)
         leftEar.addChildNode(inL)
         head.addChildNode(leftEar)
 
         let rightEar = SCNNode()
-        rightEar.position = SCNVector3(0.11, 0.28, 0.0)
+        rightEar.position = SCNVector3(0.11, 0.28, 0)
         rightEar.eulerAngles = SCNVector3(0, 0, Float.pi / 16)
         rightEar.addChildNode(SCNNode(geometry: earGeo))
-        let inR = SCNNode(geometry: innerEarGeo)
+        let inR = SCNNode(geometry: inEarGeo)
         inR.position = SCNVector3(0, 0, 0.02)
         rightEar.addChildNode(inR)
         head.addChildNode(rightEar)
 
-        // Eyes
-        let leftEye = SCNNode(geometry: SCNSphere(radius: 0.045))
-        leftEye.geometry?.materials = [darkEyeMat]
-        leftEye.position = SCNVector3(-0.12, 0.04, 0.16)
-        head.addChildNode(leftEye)
+        // Doe Eyes with Eyelids
+        let leftEyeComp = makeFacialEye(eyeMat: darkEyeMat, pupilMat: pupilMat, lidMat: coatMat, radius: 0.055, isDragonPupil: false)
+        leftEyeComp.eyeNode.position = SCNVector3(-0.12, 0.05, 0.16)
+        head.addChildNode(leftEyeComp.eyeNode)
 
-        let rightEye = SCNNode(geometry: SCNSphere(radius: 0.045))
-        rightEye.geometry?.materials = [darkEyeMat]
-        rightEye.position = SCNVector3(0.12, 0.04, 0.16)
-        head.addChildNode(rightEye)
+        let rightEyeComp = makeFacialEye(eyeMat: darkEyeMat, pupilMat: pupilMat, lidMat: coatMat, radius: 0.055, isDragonPupil: false)
+        rightEyeComp.eyeNode.position = SCNVector3(0.12, 0.05, 0.16)
+        head.addChildNode(rightEyeComp.eyeNode)
 
-        // Fluffy Cotton Puff Tail
-        let tailRoot = SCNNode(geometry: SCNSphere(radius: 0.08))
-        tailRoot.geometry?.materials = [pbrMaterial(color: .white, roughness: 0.8)]
-        tailRoot.position = SCNVector3(0, -0.06, -0.28)
+        // Cottontail
+        let tailRoot = SCNNode()
+        tailRoot.position = SCNVector3(0, -0.1, -0.28)
+        let puffGeo = SCNSphere(radius: 0.08)
+        puffGeo.materials = [innerPinkMat]
+        tailRoot.addChildNode(SCNNode(geometry: puffGeo))
         body.addChildNode(tailRoot)
 
-        // Hopping Feet
-        let frontPawGeo = SCNCapsule(capRadius: 0.045, height: 0.16)
-        frontPawGeo.materials = [coatMat]
-        let hindFootGeo = SCNCapsule(capRadius: 0.06, height: 0.28)
-        hindFootGeo.materials = [coatMat]
+        // Hopping Legs
+        let fl = makeArticulatedLeg(mat: coatMat, clawMat: coatMat, upperLength: 0.10, lowerLength: 0.10, radius: 0.042, addClaws: false)
+        fl.upperLegNode.position = SCNVector3(-0.12, -0.10, 0.14)
+        body.addChildNode(fl.upperLegNode)
 
-        func makePaw(x: Float, y: Float, z: Float, geo: SCNGeometry, angleX: Float = 0) -> SCNNode {
-            let n = SCNNode()
-            n.position = SCNVector3(x, y, z)
-            let geomNode = SCNNode(geometry: geo)
-            geomNode.eulerAngles = SCNVector3(angleX, 0, 0)
-            n.addChildNode(geomNode)
-            body.addChildNode(n)
-            return n
-        }
+        let fr = makeArticulatedLeg(mat: coatMat, clawMat: coatMat, upperLength: 0.10, lowerLength: 0.10, radius: 0.042, addClaws: false)
+        fr.upperLegNode.position = SCNVector3(0.12, -0.10, 0.14)
+        body.addChildNode(fr.upperLegNode)
 
-        let fl = makePaw(x: -0.12, y: -0.18, z: 0.12, geo: frontPawGeo)
-        let fr = makePaw(x: 0.12, y: -0.18, z: 0.12, geo: frontPawGeo)
-        let bl = makePaw(x: -0.18, y: -0.16, z: -0.1, geo: hindFootGeo, angleX: Float.pi / 2.5)
-        let br = makePaw(x: 0.18, y: -0.16, z: -0.1, geo: hindFootGeo, angleX: Float.pi / 2.5)
+        let bl = makeArticulatedLeg(mat: coatMat, clawMat: coatMat, upperLength: 0.14, lowerLength: 0.14, radius: 0.055, addClaws: false)
+        bl.upperLegNode.position = SCNVector3(-0.15, -0.08, -0.12)
+        body.addChildNode(bl.upperLegNode)
+
+        let br = makeArticulatedLeg(mat: coatMat, clawMat: coatMat, upperLength: 0.14, lowerLength: 0.14, radius: 0.055, addClaws: false)
+        br.upperLegNode.position = SCNVector3(0.15, -0.08, -0.12)
+        body.addChildNode(br.upperLegNode)
 
         let accNode = buildAccessory(accessory, headNode: head)
 
@@ -664,15 +972,31 @@ public class Pet3DCharacterBuilder {
             rootNode: root,
             bodyNode: body,
             headNode: head,
-            leftEyeNode: leftEye,
-            rightEyeNode: rightEye,
+            leftEyeNode: leftEyeComp.eyeNode,
+            rightEyeNode: rightEyeComp.eyeNode,
+            leftPupilNode: leftEyeComp.pupilNode,
+            rightPupilNode: rightEyeComp.pupilNode,
+            leftUpperLid: leftEyeComp.upperLidNode,
+            rightUpperLid: rightEyeComp.upperLidNode,
+            leftLowerLid: leftEyeComp.lowerLidNode,
+            rightLowerLid: rightEyeComp.lowerLidNode,
+            jawNode: jawComp.jawNode,
+            tongueNode: jawComp.tongueNode,
             leftEarNode: leftEar,
             rightEarNode: rightEar,
             tailNode: tailRoot,
-            frontLeftLeg: fl,
-            frontRightLeg: fr,
-            backLeftLeg: bl,
-            backRightLeg: br,
+            frontLeftLeg: fl.upperLegNode,
+            frontLeftShin: fl.shinNode,
+            frontLeftPaw: fl.pawNode,
+            frontRightLeg: fr.upperLegNode,
+            frontRightShin: fr.shinNode,
+            frontRightPaw: fr.pawNode,
+            backLeftLeg: bl.upperLegNode,
+            backLeftShin: bl.shinNode,
+            backLeftPaw: bl.pawNode,
+            backRightLeg: br.upperLegNode,
+            backRightShin: br.shinNode,
+            backRightPaw: br.pawNode,
             accessoriesNode: accNode
         )
     }
@@ -684,61 +1008,63 @@ public class Pet3DCharacterBuilder {
         body.position = SCNVector3(0, 0.28, 0)
         root.addChildNode(body)
 
-        let metalMat = pbrMaterial(color: NSColor(red: 0.85, green: 0.88, blue: 0.92, alpha: 1.0), roughness: 0.18, metalness: 0.85)
-        let cyanEmission = pbrMaterial(color: NSColor.cyan, roughness: 0.1, metalness: 0.2, emission: NSColor.cyan)
-        let jointMat = pbrMaterial(color: NSColor(red: 0.2, green: 0.22, blue: 0.26, alpha: 1.0), roughness: 0.35, metalness: 0.6)
+        let chassisMat = pbrMaterial(color: NSColor(white: 0.88, alpha: 1.0), roughness: 0.25, metalness: 0.8)
+        let darkMetalMat = pbrMaterial(color: NSColor(white: 0.22, alpha: 1.0), roughness: 0.35, metalness: 0.6)
+        let neonBlueMat = pbrMaterial(color: NSColor.cyan, roughness: 0.1, emission: NSColor.cyan)
+        let pupilMat = pbrMaterial(color: NSColor.white, roughness: 0.05, emission: NSColor.white)
 
-        // Chassis Sphere
-        let chassisGeo = SCNSphere(radius: 0.26)
-        chassisGeo.materials = [metalMat]
-        body.addChildNode(SCNNode(geometry: chassisGeo))
+        let torsoGeo = SCNBox(width: 0.36, height: 0.42, length: 0.28, chamferRadius: 0.04)
+        torsoGeo.materials = [chassisMat]
+        body.addChildNode(SCNNode(geometry: torsoGeo))
 
-        // Head Floating Unit
         let head = SCNNode()
-        head.position = SCNVector3(0, 0.35, 0.05)
+        head.position = SCNVector3(0, 0.36, 0)
         body.addChildNode(head)
 
-        let headGeo = SCNBox(width: 0.38, height: 0.28, length: 0.32, chamferRadius: 0.06)
-        headGeo.materials = [metalMat]
+        let headGeo = SCNBox(width: 0.34, height: 0.26, length: 0.28, chamferRadius: 0.035)
+        headGeo.materials = [chassisMat]
         head.addChildNode(SCNNode(geometry: headGeo))
 
         // Visor Screen
-        let visorGeo = SCNBox(width: 0.32, height: 0.14, length: 0.04, chamferRadius: 0.03)
-        visorGeo.materials = [cyanEmission]
+        let visorGeo = SCNBox(width: 0.28, height: 0.12, length: 0.02, chamferRadius: 0.01)
+        visorGeo.materials = [darkMetalMat]
         let visor = SCNNode(geometry: visorGeo)
-        visor.position = SCNVector3(0, 0.02, 0.16)
+        visor.position = SCNVector3(0, 0.02, 0.14)
         head.addChildNode(visor)
 
-        // Antenna Rod & Glowing Tip
-        let antGeo = SCNCylinder(radius: 0.015, height: 0.22)
-        antGeo.materials = [jointMat]
-        let antTipGeo = SCNSphere(radius: 0.04)
-        antTipGeo.materials = [cyanEmission]
+        // Articulated Robotic Jaw Visor
+        let jawComp = makeArticulatedJaw(primaryMat: darkMetalMat, length: 0.12, width: 0.24)
+        jawComp.jawNode.position = SCNVector3(0, -0.08, 0.10)
+        head.addChildNode(jawComp.jawNode)
 
-        let ant = SCNNode()
-        ant.position = SCNVector3(0, 0.22, 0)
-        ant.addChildNode(SCNNode(geometry: antGeo))
-        let tip = SCNNode(geometry: antTipGeo)
-        tip.position = SCNVector3(0, 0.12, 0)
-        ant.addChildNode(tip)
-        head.addChildNode(ant)
+        // Glowing Optic Eyes with Shutter Lids
+        let leftEyeComp = makeFacialEye(eyeMat: neonBlueMat, pupilMat: pupilMat, lidMat: darkMetalMat, radius: 0.042, isDragonPupil: false)
+        leftEyeComp.eyeNode.position = SCNVector3(-0.075, 0.02, 0.15)
+        head.addChildNode(leftEyeComp.eyeNode)
 
-        // Floating Magnetic Limbs
-        let limbGeo = SCNCapsule(capRadius: 0.055, height: 0.22)
-        limbGeo.materials = [metalMat]
+        let rightEyeComp = makeFacialEye(eyeMat: neonBlueMat, pupilMat: pupilMat, lidMat: darkMetalMat, radius: 0.042, isDragonPupil: false)
+        rightEyeComp.eyeNode.position = SCNVector3(0.075, 0.02, 0.15)
+        head.addChildNode(rightEyeComp.eyeNode)
 
-        func makeArm(x: Float, y: Float, z: Float) -> SCNNode {
-            let arm = SCNNode()
-            arm.position = SCNVector3(x, y, z)
-            arm.addChildNode(SCNNode(geometry: limbGeo))
-            body.addChildNode(arm)
-            return arm
-        }
+        // Antenna
+        let antNode = SCNNode()
+        let stalk = SCNNode(geometry: SCNCylinder(radius: 0.008, height: 0.14))
+        stalk.geometry?.materials = [darkMetalMat]
+        stalk.position = SCNVector3(0, 0.20, 0)
+        antNode.addChildNode(stalk)
+        let orb = SCNNode(geometry: SCNSphere(radius: 0.03))
+        orb.geometry?.materials = [neonBlueMat]
+        orb.position = SCNVector3(0, 0.28, 0)
+        antNode.addChildNode(orb)
+        head.addChildNode(antNode)
 
-        let fl = makeArm(x: -0.28, y: 0.02, z: 0)
-        let fr = makeArm(x: 0.28, y: 0.02, z: 0)
-        let bl = makeArm(x: -0.16, y: -0.24, z: 0)
-        let br = makeArm(x: 0.16, y: -0.24, z: 0)
+        let fl = makeArticulatedLeg(mat: chassisMat, clawMat: darkMetalMat, upperLength: 0.15, lowerLength: 0.14, radius: 0.044, addClaws: false)
+        fl.upperLegNode.position = SCNVector3(-0.11, -0.22, 0)
+        body.addChildNode(fl.upperLegNode)
+
+        let fr = makeArticulatedLeg(mat: chassisMat, clawMat: darkMetalMat, upperLength: 0.15, lowerLength: 0.14, radius: 0.044, addClaws: false)
+        fr.upperLegNode.position = SCNVector3(0.11, -0.22, 0)
+        body.addChildNode(fr.upperLegNode)
 
         let accNode = buildAccessory(accessory, headNode: head)
 
@@ -746,10 +1072,22 @@ public class Pet3DCharacterBuilder {
             rootNode: root,
             bodyNode: body,
             headNode: head,
-            frontLeftLeg: fl,
-            frontRightLeg: fr,
-            backLeftLeg: bl,
-            backRightLeg: br,
+            leftEyeNode: leftEyeComp.eyeNode,
+            rightEyeNode: rightEyeComp.eyeNode,
+            leftPupilNode: leftEyeComp.pupilNode,
+            rightPupilNode: rightEyeComp.pupilNode,
+            leftUpperLid: leftEyeComp.upperLidNode,
+            rightUpperLid: rightEyeComp.upperLidNode,
+            leftLowerLid: leftEyeComp.lowerLidNode,
+            rightLowerLid: rightEyeComp.lowerLidNode,
+            jawNode: jawComp.jawNode,
+            tongueNode: jawComp.tongueNode,
+            frontLeftLeg: fl.upperLegNode,
+            frontLeftShin: fl.shinNode,
+            frontLeftPaw: fl.pawNode,
+            frontRightLeg: fr.upperLegNode,
+            frontRightShin: fr.shinNode,
+            frontRightPaw: fr.pawNode,
             accessoriesNode: accNode
         )
     }
@@ -758,74 +1096,79 @@ public class Pet3DCharacterBuilder {
     private static func buildRobotCat(accessory: String) -> Pet3DRig {
         let root = SCNNode()
         let body = SCNNode()
-        body.position = SCNVector3(0, 0.26, 0)
+        body.position = SCNVector3(0, 0.27, 0)
         root.addChildNode(body)
 
-        let cyberMat = pbrMaterial(color: NSColor(red: 0.12, green: 0.14, blue: 0.18, alpha: 1.0), roughness: 0.2, metalness: 0.8)
-        let neonGreen = pbrMaterial(color: NSColor(red: 0.1, green: 0.9, blue: 0.4, alpha: 1.0), roughness: 0.1, emission: NSColor(red: 0.1, green: 0.9, blue: 0.4, alpha: 1.0))
+        let metalMat = pbrMaterial(color: NSColor(white: 0.28, alpha: 1.0), roughness: 0.3, metalness: 0.75)
+        let goldMat = pbrMaterial(color: NSColor(red: 1.0, green: 0.8, blue: 0.2, alpha: 1.0), roughness: 0.2, metalness: 0.9)
+        let neonGreen = pbrMaterial(color: NSColor.green, roughness: 0.1, emission: NSColor.green)
+        let pupilMat = pbrMaterial(color: NSColor.black, roughness: 0.05)
 
-        let torsoGeo = SCNCapsule(capRadius: 0.23, height: 0.55)
-        torsoGeo.materials = [cyberMat]
+        let torsoGeo = SCNCapsule(capRadius: 0.21, height: 0.54)
+        torsoGeo.materials = [metalMat]
         let torsoNode = SCNNode(geometry: torsoGeo)
         torsoNode.eulerAngles = SCNVector3(Float.pi / 2.3, 0, 0)
         body.addChildNode(torsoNode)
 
-        // Head
         let head = SCNNode()
         head.position = SCNVector3(0, 0.32, 0.24)
         body.addChildNode(head)
 
-        let headGeo = SCNSphere(radius: 0.22)
-        headGeo.materials = [cyberMat]
+        let headGeo = SCNSphere(radius: 0.21)
+        headGeo.materials = [metalMat]
         head.addChildNode(SCNNode(geometry: headGeo))
 
-        // Visor
-        let visorGeo = SCNBox(width: 0.28, height: 0.08, length: 0.03, chamferRadius: 0.02)
-        visorGeo.materials = [neonGreen]
-        let visor = SCNNode(geometry: visorGeo)
-        visor.position = SCNVector3(0, 0.04, 0.18)
-        head.addChildNode(visor)
-
-        // Cyber Triangular Ears
-        let earGeo = SCNCone(topRadius: 0.01, bottomRadius: 0.07, height: 0.16)
-        earGeo.materials = [neonGreen]
+        let earGeo = SCNPyramid(width: 0.11, height: 0.18, length: 0.08)
+        earGeo.materials = [goldMat]
         let leftEar = SCNNode(geometry: earGeo)
-        leftEar.position = SCNVector3(-0.12, 0.22, 0.0)
-        leftEar.eulerAngles = SCNVector3(0, 0, -Float.pi / 8)
+        leftEar.position = SCNVector3(-0.11, 0.18, 0)
+        leftEar.eulerAngles = SCNVector3(0, 0, -Float.pi / 6)
         head.addChildNode(leftEar)
 
         let rightEar = SCNNode(geometry: earGeo)
-        rightEar.position = SCNVector3(0.12, 0.22, 0.0)
-        rightEar.eulerAngles = SCNVector3(0, 0, Float.pi / 8)
+        rightEar.position = SCNVector3(0.11, 0.18, 0)
+        rightEar.eulerAngles = SCNVector3(0, 0, Float.pi / 6)
         head.addChildNode(rightEar)
 
-        // Cyber Tail
+        // Articulated Cyber Jaw
+        let jawComp = makeArticulatedJaw(primaryMat: metalMat, length: 0.15, width: 0.12)
+        jawComp.jawNode.position = SCNVector3(0, -0.07, 0.11)
+        head.addChildNode(jawComp.jawNode)
+
+        // Optics with Electronic Eyelids
+        let leftEyeComp = makeFacialEye(eyeMat: neonGreen, pupilMat: pupilMat, lidMat: metalMat, radius: 0.048, isDragonPupil: false)
+        leftEyeComp.eyeNode.position = SCNVector3(-0.09, 0.04, 0.17)
+        head.addChildNode(leftEyeComp.eyeNode)
+
+        let rightEyeComp = makeFacialEye(eyeMat: neonGreen, pupilMat: pupilMat, lidMat: metalMat, radius: 0.048, isDragonPupil: false)
+        rightEyeComp.eyeNode.position = SCNVector3(0.09, 0.04, 0.17)
+        head.addChildNode(rightEyeComp.eyeNode)
+
         let tailRoot = SCNNode()
         tailRoot.position = SCNVector3(0, -0.05, -0.26)
         body.addChildNode(tailRoot)
-
-        let tailGeo = SCNCylinder(radius: 0.03, height: 0.34)
-        tailGeo.materials = [neonGreen]
+        let tailGeo = SCNCylinder(radius: 0.02, height: 0.32)
+        tailGeo.materials = [goldMat]
         let tail = SCNNode(geometry: tailGeo)
         tail.position = SCNVector3(0, 0.14, -0.12)
         tail.eulerAngles = SCNVector3(Float.pi / 3, 0, 0)
         tailRoot.addChildNode(tail)
 
-        // 4 Legs
-        let legGeo = SCNCapsule(capRadius: 0.05, height: 0.24)
-        legGeo.materials = [cyberMat]
-        func makeLeg(x: Float, y: Float, z: Float) -> SCNNode {
-            let leg = SCNNode()
-            leg.position = SCNVector3(x, y, z)
-            leg.addChildNode(SCNNode(geometry: legGeo))
-            body.addChildNode(leg)
-            return leg
-        }
+        let fl = makeArticulatedLeg(mat: metalMat, clawMat: goldMat, upperLength: 0.14, lowerLength: 0.13, radius: 0.044, addClaws: true)
+        fl.upperLegNode.position = SCNVector3(-0.15, -0.06, 0.13)
+        body.addChildNode(fl.upperLegNode)
 
-        let fl = makeLeg(x: -0.15, y: -0.06, z: 0.14)
-        let fr = makeLeg(x: 0.15, y: -0.06, z: 0.14)
-        let bl = makeLeg(x: -0.15, y: -0.08, z: -0.16)
-        let br = makeLeg(x: 0.15, y: -0.08, z: -0.16)
+        let fr = makeArticulatedLeg(mat: metalMat, clawMat: goldMat, upperLength: 0.14, lowerLength: 0.13, radius: 0.044, addClaws: true)
+        fr.upperLegNode.position = SCNVector3(0.15, -0.06, 0.13)
+        body.addChildNode(fr.upperLegNode)
+
+        let bl = makeArticulatedLeg(mat: metalMat, clawMat: goldMat, upperLength: 0.14, lowerLength: 0.14, radius: 0.048, addClaws: true)
+        bl.upperLegNode.position = SCNVector3(-0.15, -0.08, -0.15)
+        body.addChildNode(bl.upperLegNode)
+
+        let br = makeArticulatedLeg(mat: metalMat, clawMat: goldMat, upperLength: 0.14, lowerLength: 0.14, radius: 0.048, addClaws: true)
+        br.upperLegNode.position = SCNVector3(0.15, -0.08, -0.15)
+        body.addChildNode(br.upperLegNode)
 
         let accNode = buildAccessory(accessory, headNode: head)
 
@@ -833,13 +1176,31 @@ public class Pet3DCharacterBuilder {
             rootNode: root,
             bodyNode: body,
             headNode: head,
+            leftEyeNode: leftEyeComp.eyeNode,
+            rightEyeNode: rightEyeComp.eyeNode,
+            leftPupilNode: leftEyeComp.pupilNode,
+            rightPupilNode: rightEyeComp.pupilNode,
+            leftUpperLid: leftEyeComp.upperLidNode,
+            rightUpperLid: rightEyeComp.upperLidNode,
+            leftLowerLid: leftEyeComp.lowerLidNode,
+            rightLowerLid: rightEyeComp.lowerLidNode,
+            jawNode: jawComp.jawNode,
+            tongueNode: jawComp.tongueNode,
             leftEarNode: leftEar,
             rightEarNode: rightEar,
             tailNode: tailRoot,
-            frontLeftLeg: fl,
-            frontRightLeg: fr,
-            backLeftLeg: bl,
-            backRightLeg: br,
+            frontLeftLeg: fl.upperLegNode,
+            frontLeftShin: fl.shinNode,
+            frontLeftPaw: fl.pawNode,
+            frontRightLeg: fr.upperLegNode,
+            frontRightShin: fr.shinNode,
+            frontRightPaw: fr.pawNode,
+            backLeftLeg: bl.upperLegNode,
+            backLeftShin: bl.shinNode,
+            backLeftPaw: bl.pawNode,
+            backRightLeg: br.upperLegNode,
+            backRightShin: br.shinNode,
+            backRightPaw: br.pawNode,
             accessoriesNode: accNode
         )
     }
@@ -848,82 +1209,81 @@ public class Pet3DCharacterBuilder {
     private static func buildGhost(accessory: String) -> Pet3DRig {
         let root = SCNNode()
         let body = SCNNode()
-        body.position = SCNVector3(0, 0.28, 0)
+        body.position = SCNVector3(0, 0.32, 0)
         root.addChildNode(body)
 
-        let ghostMat = pbrMaterial(color: NSColor(red: 0.92, green: 0.95, blue: 1.0, alpha: 0.88), roughness: 0.2, emission: NSColor(red: 0.3, green: 0.4, blue: 0.6, alpha: 0.3))
-        let eyeMat = pbrMaterial(color: NSColor(red: 0.15, green: 0.15, blue: 0.25, alpha: 1.0), roughness: 0.1)
+        let ghostMat = SCNMaterial()
+        ghostMat.lightingModel = .physicallyBased
+        ghostMat.diffuse.contents = NSColor(white: 0.98, alpha: 0.92)
+        ghostMat.roughness.contents = 0.25
+        ghostMat.metalness.contents = 0.05
+        ghostMat.emission.contents = NSColor(red: 0.2, green: 0.35, blue: 0.8, alpha: 0.35)
 
-        // Dome Head + Floating Skirt
+        let darkMat = pbrMaterial(color: NSColor(red: 0.1, green: 0.1, blue: 0.2, alpha: 1.0), roughness: 0.1)
+        let pupilMat = pbrMaterial(color: NSColor.white, roughness: 0.05, emission: NSColor.white)
+
         let domeGeo = SCNSphere(radius: 0.28)
         domeGeo.materials = [ghostMat]
         let domeNode = SCNNode(geometry: domeGeo)
-        domeNode.position = SCNVector3(0, 0.15, 0)
         body.addChildNode(domeNode)
 
-        let skirtGeo = SCNCone(topRadius: 0.26, bottomRadius: 0.32, height: 0.35)
+        let skirtGeo = SCNCone(topRadius: 0.28, bottomRadius: 0.34, height: 0.36)
         skirtGeo.materials = [ghostMat]
-        let skirt = SCNNode(geometry: skirtGeo)
-        skirt.position = SCNVector3(0, -0.1, 0)
-        body.addChildNode(skirt)
+        let skirtNode = SCNNode(geometry: skirtGeo)
+        skirtNode.position = SCNVector3(0, -0.22, 0)
+        body.addChildNode(skirtNode)
 
-        // Ethereal Eyes
-        let leftEye = SCNNode(geometry: SCNSphere(radius: 0.055))
-        leftEye.geometry?.materials = [eyeMat]
-        leftEye.position = SCNVector3(-0.11, 0.16, 0.23)
-        leftEye.scale = SCNVector3(0.9, 1.2, 0.7)
-        body.addChildNode(leftEye)
+        // Spectral Openable Mouth
+        let jawComp = makeArticulatedJaw(primaryMat: darkMat, length: 0.10, width: 0.10)
+        jawComp.jawNode.position = SCNVector3(0, -0.08, 0.22)
+        domeNode.addChildNode(jawComp.jawNode)
 
-        let rightEye = SCNNode(geometry: SCNSphere(radius: 0.055))
-        rightEye.geometry?.materials = [eyeMat]
-        rightEye.position = SCNVector3(0.11, 0.16, 0.23)
-        rightEye.scale = SCNVector3(0.9, 1.2, 0.7)
-        body.addChildNode(rightEye)
+        // Expressive Ghost Eyes with Eyelids
+        let leftEyeComp = makeFacialEye(eyeMat: darkMat, pupilMat: pupilMat, lidMat: ghostMat, radius: 0.048, isDragonPupil: false)
+        leftEyeComp.eyeNode.position = SCNVector3(-0.09, 0.04, 0.25)
+        domeNode.addChildNode(leftEyeComp.eyeNode)
 
-        // Floating Wisp Arms
-        let armGeo = SCNCapsule(capRadius: 0.05, height: 0.22)
+        let rightEyeComp = makeFacialEye(eyeMat: darkMat, pupilMat: pupilMat, lidMat: ghostMat, radius: 0.048, isDragonPupil: false)
+        rightEyeComp.eyeNode.position = SCNVector3(0.09, 0.04, 0.25)
+        domeNode.addChildNode(rightEyeComp.eyeNode)
+
+        // Spectral Waving Arm Flippers
+        let armGeo = SCNCone(topRadius: 0.02, bottomRadius: 0.06, height: 0.22)
         armGeo.materials = [ghostMat]
 
-        let leftArm = SCNNode()
-        leftArm.position = SCNVector3(-0.28, 0.05, 0.05)
-        leftArm.eulerAngles = SCNVector3(0, 0, Float.pi / 4)
-        leftArm.addChildNode(SCNNode(geometry: armGeo))
+        let leftArm = SCNNode(geometry: armGeo)
+        leftArm.position = SCNVector3(-0.25, -0.06, 0.08)
+        leftArm.eulerAngles = SCNVector3(0, 0, Float.pi / 2.5)
         body.addChildNode(leftArm)
 
-        let rightArm = SCNNode()
-        rightArm.position = SCNVector3(0.28, 0.05, 0.05)
-        rightArm.eulerAngles = SCNVector3(0, 0, -Float.pi / 4)
-        rightArm.addChildNode(SCNNode(geometry: armGeo))
+        let rightArm = SCNNode(geometry: armGeo)
+        rightArm.position = SCNVector3(0.25, -0.06, 0.08)
+        rightArm.eulerAngles = SCNVector3(0, 0, -Float.pi / 2.5)
         body.addChildNode(rightArm)
 
-        let accNode = buildAccessory(accessory, headNode: body)
+        let accNode = buildAccessory(accessory, headNode: domeNode)
 
         return Pet3DRig(
             rootNode: root,
             bodyNode: body,
             headNode: domeNode,
-            leftEyeNode: leftEye,
-            rightEyeNode: rightEye,
+            leftEyeNode: leftEyeComp.eyeNode,
+            rightEyeNode: rightEyeComp.eyeNode,
+            leftPupilNode: leftEyeComp.pupilNode,
+            rightPupilNode: rightEyeComp.pupilNode,
+            leftUpperLid: leftEyeComp.upperLidNode,
+            rightUpperLid: rightEyeComp.upperLidNode,
+            leftLowerLid: leftEyeComp.lowerLidNode,
+            rightLowerLid: rightEyeComp.lowerLidNode,
+            jawNode: jawComp.jawNode,
+            tongueNode: jawComp.tongueNode,
             frontLeftLeg: leftArm,
             frontRightLeg: rightArm,
             accessoriesNode: accNode
         )
     }
 
-    // MARK: - Helper Components
-    private static func makeRoundEye(eyeMat: SCNMaterial, pupilMat: SCNMaterial) -> SCNNode {
-        let eye = SCNNode()
-        let sclera = SCNNode(geometry: SCNSphere(radius: 0.05))
-        sclera.geometry?.materials = [eyeMat]
-        eye.addChildNode(sclera)
-
-        let pupil = SCNNode(geometry: SCNSphere(radius: 0.03))
-        pupil.geometry?.materials = [pupilMat]
-        pupil.position = SCNVector3(0, 0, 0.035)
-        eye.addChildNode(pupil)
-        return eye
-    }
-
+    // MARK: - Accessories Builder
     private static func buildAccessory(_ accessory: String, headNode: SCNNode) -> SCNNode? {
         guard accessory != "none" else { return nil }
         let accNode = SCNNode()

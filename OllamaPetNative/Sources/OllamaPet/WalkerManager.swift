@@ -21,13 +21,13 @@ public class WalkerManager: ObservableObject {
         }
 
         let screenFrame = screen.visibleFrame
-        let panelHeight: CGFloat = 120
+        let panelHeight: CGFloat = 140
         let panelWidth = isTest ? min(480, screenFrame.width) : screenFrame.width
         let panelX = isTest ? (screenFrame.midX - panelWidth / 2) : screenFrame.minX
 
         let panelFrame = NSRect(
             x: panelX,
-            y: screenFrame.minY + 12,
+            y: screenFrame.minY + 8,
             width: panelWidth,
             height: panelHeight
         )
@@ -47,11 +47,11 @@ public class WalkerManager: ObservableObject {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
 
         let speedMultiplier = DataManager.shared.savedData.walkSpeed ?? 1.0
-        let gaitPreset = CharacterMotionStateMachine.shared.gaitPreset
+
+        PetState.shared.animState = .walk
 
         let walkView = WalkerAnimationView(
             species: species,
-            gait: gaitPreset,
             screenWidth: panelWidth,
             speedMultiplier: speedMultiplier,
             isTest: isTest,
@@ -60,6 +60,7 @@ public class WalkerManager: ObservableObject {
                     self?.walkerPanel?.close()
                     self?.walkerPanel = nil
                     self?.isWalking = false
+                    PetState.shared.animState = .idle
                     CharacterMotionStateMachine.shared.transitionTo(.idle)
                 }
             }
@@ -71,77 +72,34 @@ public class WalkerManager: ObservableObject {
     }
 }
 
+// MARK: - Unified 3D Walker View (Requirement 6 - Same 3D Character Throughout)
+
 struct WalkerAnimationView: View {
     let species: PetSpecies
-    let gait: WalkGaitPreset
     let screenWidth: CGFloat
     let speedMultiplier: Double
     let isTest: Bool
     let onComplete: () -> Void
 
-    @State private var xOffset: CGFloat = -80
+    @State private var xOffset: CGFloat = -100
     @State private var isFlipped: Bool = false
-    @ObservedObject var motion = CharacterMotionStateMachine.shared
-    @ObservedObject var sysMon = SystemMonitor.shared
+    @ObservedObject var petState = PetState.shared
     @ObservedObject var perf = PerformanceManager.shared
 
     var body: some View {
         ZStack(alignment: .bottomLeading) {
             Color.clear
-            walkerCanvasView
+
+            // Uses the EXACT same 3D Character Rig, SceneKit Engine, Lighting, and Accessories
+            Pet3DSceneView()
+                .frame(width: 120, height: 120)
+                .scaleEffect(x: isFlipped ? -1 : 1, y: 1)
+                .offset(x: xOffset, y: 0)
         }
-        .frame(width: screenWidth, height: 110)
+        .frame(width: screenWidth, height: 130)
         .onAppear {
-            motion.transitionTo(.walking(gait: gait))
+            petState.animState = .walk
             runWalkSequence()
-        }
-    }
-
-    private var walkerCanvasView: some View {
-        TimelineView(.animation(minimumInterval: perf.minimumRenderInterval)) { (timeline: TimelineViewDefaultContext) in
-            Canvas { context, size in
-                let t = timeline.date.timeIntervalSinceReferenceDate
-                let snapshot = motion.evaluateSnapshot(
-                    at: t,
-                    animState: .idle,
-                    atmosphere: perf.weatherEffectsEnabled ? WeatherService.shared.activeAtmosphere : .clearDay,
-                    isSafeMode: perf.isSafeMode
-                )
-                let model = CharacterStructuralModel.model(for: species)
-
-                // Secondary Inertial Lag angle
-                let inertialAngle: Angle
-                switch gait {
-                case .bouncyMarch:
-                    inertialAngle = .degrees(isFlipped ? -4 : 4)
-                case .stealthProwl:
-                    inertialAngle = .degrees(isFlipped ? 8 : -8)
-                case .hoverGlide:
-                    inertialAngle = .degrees(isFlipped ? 12 : -12)
-                }
-
-                var walkerContext = context
-                let center = CGPoint(x: size.width / 2, y: size.height / 2)
-                walkerContext.translateBy(x: center.x, y: center.y)
-                if isFlipped {
-                    walkerContext.scaleBy(x: -1, y: 1)
-                }
-                walkerContext.rotate(by: inertialAngle)
-                walkerContext.translateBy(x: -center.x, y: -center.y)
-
-                PetCanvasRenderer.draw(
-                    context: &walkerContext,
-                    size: size,
-                    species: species,
-                    model: model,
-                    animState: .idle,
-                    mood: PetState.shared.currentMood,
-                    snapshot: snapshot,
-                    perf: perf
-                )
-            }
-            .frame(width: 80, height: 80)
-            .offset(x: xOffset, y: -10)
         }
     }
 
@@ -161,7 +119,7 @@ struct WalkerAnimationView: View {
 
             // Phase 2: Walk backward (right to left)
             withAnimation(.linear(duration: effectiveDuration)) {
-                xOffset = -80
+                xOffset = -100
             }
 
             try? await Task.sleep(nanoseconds: UInt64(effectiveDuration * 1_000_000_000))

@@ -54,19 +54,64 @@ public class PetState: ObservableObject {
 
     private let dreams = ["🍕", "🌈", "⭐", "🐟", "🎮", "🏖️", "🚀", "💤", "🌙", "🎵", "🍦", "🦋"]
 
+    // Priority Management (Requirement 9)
+    @Published public var activeEventPriority: PetEventPriority = .idleBehavior
+    private var priorityResetTask: Task<Void, Never>?
+
+    public func setPriority(_ priority: PetEventPriority, duration: TimeInterval? = nil) {
+        self.activeEventPriority = priority
+        priorityResetTask?.cancel()
+        if let d = duration {
+            priorityResetTask = Task { @MainActor in
+                try? await Task.sleep(nanoseconds: UInt64(d * 1_000_000_000))
+                if !Task.isCancelled {
+                    self.activeEventPriority = .idleBehavior
+                }
+            }
+        }
+    }
+
     public func triggerCelebration(color: Color = Color(red: 1.0, green: 0.85, blue: 0.2), duration: TimeInterval = 5.0) {
+        setPriority(.importantAppEvent, duration: duration)
         celebrationTimer?.invalidate()
         isCelebrationPulsing = true
         celebrationPulseColor = color
-        animState = .dance
+        animState = .celebrate
+        setTemporaryMood(.celebrating, duration: duration)
         celebrationTimer = Timer.scheduledTimer(withTimeInterval: duration, repeats: false) { [weak self] _ in
             Task { @MainActor in
                 self?.isCelebrationPulsing = false
-                if self?.animState == .dance {
+                if self?.animState == .celebrate {
                     self?.animState = .idle
                 }
             }
         }
+    }
+
+    public func wakeUp() {
+        if animState == .sleep {
+            animState = .wake
+            setTemporaryMood(.calm, duration: 2.5)
+            showBubble("*wakes up refreshed* ☀️", duration: 2.5)
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                if self.animState == .wake {
+                    self.animState = .idle
+                }
+            }
+        }
+        resetSleepTimer()
+    }
+
+    public func goToSleep() {
+        animState = .sleep
+        currentMood = .sleepy
+        showBubble("zZz... 😴", duration: 3.0)
+    }
+
+    public func startWalking(duration: TimeInterval = 6.0) {
+        guard animState != .sleep else { return }
+        WalkerManager.shared.startWalk(species: currentSpecies, isTest: false)
     }
 
     public init() {

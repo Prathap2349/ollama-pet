@@ -330,6 +330,8 @@ public struct PetSVGProvider {
             <text x="28" y="30" font-size="18">♪</text>
             <text x="110" y="40" font-size="14">♫</text>
             """)
+        default:
+            return catSvg(state: .idle, t: t)
         }
     }
 
@@ -427,6 +429,8 @@ public struct PetSVGProvider {
             <text x="22" y="30" font-size="20">🔥</text>
             <text x="110" y="42" font-size="16">✨</text>
             """)
+        default:
+            return dragonSvg(state: .idle, t: t)
         }
     }
 
@@ -528,6 +532,8 @@ public struct PetSVGProvider {
             <text x="22" y="32" font-size="18">⚡</text>
             <text x="112" y="40" font-size="16">💫</text>
             """)
+        default:
+            return robotSvg(state: .idle, t: t)
         }
     }
 
@@ -594,6 +600,8 @@ public struct PetSVGProvider {
             <text x="38" y="48" fill="#f59e0b" font-size="20" font-weight="bold">!</text>
             <text x="108" y="48" fill="#f59e0b" font-size="20" font-weight="bold">!</text>
             """)
+        default:
+            return robotcatSvg(state: .idle, t: t)
         }
     }
 
@@ -664,6 +672,8 @@ public struct PetSVGProvider {
             <text x="22" y="30" font-size="18">⭐</text>
             <text x="112" y="40" font-size="16">💫</text>
             """)
+        default:
+            return ghostSvg(state: .idle, t: t)
         }
     }
 
@@ -751,6 +761,8 @@ public struct PetSVGProvider {
             <text x="22" y="30" font-size="18">🔥</text>
             <text x="112" y="40" font-size="16">🍊</text>
             """)
+        default:
+            return foxSvg(state: .idle, t: t)
         }
     }
 
@@ -841,6 +853,8 @@ public struct PetSVGProvider {
             <text x="28" y="30" font-size="18">🎀</text>
             <text x="110" y="40" font-size="14">💗</text>
             """)
+        default:
+            return bunnySvg(state: .idle, t: t)
         }
     }
 }

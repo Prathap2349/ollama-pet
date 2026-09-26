@@ -262,16 +262,59 @@ public enum PetSpecies: String, CaseIterable, Codable, Identifiable {
         case (.bunny, .crying): return "😭"
         case (.bunny, .proud): return "🌟"
         case (.bunny, .concerned): return "🌾"
+
+        // Expanded Emotional Palette
+        case (_, .calm): return "😌"
+        case (_, .joyful): return "🥰"
+        case (_, .curious): return "🧐"
+        case (_, .focused): return "🎯"
+        case (_, .celebrating): return "🎉"
+        case (_, .relaxed): return "🍃"
         }
     }
 }
 
 public enum PetMood: String, CaseIterable, Codable {
     case happy, excited, love, surprised, hungry, tired, angry, sad, crying, sleepy, proud, concerned
+    case calm, joyful, curious, focused, celebrating, relaxed
 }
 
 public enum PetAnimState: String, Codable {
-    case idle, dance, thinking, sleep, shock
+    case idle, dance, thinking, sleep, shock, walk, run, sit, celebrate, react, wake
+}
+
+// MARK: - Facial & Physiological Systems
+
+public enum PetEyeState: String, Codable {
+    case open, closed, blink, halfClosed, wide, focused, happy, sad, sleepy, surprised
+}
+
+public enum PetMouthState: String, Codable {
+    case neutral, smile, open, sad, surprised, talking, yawn
+}
+
+public enum MediaPlaybackState: String, Codable {
+    case noMedia = "NO_MEDIA"
+    case playing = "PLAYING"
+    case paused = "PAUSED"
+    case unknown = "UNKNOWN"
+}
+
+public enum MediaEnergyLevel: String, Codable {
+    case low = "LOW ENERGY"
+    case medium = "MEDIUM ENERGY"
+    case high = "HIGH ENERGY"
+}
+
+public enum PetEventPriority: Int, Comparable {
+    case idleBehavior = 0
+    case musicReaction = 1
+    case importantAppEvent = 2
+    case userInteraction = 3
+
+    public static func < (lhs: PetEventPriority, rhs: PetEventPriority) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
 }
 
 public enum RenderEngineMode: String, CaseIterable, Codable, Identifiable {

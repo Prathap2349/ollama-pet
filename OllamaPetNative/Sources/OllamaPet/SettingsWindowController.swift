@@ -1068,24 +1068,24 @@ struct AnimationSettingsSection: View {
 
                 VStack(spacing: 8) {
                     SettingsToggleRow(
-                        icon: "music.note",
-                        iconColor: .pink,
-                        title: "Dance When Music Detected",
-                        subtitle: "Pet bobs head and bounces rhythmically with audio beats.",
+                        icon: "headphones",
+                        iconColor: .purple,
+                        title: "Music Reactions",
+                        subtitle: "Detects active media playback across YouTube (Chrome, Safari, Brave, Edge), Spotify, Apple Music, and VLC to react naturally.",
                         isOn: Binding(
-                            get: { MusicManager.shared.danceWhenMusicDetected },
-                            set: { MusicManager.shared.setDanceWhenMusicDetected($0) }
+                            get: { MusicManager.shared.isMediaDetectionEnabled },
+                            set: { MusicManager.shared.setMediaDetectionEnabled($0) }
                         )
                     )
                     Divider()
                     SettingsToggleRow(
-                        icon: "headphones",
-                        iconColor: .purple,
-                        title: "Media Awareness (Spotify & Apple Music)",
-                        subtitle: "Safely detects active playback to display track info and groove with your tunes.",
+                        icon: "music.note",
+                        iconColor: .pink,
+                        title: "Dance When Music Is Detected",
+                        subtitle: "Pet performs a rhythmic groove and celebration when media playback begins.",
                         isOn: Binding(
-                            get: { MusicManager.shared.isMediaDetectionEnabled },
-                            set: { MusicManager.shared.setMediaDetectionEnabled($0) }
+                            get: { MusicManager.shared.danceWhenMusicDetected },
+                            set: { MusicManager.shared.setDanceWhenMusicDetected($0) }
                         )
                     )
                 }

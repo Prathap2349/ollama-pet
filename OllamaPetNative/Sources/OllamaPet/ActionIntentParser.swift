@@ -64,9 +64,17 @@ public class ActionIntentParser {
             let encoded = q.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? q
             return MacAction(type: .openURL, url: "https://www.youtube.com/results?search_query=\(encoded)", browser: targetBrowser)
         }
+        if cleanedLower.starts(with: "search google for ") {
+            let q = String(cleanedText.dropFirst("search google for ".count)).trimmingCharacters(in: .whitespaces)
+            return MacAction(type: .searchWeb, browser: targetBrowser, query: q)
+        }
         if cleanedLower.starts(with: "search the web for ") || cleanedLower.starts(with: "search web for ") {
             let prefix = cleanedLower.starts(with: "search the web for ") ? "search the web for " : "search web for "
             let q = String(cleanedText.dropFirst(prefix.count)).trimmingCharacters(in: .whitespaces)
+            return MacAction(type: .searchWeb, browser: targetBrowser, query: q)
+        }
+        if cleanedLower.starts(with: "search for ") {
+            let q = String(cleanedText.dropFirst("search for ".count)).trimmingCharacters(in: .whitespaces)
             return MacAction(type: .searchWeb, browser: targetBrowser, query: q)
         }
         if cleanedLower.starts(with: "google ") {
@@ -127,6 +135,9 @@ public class ActionIntentParser {
         }
 
         // G. Send Message (WhatsApp / Messages)
+        if cleanedLower.contains(" saying ") && (cleanedLower.contains("message") || cleanedLower.contains("whatsapp") || cleanedLower.contains("send") || cleanedLower.starts(with: "text ")) {
+            return parseSendMessage(from: cleanedText, lower: cleanedLower)
+        }
         if cleanedLower.starts(with: "send ") && (cleanedLower.contains("message") || cleanedLower.contains("whatsapp")) {
             return parseSendMessage(from: cleanedText, lower: cleanedLower)
         }
@@ -179,7 +190,9 @@ public class ActionIntentParser {
             (" in safari", "Safari"),
             (" in firefox", "Firefox"),
             (" in microsoft edge", "Microsoft Edge"),
-            (" in edge", "Microsoft Edge")
+            (" in edge", "Microsoft Edge"),
+            (" in brave browser", "Brave Browser"),
+            (" in brave", "Brave Browser")
         ]
 
         for (pattern, name) in browserPatterns {
@@ -282,16 +295,34 @@ public class ActionIntentParser {
         var message = text
 
         // Extract recipient
-        // "send [name] a message..." or "send a message to [name] saying..."
         if let sayingRange = lower.range(of: " saying ") {
             message = String(text[sayingRange.upperBound...]).trimmingCharacters(in: .whitespaces)
             let beforeSaying = String(text[..<sayingRange.lowerBound])
+            let beforeLower = beforeSaying.lowercased()
 
-            if let sendRange = beforeSaying.lowercased().range(of: "send ") {
-                let afterSend = String(beforeSaying[sendRange.upperBound...])
-                let tokens = afterSend.components(separatedBy: " ")
-                if let firstToken = tokens.first, !firstToken.isEmpty {
-                    recipient = firstToken
+            let candidateTriggers = [
+                "and message ", "and text ",
+                "message ", "text ",
+                "send a whatsapp to ", "send whatsapp to ",
+                "send a message to ", "send message to ",
+                "send a whatsapp message to ", "send whatsapp message to ",
+                "send to ", "send "
+            ]
+
+            for trigger in candidateTriggers {
+                if let r = beforeLower.range(of: trigger) {
+                    let after = String(beforeSaying[r.upperBound...]).trimmingCharacters(in: .whitespaces)
+                    let cleanAfter = after
+                        .replacingOccurrences(of: "a whatsapp message to ", with: "", options: .caseInsensitive)
+                        .replacingOccurrences(of: "a message to ", with: "", options: .caseInsensitive)
+                        .replacingOccurrences(of: "a whatsapp to ", with: "", options: .caseInsensitive)
+                        .replacingOccurrences(of: "a text to ", with: "", options: .caseInsensitive)
+                        .trimmingCharacters(in: .whitespaces)
+                    let words = cleanAfter.components(separatedBy: " ")
+                    if let first = words.first, !first.isEmpty {
+                        recipient = first
+                        break
+                    }
                 }
             }
         }

@@ -272,6 +272,144 @@ public enum PetSpecies: String, CaseIterable, Codable, Identifiable {
         case (_, .relaxed): return "🍃"
         }
     }
+
+    public var locomotionStyle: SpeciesLocomotionStyle {
+        switch self {
+        case .dragon: return .quadrupedHeavy
+        case .cat: return .felineSoft
+        case .fox: return .lightTrot
+        case .bunny: return .hopping
+        case .robot: return .bipedalMechanical
+        case .robotcat: return .cyberHybrid
+        case .ghost: return .spectralFloat
+        }
+    }
+
+    public var specialAbility: SpeciesSpecialAbility {
+        switch self {
+        case .dragon: return .fireBreath
+        case .cat: return .groomAndStretch
+        case .fox: return .tailSwirlAndPounce
+        case .bunny: return .binkyHop
+        case .robot: return .roboticWave
+        case .robotcat: return .cyberScan
+        case .ghost: return .etherealFade
+        }
+    }
+
+    public var eyeStyleDescription: String {
+        switch self {
+        case .dragon: return "Amber/Golden slit pupils with intense glowing draconic sclera"
+        case .cat: return "Large almond feline eyes with vertical slits and dark catchlights"
+        case .fox: return "Warm amber almond eyes with dark pupils and clever expression"
+        case .bunny: return "Large soft dark doe eyes with delicate lower catchlights"
+        case .robot: return "Cyan/Blue digital optical sensor ring with digital focus pulse"
+        case .robotcat: return "Emerald cyber matrix eyes with scrolling optical telemetry"
+        case .ghost: return "Luminous soft spectral orbs with ethereal twilight gradient"
+        }
+    }
+
+    public var stableEyeColorHex: String {
+        switch self {
+        case .dragon: return "#fbbf24" // Amber/Gold
+        case .cat: return "#34d399" // Jade green
+        case .fox: return "#f59e0b" // Warm Amber
+        case .bunny: return "#1e1b4b" // Deep soft dark
+        case .robot: return "#06b6d4" // Cyan
+        case .robotcat: return "#10b981" // Cyber green
+        case .ghost: return "#93c5fd" // Spectral blue
+        }
+    }
+
+    public var anatomySummary: String {
+        switch self {
+        case .dragon: return "Articulated skull, snout, jaws & teeth, flexible neck, torso, ventral plates, 4 clawed legs, dual wings, and long segmented spade tail."
+        case .cat: return "Compact rounded skull, whiskers, mobile ears, flexible spine, 4 soft paws, and long curling counterbalance tail."
+        case .fox: return "Tapered muzzle, triangular upright ears, lithe body, agile paws, and enormous fluffy brush tail."
+        case .bunny: return "Round head, tall upright ears, twitching nose, compact torso, powerful rear legs, and tiny puff tail."
+        case .robot: return "Hexagonal head with visor, articulated neck, chassis, full robotic arms with elbows and hands, mechanical legs."
+        case .robotcat: return "Cybernetic cat frame, angular ear receivers, armored plating, glowing joint nodes, and segmented whip antenna tail."
+        case .ghost: return "Legless ethereal shroud, translucent flowing veil with floating undulating ripples, and floating spectral hands."
+        }
+    }
+}
+
+// MARK: - Species-Specific Locomotion & Abilities
+
+public enum SpeciesLocomotionStyle: String, Codable {
+    case quadrupedHeavy // Dragon: heavy stride, weight shift, tail counterbalance
+    case felineSoft // Cat: quiet paws, spine flexion, tail balance
+    case lightTrot // Fox: buoyant quadruped trot, brisk tail sway
+    case bipedalMechanical // Robot: mechanical step cycle, arm swings
+    case cyberHybrid // Robot Cat: hybrid quadruped mechanical step
+    case hopping // Rabbit: synchronized hind-leg hops, ear bounce
+    case spectralFloat // Ghost: undulating floating glide, no legs
+}
+
+public enum SpeciesSpecialAbility: String, Codable {
+    case fireBreath = "Fire Breath"
+    case roboticWave = "Hand Wave & Diagnostics"
+    case groomAndStretch = "Groom & Stretch"
+    case tailSwirlAndPounce = "Tail Swirl & Pounce"
+    case binkyHop = "Joyful Binky Hop"
+    case cyberScan = "Holographic Scan"
+    case etherealFade = "Spectral Fade & Glow"
+
+    public var displayName: String { rawValue }
+}
+
+public enum MovementDirection: String, Codable {
+    case left
+    case right
+    case forward
+    case backward
+
+    public var yawAngle: Float {
+        switch self {
+        case .left: return -.pi / 2 // -90 deg: faces screen left
+        case .right: return .pi / 2 // +90 deg: faces screen right
+        case .forward: return 0.0 // 0 deg: faces user/camera
+        case .backward: return .pi // 180 deg: faces away
+        }
+    }
+}
+
+public enum AutonomousLifeSetting: String, CaseIterable, Codable, Identifiable {
+    case off = "OFF"
+    case minimal = "MINIMAL"
+    case normal = "NORMAL"
+    case lively = "LIVELY"
+
+    public var id: String { rawValue }
+
+    public var intervalRangeSeconds: ClosedRange<Double> {
+        switch self {
+        case .off: return 0...0
+        case .minimal: return 480...720 // 8-12 minutes
+        case .normal: return 240...360 // 4-6 minutes (~5 min avg)
+        case .lively: return 120...180 // 2-3 minutes
+        }
+    }
+}
+
+public enum AssistantVoicePreset: String, CaseIterable, Identifiable {
+    case professionalMale = "Professional Male"
+    case professionalFemale = "Professional Female"
+    case warmMale = "Warm Male"
+    case warmFemale = "Warm Female"
+    case neutralAssistant = "Neutral Assistant"
+
+    public var id: String { rawValue }
+
+    public var preferredVoiceKeywords: [String] {
+        switch self {
+        case .professionalMale: return ["Daniel", "Rishi", "Oliver", "George", "Arthur"]
+        case .professionalFemale: return ["Samantha", "Moira", "Serena", "Karen", "Fiona", "Victoria"]
+        case .warmMale: return ["Rishi", "Daniel", "Fred"]
+        case .warmFemale: return ["Moira", "Tessa", "Samantha"]
+        case .neutralAssistant: return ["Samantha", "Daniel", "Alex"]
+        }
+    }
 }
 
 public enum PetMood: String, CaseIterable, Codable {
@@ -429,8 +567,10 @@ public struct PetSavedData: Codable {
     // Voice Assistant Settings
     public var voiceAssistantEnabled: Bool?
     public var selectedVoiceId: String?
+    public var voicePreset: String?
     public var speechSpeed: Double? // 0.5 to 2.0 (default 1.0)
     public var speechVolume: Double? // 0.0 to 1.0 (default 1.0)
+    public var speechPitch: Double? // 0.5 to 2.0 (default 1.0)
     public var speakAiResponses: Bool?
 
     // Walk Mode Settings
@@ -518,8 +658,10 @@ public struct PetSavedData: Codable {
         launchAtLoginEnabled: Bool? = true,
         voiceAssistantEnabled: Bool? = false,
         selectedVoiceId: String? = nil,
+        voicePreset: String? = nil,
         speechSpeed: Double? = 1.0,
         speechVolume: Double? = 1.0,
+        speechPitch: Double? = 1.0,
         speakAiResponses: Bool? = true,
         walkSpeed: Double? = 1.0,
         shortcutVoice: String? = "⌘⇧V",
@@ -561,8 +703,10 @@ public struct PetSavedData: Codable {
         self.launchAtLoginEnabled = launchAtLoginEnabled
         self.voiceAssistantEnabled = voiceAssistantEnabled
         self.selectedVoiceId = selectedVoiceId
+        self.voicePreset = voicePreset
         self.speechSpeed = speechSpeed
         self.speechVolume = speechVolume
+        self.speechPitch = speechPitch
         self.speakAiResponses = speakAiResponses
         self.walkSpeed = walkSpeed
         self.shortcutVoice = shortcutVoice

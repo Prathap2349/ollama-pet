@@ -337,6 +337,7 @@ public class MacActionExecutor {
             "/Applications/Safari.app",
             "/Applications/Firefox.app",
             "/Applications/Microsoft Edge.app",
+            "/Applications/Brave Browser.app",
             FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications/\(browserName).app").path
         ]
         for path in candidates {
@@ -354,6 +355,7 @@ public class MacActionExecutor {
         case "chrome", "google chrome": return "com.google.Chrome"
         case "firefox": return "org.mozilla.firefox"
         case "edge", "microsoft edge": return "com.microsoft.edgemac"
+        case "brave", "brave browser": return "com.brave.Browser"
         case "messages": return "com.apple.MobileSMS"
         case "whatsapp": return "net.whatsapp.WhatsApp"
         case "calendar": return "com.apple.iCal"

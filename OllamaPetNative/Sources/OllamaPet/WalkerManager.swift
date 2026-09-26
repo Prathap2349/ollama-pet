@@ -82,7 +82,6 @@ struct WalkerAnimationView: View {
     let onComplete: () -> Void
 
     @State private var xOffset: CGFloat = -100
-    @State private var isFlipped: Bool = false
     @ObservedObject var petState = PetState.shared
     @ObservedObject var perf = PerformanceManager.shared
 
@@ -90,14 +89,14 @@ struct WalkerAnimationView: View {
         ZStack(alignment: .bottomLeading) {
             Color.clear
 
-            // Uses the EXACT same 3D Character Rig, SceneKit Engine, Lighting, and Accessories
+            // Uses the EXACT same 3D Character Rig with real 3D yaw rotation for direction (Requirement 6)
             Pet3DSceneView()
                 .frame(width: 120, height: 120)
-                .scaleEffect(x: isFlipped ? -1 : 1, y: 1)
                 .offset(x: xOffset, y: 0)
         }
         .frame(width: screenWidth, height: 130)
         .onAppear {
+            petState.movementDirection = .right
             petState.animState = .walk
             runWalkSequence()
         }
@@ -107,22 +106,24 @@ struct WalkerAnimationView: View {
         let baseDuration: Double = isTest ? 3.5 : 7.0
         let effectiveDuration = max(1.5, baseDuration / max(0.5, speedMultiplier))
 
-        // Phase 1: Forward walk (left to right)
+        // Phase 1: Forward walk (left to right, character faces right in 3D)
+        petState.movementDirection = .right
         withAnimation(.linear(duration: effectiveDuration)) {
             xOffset = screenWidth + 20
         }
 
         Task {
             try? await Task.sleep(nanoseconds: UInt64(effectiveDuration * 1_000_000_000))
-            isFlipped = true
-            try? await Task.sleep(nanoseconds: 200_000_000)
+            // Phase 2: Turn around in 3D and walk back (right to left, character faces left in 3D)
+            petState.movementDirection = .left
+            try? await Task.sleep(nanoseconds: 250_000_000)
 
-            // Phase 2: Walk backward (right to left)
             withAnimation(.linear(duration: effectiveDuration)) {
                 xOffset = -100
             }
 
             try? await Task.sleep(nanoseconds: UInt64(effectiveDuration * 1_000_000_000))
+            petState.movementDirection = .forward
             onComplete()
         }
     }

@@ -54,6 +54,22 @@ public struct Pet3DRig {
     public let hornsNode: SCNNode?
     public let accessoriesNode: SCNNode?
 
+    // Articulated Robotic Arm Hierarchy (Requirement 2)
+    public let leftShoulderNode: SCNNode?
+    public let leftArmNode: SCNNode?        // Upper arm
+    public let leftElbowNode: SCNNode?      // Lower arm / forearm
+    public let leftWristNode: SCNNode?
+    public let leftHandNode: SCNNode?       // Hand & grippers
+
+    public let rightShoulderNode: SCNNode?
+    public let rightArmNode: SCNNode?
+    public let rightElbowNode: SCNNode?
+    public let rightWristNode: SCNNode?
+    public let rightHandNode: SCNNode?
+
+    // Special Ability: Dragon Fire Breath Emitter (Requirement 4)
+    public let fireEmitterNode: SCNNode?
+
     public init(
         rootNode: SCNNode,
         bodyNode: SCNNode,
@@ -90,7 +106,18 @@ public struct Pet3DRig {
         backRightShin: SCNNode? = nil,
         backRightPaw: SCNNode? = nil,
         hornsNode: SCNNode? = nil,
-        accessoriesNode: SCNNode? = nil
+        accessoriesNode: SCNNode? = nil,
+        leftShoulderNode: SCNNode? = nil,
+        leftArmNode: SCNNode? = nil,
+        leftElbowNode: SCNNode? = nil,
+        leftWristNode: SCNNode? = nil,
+        leftHandNode: SCNNode? = nil,
+        rightShoulderNode: SCNNode? = nil,
+        rightArmNode: SCNNode? = nil,
+        rightElbowNode: SCNNode? = nil,
+        rightWristNode: SCNNode? = nil,
+        rightHandNode: SCNNode? = nil,
+        fireEmitterNode: SCNNode? = nil
     ) {
         self.rootNode = rootNode
         self.bodyNode = bodyNode
@@ -128,6 +155,17 @@ public struct Pet3DRig {
         self.backRightPaw = backRightPaw
         self.hornsNode = hornsNode
         self.accessoriesNode = accessoriesNode
+        self.leftShoulderNode = leftShoulderNode
+        self.leftArmNode = leftArmNode
+        self.leftElbowNode = leftElbowNode
+        self.leftWristNode = leftWristNode
+        self.leftHandNode = leftHandNode
+        self.rightShoulderNode = rightShoulderNode
+        self.rightArmNode = rightArmNode
+        self.rightElbowNode = rightElbowNode
+        self.rightWristNode = rightWristNode
+        self.rightHandNode = rightHandNode
+        self.fireEmitterNode = fireEmitterNode
     }
 }
 
@@ -315,6 +353,119 @@ public class Pet3DCharacterBuilder {
         return ArticulatedLegComponents(upperLegNode: upper, shinNode: shin, pawNode: paw)
     }
 
+    // MARK: - Articulated Robotic Arm System (Requirement 2)
+    public struct ArticulatedArmComponents {
+        public let shoulderPivot: SCNNode
+        public let upperArmPivot: SCNNode
+        public let elbowPivot: SCNNode
+        public let forearmPivot: SCNNode
+        public let wristPivot: SCNNode
+        public let handNode: SCNNode
+    }
+
+    public static func makeArticulatedRoboticArm(
+        chassisMat: SCNMaterial,
+        darkMetalMat: SCNMaterial,
+        glowMat: SCNMaterial,
+        isLeft: Bool
+    ) -> ArticulatedArmComponents {
+        let shoulder = SCNNode()
+
+        // 1. Shoulder Socket Sphere & Glowing Accent Torus
+        let socketGeo = SCNSphere(radius: 0.046)
+        socketGeo.materials = [darkMetalMat]
+        shoulder.addChildNode(SCNNode(geometry: socketGeo))
+
+        let socketRingGeo = SCNTorus(ringRadius: 0.048, pipeRadius: 0.007)
+        socketRingGeo.materials = [glowMat]
+        let socketRing = SCNNode(geometry: socketRingGeo)
+        socketRing.eulerAngles = SCNVector3(Float.pi / 2, 0, 0)
+        shoulder.addChildNode(socketRing)
+
+        // 2. Upper Arm Pivot (pivots from shoulder socket)
+        let upperArm = SCNNode()
+        shoulder.addChildNode(upperArm)
+
+        let upperBoneGeo = SCNCylinder(radius: 0.034, height: 0.16)
+        upperBoneGeo.materials = [chassisMat]
+        let upperBone = SCNNode(geometry: upperBoneGeo)
+        upperBone.position = SCNVector3(0, -0.08, 0)
+        upperArm.addChildNode(upperBone)
+
+        // 3. Elbow Joint Pivot (bends at base of upper arm)
+        let elbow = SCNNode()
+        elbow.position = SCNVector3(0, -0.16, 0)
+        upperArm.addChildNode(elbow)
+
+        let elbowJointGeo = SCNSphere(radius: 0.038)
+        elbowJointGeo.materials = [darkMetalMat]
+        elbow.addChildNode(SCNNode(geometry: elbowJointGeo))
+
+        let elbowRingGeo = SCNTorus(ringRadius: 0.040, pipeRadius: 0.006)
+        elbowRingGeo.materials = [glowMat]
+        let elbowRing = SCNNode(geometry: elbowRingGeo)
+        elbowRing.eulerAngles = SCNVector3(0, Float.pi / 2, 0)
+        elbow.addChildNode(elbowRing)
+
+        // 4. Forearm Pivot
+        let forearm = SCNNode()
+        elbow.addChildNode(forearm)
+
+        let forearmGeo = SCNBox(width: 0.064, height: 0.15, length: 0.064, chamferRadius: 0.012)
+        forearmGeo.materials = [chassisMat]
+        let forearmBone = SCNNode(geometry: forearmGeo)
+        forearmBone.position = SCNVector3(0, -0.075, 0)
+        forearm.addChildNode(forearmBone)
+
+        // 5. Wrist Pivot
+        let wrist = SCNNode()
+        wrist.position = SCNVector3(0, -0.15, 0)
+        forearm.addChildNode(wrist)
+
+        // 6. Hand & Fingers (Requirement 2)
+        let hand = SCNNode()
+        wrist.addChildNode(hand)
+
+        let palmGeo = SCNBox(width: 0.056, height: 0.038, length: 0.052, chamferRadius: 0.008)
+        palmGeo.materials = [darkMetalMat]
+        let palm = SCNNode(geometry: palmGeo)
+        palm.position = SCNVector3(0, -0.019, 0)
+        hand.addChildNode(palm)
+
+        // Dual Gripper Fingers
+        for xOff in [-0.016, 0.016] {
+            let fingerGeo = SCNCapsule(capRadius: 0.008, height: 0.042)
+            fingerGeo.materials = [chassisMat]
+            let finger = SCNNode(geometry: fingerGeo)
+            finger.position = SCNVector3(xOff, -0.048, 0.010)
+            hand.addChildNode(finger)
+
+            let tipGeo = SCNSphere(radius: 0.008)
+            tipGeo.materials = [glowMat]
+            let tip = SCNNode(geometry: tipGeo)
+            tip.position = SCNVector3(xOff, -0.068, 0.010)
+            hand.addChildNode(tip)
+        }
+
+        // Articulating Thumb
+        let thumbGeo = SCNCapsule(capRadius: 0.008, height: 0.038)
+        thumbGeo.materials = [chassisMat]
+        let thumb = SCNNode(geometry: thumbGeo)
+        let thumbX: CGFloat = isLeft ? 0.024 : -0.024
+        thumb.position = SCNVector3(thumbX, -0.036, -0.014)
+        thumb.eulerAngles = SCNVector3(Float.pi / 5, 0, isLeft ? -Float.pi / 4 : Float.pi / 4)
+        hand.addChildNode(thumb)
+
+        return ArticulatedArmComponents(
+            shoulderPivot: shoulder,
+            upperArmPivot: upperArm,
+            elbowPivot: elbow,
+            forearmPivot: forearm,
+            wristPivot: wrist,
+            handNode: hand
+        )
+    }
+
     // MARK: - Build Character Rig for Species
     public static func buildCharacter(
         species: PetSpecies,
@@ -497,33 +648,59 @@ public class Pet3DCharacterBuilder {
             rightWing = rw
         }
 
-        // 8. Multi-Segment Tail ending in Dragon Spade
+        // 8. Multi-Segment Long Visible Dragon Tail (Requirement 3)
+        // Curves outwards to the side and gracefully arches upward with a spade, clearly visible from the front camera
         let tailRoot = SCNNode()
-        tailRoot.position = SCNVector3(0, -0.15, -0.28)
+        tailRoot.position = SCNVector3(0.04, -0.06, -0.22)
         body.addChildNode(tailRoot)
 
         var tailSegs: [SCNNode] = []
         var prevNode = tailRoot
-        for i in 0..<4 {
-            let topR = CGFloat(0.08 - (Double(i) * 0.015))
-            let botR = CGFloat(0.11 - (Double(i) * 0.015))
-            let segGeo = SCNCone(topRadius: topR, bottomRadius: botR, height: 0.20)
+        let segCount = 6
+        for i in 0..<segCount {
+            let t = Double(i) / Double(segCount - 1)
+            let topR = CGFloat(0.12 - (t * 0.085))
+            let botR = CGFloat(0.15 - (t * 0.095))
+            let segHeight: CGFloat = 0.16
+            let segGeo = SCNCone(topRadius: topR, bottomRadius: botR, height: segHeight)
             segGeo.materials = [primaryMat]
             let seg = SCNNode(geometry: segGeo)
-            seg.position = SCNVector3(0, -0.06, -0.14)
-            seg.eulerAngles = SCNVector3(Float.pi / 3.2, 0, 0)
+            // Curl outward toward right flank (+X) and slightly upward and forward so it's prominent
+            let lateralShift: CGFloat = 0.05 + CGFloat(i) * 0.025
+            seg.position = SCNVector3(lateralShift, 0.04, -0.06)
+            seg.eulerAngles = SCNVector3(Float.pi / 4.5, Float.pi / 6.0, -Float.pi / 8.0)
             prevNode.addChildNode(seg)
             tailSegs.append(seg)
+
+            // Segment spine ridge
+            let spineGeo = SCNPyramid(width: 0.025, height: 0.055, length: 0.035)
+            spineGeo.materials = [hornMat]
+            let spine = SCNNode(geometry: spineGeo)
+            spine.position = SCNVector3(0, 0.06, 0)
+            spine.eulerAngles = SCNVector3(Float.pi / 2, 0, 0)
+            seg.addChildNode(spine)
+
             prevNode = seg
         }
 
-        // Tail spade tip
-        let spadeGeo = SCNPyramid(width: 0.15, height: 0.24, length: 0.15)
+        // Distinct Majestic Dragon Spade Tip (clearly visible beside body)
+        let spadeGeo = SCNPyramid(width: 0.14, height: 0.26, length: 0.035)
         spadeGeo.materials = [hornMat]
         let spade = SCNNode(geometry: spadeGeo)
-        spade.position = SCNVector3(0, -0.10, -0.08)
-        spade.eulerAngles = SCNVector3(-Float.pi / 2, 0, 0)
+        spade.position = SCNVector3(0.04, 0.12, 0.02)
+        spade.eulerAngles = SCNVector3(-Float.pi / 3, 0, Float.pi / 5)
         prevNode.addChildNode(spade)
+
+        // Dragon Fire Breath Emitter (Requirement 4)
+        let fireEmitter = SCNNode()
+        fireEmitter.position = SCNVector3(0, -0.04, 0.35)
+        head.addChildNode(fireEmitter)
+
+        let emberCoreGeo = SCNSphere(radius: 0.035)
+        emberCoreGeo.materials = [hornMat]
+        let emberCore = SCNNode(geometry: emberCoreGeo)
+        emberCore.opacity = 0.0 // Managed procedurally during fire breath
+        fireEmitter.addChildNode(emberCore)
 
         // 9. Articulated 4-Leg Limb Hierarchy (Requirements 5 & 7)
         let flLeg = makeArticulatedLeg(mat: primaryMat, clawMat: clawMat, upperLength: 0.15, lowerLength: 0.14, radius: 0.055, addClaws: true)
@@ -578,7 +755,8 @@ public class Pet3DCharacterBuilder {
             backRightShin: brLeg.shinNode,
             backRightPaw: brLeg.pawNode,
             hornsNode: hornsNode,
-            accessoriesNode: accNode
+            accessoriesNode: accNode,
+            fireEmitterNode: fireEmitter
         )
     }
 
@@ -1058,6 +1236,16 @@ public class Pet3DCharacterBuilder {
         antNode.addChildNode(orb)
         head.addChildNode(antNode)
 
+        // Articulated Dual Robotic Arm Hierarchy (Requirement 2)
+        // Shoulder -> Upper Arm -> Elbow -> Forearm -> Wrist -> Hand
+        let leftArmComp = makeArticulatedRoboticArm(chassisMat: chassisMat, darkMetalMat: darkMetalMat, glowMat: neonBlueMat, isLeft: true)
+        leftArmComp.shoulderPivot.position = SCNVector3(-0.21, 0.08, 0)
+        body.addChildNode(leftArmComp.shoulderPivot)
+
+        let rightArmComp = makeArticulatedRoboticArm(chassisMat: chassisMat, darkMetalMat: darkMetalMat, glowMat: neonBlueMat, isLeft: false)
+        rightArmComp.shoulderPivot.position = SCNVector3(0.21, 0.08, 0)
+        body.addChildNode(rightArmComp.shoulderPivot)
+
         let fl = makeArticulatedLeg(mat: chassisMat, clawMat: darkMetalMat, upperLength: 0.15, lowerLength: 0.14, radius: 0.044, addClaws: false)
         fl.upperLegNode.position = SCNVector3(-0.11, -0.22, 0)
         body.addChildNode(fl.upperLegNode)
@@ -1088,7 +1276,17 @@ public class Pet3DCharacterBuilder {
             frontRightLeg: fr.upperLegNode,
             frontRightShin: fr.shinNode,
             frontRightPaw: fr.pawNode,
-            accessoriesNode: accNode
+            accessoriesNode: accNode,
+            leftShoulderNode: leftArmComp.shoulderPivot,
+            leftArmNode: leftArmComp.upperArmPivot,
+            leftElbowNode: leftArmComp.elbowPivot,
+            leftWristNode: leftArmComp.wristPivot,
+            leftHandNode: leftArmComp.handNode,
+            rightShoulderNode: rightArmComp.shoulderPivot,
+            rightArmNode: rightArmComp.upperArmPivot,
+            rightElbowNode: rightArmComp.elbowPivot,
+            rightWristNode: rightArmComp.wristPivot,
+            rightHandNode: rightArmComp.handNode
         )
     }
 
@@ -1279,7 +1477,9 @@ public class Pet3DCharacterBuilder {
             tongueNode: jawComp.tongueNode,
             frontLeftLeg: leftArm,
             frontRightLeg: rightArm,
-            accessoriesNode: accNode
+            accessoriesNode: accNode,
+            leftArmNode: leftArm,
+            rightArmNode: rightArm
         )
     }
 

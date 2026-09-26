@@ -39,7 +39,11 @@ public class PetState: ObservableObject {
 
     // Autonomous Life Cycle
     @Published public var autonomousLifeMode: String = "normal"
+    @Published public var autonomousLifeSetting: AutonomousLifeSetting = .normal
     private var autonomousLifeTimer: Timer?
+
+    // 3D Locomotion Direction
+    @Published public var movementDirection: MovementDirection = .forward
 
     // 3D Rendering & Customization
     @Published public var renderEngineMode: RenderEngineMode = .threeD
@@ -147,6 +151,17 @@ public class PetState: ObservableObject {
         self.moodPoints = data.moodPoints
         self.activeTab = data.activeTab ?? "chat"
         self.autonomousLifeMode = data.autonomousLifeMode ?? "normal"
+        if let setting = AutonomousLifeSetting(rawValue: self.autonomousLifeMode.uppercased()) {
+            self.autonomousLifeSetting = setting
+        } else if self.autonomousLifeMode.lowercased() == "off" {
+            self.autonomousLifeSetting = .off
+        } else if self.autonomousLifeMode.lowercased() == "minimal" {
+            self.autonomousLifeSetting = .minimal
+        } else if self.autonomousLifeMode.lowercased() == "lively" {
+            self.autonomousLifeSetting = .lively
+        } else {
+            self.autonomousLifeSetting = .normal
+        }
 
         if let modeStr = data.renderEngineMode, let mode = RenderEngineMode(rawValue: modeStr) {
             self.renderEngineMode = mode
@@ -263,8 +278,27 @@ public class PetState: ObservableObject {
         }
     }
 
+    public func setAutonomousLifeSetting(_ setting: AutonomousLifeSetting) {
+        self.autonomousLifeSetting = setting
+        self.autonomousLifeMode = setting.rawValue.lowercased()
+        DataManager.shared.savedData.autonomousLifeMode = setting.rawValue.lowercased()
+        DataManager.shared.saveData()
+        restartAutonomousLifeTimer()
+    }
+
     public func setAutonomousLifeMode(_ mode: String) {
         self.autonomousLifeMode = mode
+        if let s = AutonomousLifeSetting(rawValue: mode.uppercased()) {
+            self.autonomousLifeSetting = s
+        } else if mode.lowercased() == "off" {
+            self.autonomousLifeSetting = .off
+        } else if mode.lowercased() == "minimal" {
+            self.autonomousLifeSetting = .minimal
+        } else if mode.lowercased() == "lively" {
+            self.autonomousLifeSetting = .lively
+        } else {
+            self.autonomousLifeSetting = .normal
+        }
         DataManager.shared.savedData.autonomousLifeMode = mode
         DataManager.shared.saveData()
         restartAutonomousLifeTimer()
@@ -272,26 +306,33 @@ public class PetState: ObservableObject {
 
     public func restartAutonomousLifeTimer() {
         autonomousLifeTimer?.invalidate()
-        guard autonomousLifeMode != "off" else { return }
+        autonomousLifeTimer = nil
+        guard autonomousLifeSetting != .off else { return }
+        scheduleNextAutonomousLifeEvent()
+    }
 
-        let interval: TimeInterval
-        switch autonomousLifeMode {
-        case "lively": interval = 22.0
-        case "minimal": interval = 75.0
-        default: interval = 40.0 // "normal"
-        }
+    private func scheduleNextAutonomousLifeEvent() {
+        autonomousLifeTimer?.invalidate()
+        guard autonomousLifeSetting != .off else { return }
 
-        autonomousLifeTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
+        let range = autonomousLifeSetting.intervalRangeSeconds
+        let interval = Double.random(in: range)
+
+        autonomousLifeTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) { [weak self] _ in
             Task { @MainActor in
                 self?.performSubtleAutonomousAction()
+                self?.scheduleNextAutonomousLifeEvent()
             }
         }
     }
 
     private func performSubtleAutonomousAction() {
-        // Pauses when user is interacting: chatting, thinking, or during Focus sessions
-        guard !isChatOpen, !isThinking, animState == .idle || animState == .sleep else { return }
+        // Pauses when user is interacting: chatting, AI is thinking/responding, speaking, or during Focus sessions
+        guard !isChatOpen, !isThinking else { return }
+        guard !VoiceAssistant.shared.isSpeaking else { return }
+        guard animState == .idle || animState == .sleep else { return }
         guard !FocusGuardian.shared.isSessionActive else { return }
+        guard activeEventPriority == .idleBehavior else { return }
 
         if animState == .sleep {
             if Double.random(in: 0...1) < 0.4 {
@@ -301,26 +342,73 @@ public class PetState: ObservableObject {
         }
 
         let roll = Double.random(in: 0...1)
-        if roll < 0.28 {
+        if roll < 0.22 {
             // 1. Curious look around
             setTemporaryMood(.concerned, duration: 3.5)
-        } else if roll < 0.52 {
+        } else if roll < 0.42 {
             // 2. Loving or relaxed gaze at user
             setTemporaryMood(.love, duration: 4.0)
-        } else if roll < 0.72 {
+        } else if roll < 0.60 {
             // 3. Gentle stretch / yawn
-            let emotes = ["*stretches paws* 🐾", "*curious ear twitch*", "*gentle sigh* 🫧", "*purrs softly*"]
+            let emotes = ["*stretches paws* 🐾", "*curious ear swivel*", "*gentle sigh* 🫧", "*purrs softly*"]
             if let emote = emotes.randomElement() {
                 showBubble(emote, duration: 2.2)
             }
-        } else if roll < 0.86 {
-            // 4. Happy bounce / flutter
-            setTemporaryMood(.happy, duration: 3.0)
+        } else if roll < 0.78 {
+            // 4. Species Special Ability or Happy emote
+            if Double.random(in: 0...1) < 0.5 {
+                triggerSpecialAbility()
+            } else {
+                setTemporaryMood(.happy, duration: 3.0)
+            }
         } else {
             // 5. Gentle stroll across screen
             if !isChatOpen {
                 WalkerManager.shared.startWalk(species: currentSpecies, isTest: false)
             }
+        }
+    }
+
+    public func triggerDragonFireBreath() {
+        guard currentSpecies == .dragon else { return }
+        NotificationCenter.default.post(name: NSNotification.Name("PetTriggerDragonFireBreath"), object: nil)
+    }
+
+    public func triggerRobotWave() {
+        guard currentSpecies == .robot else { return }
+        NotificationCenter.default.post(name: NSNotification.Name("PetTriggerRobotWave"), object: nil)
+    }
+
+    public func triggerSpecialAbility() {
+        switch currentSpecies.specialAbility {
+        case .fireBreath:
+            triggerDragonFireBreath()
+        case .roboticWave:
+            triggerRobotWave()
+        case .groomAndStretch:
+            showBubble("🐱 *stretches paws & grooms whiskers*", duration: 3.0)
+            setTemporaryMood(.love, duration: 3.5)
+            SoundEffect.success.play()
+        case .tailSwirlAndPounce:
+            showBubble("🦊 *swirls giant fluffy tail & pounces*", duration: 3.0)
+            setTemporaryMood(.excited, duration: 3.5)
+            SoundEffect.success.play()
+        case .binkyHop:
+            showBubble("🐇 *joyful binky hop!*", duration: 2.5)
+            animState = .celebrate
+            SoundEffect.success.play()
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 2_500_000_000)
+                if self.animState == .celebrate { self.animState = .idle }
+            }
+        case .cyberScan:
+            showBubble("⚡ *holographic scan matrix*", duration: 2.5)
+            setTemporaryMood(.excited, duration: 3.0)
+            SoundEffect.click.play()
+        case .etherealFade:
+            showBubble("✨ *phases into ethereal glow*", duration: 3.0)
+            setTemporaryMood(.curious, duration: 3.5)
+            SoundEffect.success.play()
         }
     }
 

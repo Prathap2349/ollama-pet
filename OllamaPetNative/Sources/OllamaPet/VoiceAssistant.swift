@@ -279,6 +279,26 @@ public class VoiceAssistant: NSObject, ObservableObject, AVSpeechSynthesizerDele
             .map { VoiceOption(id: $0.identifier, name: $0.name, language: $0.language) }
     }
 
+    public func applyVoicePreset(_ preset: AssistantVoicePreset) {
+        let voices = AVSpeechSynthesisVoice.speechVoices()
+        for keyword in preset.preferredVoiceKeywords {
+            if let matched = voices.first(where: { $0.name.localizedCaseInsensitiveContains(keyword) }) {
+                DataManager.shared.setSelectedVoiceId(matched.identifier)
+                DataManager.shared.setVoicePreset(preset.rawValue)
+                return
+            }
+        }
+        // Fallback to first available English voice
+        if let fallback = voices.first(where: { $0.language.starts(with: "en") }) {
+            DataManager.shared.setSelectedVoiceId(fallback.identifier)
+            DataManager.shared.setVoicePreset(preset.rawValue)
+        }
+    }
+
+    public func testVoicePreview() {
+        speak(text: "Hello! I am your desktop companion, ready to assist you.")
+    }
+
     public func speak(text: String) {
         stopSpeaking()
 
@@ -301,6 +321,7 @@ public class VoiceAssistant: NSObject, ObservableObject, AVSpeechSynthesizerDele
         let speed = Float(data.speechSpeed ?? 1.0)
         utterance.rate = AVSpeechUtteranceDefaultSpeechRate * speed
         utterance.volume = Float(data.speechVolume ?? 1.0)
+        utterance.pitchMultiplier = Float(data.speechPitch ?? 1.0)
 
         isSpeaking = true
         state = .speaking

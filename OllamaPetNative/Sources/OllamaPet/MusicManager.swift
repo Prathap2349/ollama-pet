@@ -198,8 +198,8 @@ public class MusicManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
         // 1. Check System-Wide MediaRemote framework (Detects anything playing across macOS)
         let remoteResult = queryMediaRemote()
 
-        // 2. Check Browser & Application specific metadata
-        let appMetadata = queryActiveApplications()
+        // 2. Check Browser & Application specific metadata (Correlated with MediaRemote state)
+        let appMetadata = queryActiveApplications(mediaRemotePlaying: remoteResult.isPlaying)
 
         let isActuallyPlaying = remoteResult.isPlaying || appMetadata.isPlaying
         let track = appMetadata.title.isEmpty ? (remoteResult.title ?? "") : appMetadata.title
@@ -383,10 +383,10 @@ public class MusicManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
         let source: String
     }
 
-    private func queryActiveApplications() -> AppMediaResult {
+    private func queryActiveApplications(mediaRemotePlaying: Bool) -> AppMediaResult {
         let runningApps = NSWorkspace.shared.runningApplications
 
-        // 1. Spotify
+        // 1. Spotify (Native player state)
         if runningApps.contains(where: { $0.bundleIdentifier == "com.spotify.client" }) {
             let script = """
             tell application "Spotify"
@@ -403,7 +403,7 @@ public class MusicManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
             }
         }
 
-        // 2. Apple Music
+        // 2. Apple Music (Native player state)
         if runningApps.contains(where: { $0.bundleIdentifier == "com.apple.Music" }) {
             let script = """
             tell application "Music"
@@ -420,7 +420,7 @@ public class MusicManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
             }
         }
 
-        // 3. VLC
+        // 3. VLC (Native player state)
         if runningApps.contains(where: { $0.bundleIdentifier == "org.videolan.vlc" }) {
             let script = """
             tell application "VLC"
@@ -437,7 +437,7 @@ public class MusicManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
             }
         }
 
-        // 4. Google Chrome (YouTube Tabs)
+        // 4. Google Chrome (YouTube Tabs - Verified with MediaRemote audio state)
         if runningApps.contains(where: { $0.bundleIdentifier == "com.google.Chrome" }) {
             let script = """
             tell application "Google Chrome"
@@ -454,11 +454,11 @@ public class MusicManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
             """
             if let res = executeAppleScript(script), !res.isEmpty {
                 let p = res.components(separatedBy: ":::")
-                return AppMediaResult(isPlaying: true, title: p[0], artist: "YouTube", source: "YouTube (Chrome)")
+                return AppMediaResult(isPlaying: mediaRemotePlaying, title: p[0], artist: "YouTube", source: "YouTube (Chrome)")
             }
         }
 
-        // 5. Safari (YouTube Tabs)
+        // 5. Safari (YouTube Tabs - Verified with MediaRemote audio state)
         if runningApps.contains(where: { $0.bundleIdentifier == "com.apple.Safari" }) {
             let script = """
             tell application "Safari"
@@ -475,11 +475,11 @@ public class MusicManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
             """
             if let res = executeAppleScript(script), !res.isEmpty {
                 let p = res.components(separatedBy: ":::")
-                return AppMediaResult(isPlaying: true, title: p[0], artist: "YouTube", source: "YouTube (Safari)")
+                return AppMediaResult(isPlaying: mediaRemotePlaying, title: p[0], artist: "YouTube", source: "YouTube (Safari)")
             }
         }
 
-        // 6. Brave Browser (YouTube Tabs)
+        // 6. Brave Browser (YouTube Tabs - Verified with MediaRemote audio state)
         if runningApps.contains(where: { $0.bundleIdentifier == "com.brave.Browser" }) {
             let script = """
             tell application "Brave Browser"
@@ -496,7 +496,28 @@ public class MusicManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
             """
             if let res = executeAppleScript(script), !res.isEmpty {
                 let p = res.components(separatedBy: ":::")
-                return AppMediaResult(isPlaying: true, title: p[0], artist: "YouTube", source: "YouTube (Brave)")
+                return AppMediaResult(isPlaying: mediaRemotePlaying, title: p[0], artist: "YouTube", source: "YouTube (Brave)")
+            }
+        }
+
+        // 7. Microsoft Edge (YouTube Tabs - Verified with MediaRemote audio state)
+        if runningApps.contains(where: { $0.bundleIdentifier == "com.microsoft.edgemac" }) {
+            let script = """
+            tell application "Microsoft Edge"
+                repeat with w in windows
+                    repeat with t in tabs of w
+                        set u to URL of t
+                        if u contains "youtube.com/watch" or u contains "music.youtube.com" then
+                            return (title of t) & ":::YouTube"
+                        end if
+                    end repeat
+                end repeat
+            end tell
+            return ""
+            """
+            if let res = executeAppleScript(script), !res.isEmpty {
+                let p = res.components(separatedBy: ":::")
+                return AppMediaResult(isPlaying: mediaRemotePlaying, title: p[0], artist: "YouTube", source: "YouTube (Edge)")
             }
         }
 

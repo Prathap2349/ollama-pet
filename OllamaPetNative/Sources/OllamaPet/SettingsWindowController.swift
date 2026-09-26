@@ -671,7 +671,7 @@ struct CharacterSettingsSection: View {
 
             // Live Silhouette Preview Stage
             HStack(spacing: 20) {
-                // Interactive Preview
+                // Interactive 3D Preview
                 ZStack {
                     RoundedRectangle(cornerRadius: 12)
                         .fill(perf.grayscaleTestMode ? Color(white: 0.15) : Color.black.opacity(0.8))
@@ -680,27 +680,9 @@ struct CharacterSettingsSection: View {
                                 .stroke(Color.primary.opacity(0.1), lineWidth: 1)
                         )
 
-                    TimelineView(.animation(minimumInterval: perf.minimumRenderInterval)) { (timeline: TimelineViewDefaultContext) in
-                        Canvas { context, size in
-                            let t = timeline.date.timeIntervalSinceReferenceDate
-                            let snapshot = motion.evaluateSnapshot(
-                                at: t,
-                                animState: .idle,
-                                atmosphere: .clearDay,
-                                isSafeMode: perf.isSafeMode
-                            )
-                            let model = CharacterStructuralModel.model(for: petState.currentSpecies)
-                            PetCanvasRenderer.draw(
-                                context: &context,
-                                size: size,
-                                species: petState.currentSpecies,
-                                model: model,
-                                animState: .idle,
-                                snapshot: snapshot,
-                                perf: perf
-                            )
-                        }
-                    }
+                    Pet3DSceneView()
+                        .frame(width: 140, height: 140)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
                 }
                 .frame(width: 140, height: 140)
 
@@ -772,21 +754,54 @@ struct CharacterSettingsSection: View {
             Divider()
                 .padding(.vertical, 6)
 
-            // Walk Test Button
-            HStack {
+            // Walk & Special Ability Test Buttons
+            HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Test Walking Rig")
+                    Text("Interactive Rig Testing")
                         .font(.system(size: 13, weight: .semibold))
-                    Text("Simulates the species-specific walking cycle (hopping for bunny, floating wave for ghost, 4-leg trot for cat/fox).")
+                    Text("Test locomotion and unique 3D abilities (\(petState.currentSpecies.specialAbility.displayName)).")
                         .font(.system(size: 11))
                         .foregroundColor(.secondary)
                 }
                 Spacer()
+                Button("Test Ability") {
+                    petState.triggerSpecialAbility()
+                }
+                .buttonStyle(.bordered)
+
                 Button("Walk Test") {
                     WalkerManager.shared.startWalk(species: petState.currentSpecies, isTest: true)
                 }
                 .buttonStyle(.borderedProminent)
             }
+            .padding(12)
+            .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
+
+            // Autonomous Life Scheduler
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Autonomous Life Frequency")
+                            .font(.system(size: 13, weight: .semibold))
+                        Text("Randomized 4–6 min intervals for life behaviors, stretches, and abilities (auto-pauses during focus & chat).")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    Picker("", selection: Binding(
+                        get: { petState.autonomousLifeSetting },
+                        set: { petState.setAutonomousLifeSetting($0) }
+                    )) {
+                        ForEach(AutonomousLifeSetting.allCases) { setting in
+                            Text(setting.rawValue).tag(setting)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 260)
+                }
+            }
+            .padding(12)
+            .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
         }
     }
 
@@ -815,32 +830,14 @@ struct SpeciesPreviewCard: View {
     var body: some View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 8) {
-                // Live Canvas Preview Stage with Selection Badge
+                // Live 3D Preview Stage with Selection Badge
                 ZStack(alignment: .topTrailing) {
                     RoundedRectangle(cornerRadius: 8)
                         .fill(perf.grayscaleTestMode ? Color(white: 0.15) : Color.black.opacity(0.85))
 
-                    TimelineView(.animation(minimumInterval: perf.minimumRenderInterval)) { (timeline: TimelineViewDefaultContext) in
-                        Canvas { context, size in
-                            let t = timeline.date.timeIntervalSinceReferenceDate
-                            let snapshot = motion.evaluateSnapshot(
-                                at: t,
-                                animState: .idle,
-                                atmosphere: .clearDay,
-                                isSafeMode: perf.isSafeMode
-                            )
-                            let model = CharacterStructuralModel.model(for: species)
-                            PetCanvasRenderer.draw(
-                                context: &context,
-                                size: size,
-                                species: species,
-                                model: model,
-                                animState: .idle,
-                                snapshot: snapshot,
-                                perf: perf
-                            )
-                        }
-                    }
+                    Pet3DSceneView(previewSpecies: species)
+                        .frame(height: 86)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
 
                     if isSelected {
                         Image(systemName: "checkmark.circle.fill")
@@ -1280,44 +1277,207 @@ struct VoiceSettingsSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Text("Voice Assistant")
+            Text("Voice Assistant & Speech Synthesis")
                 .font(.system(size: 18, weight: .bold))
 
-            Toggle(isOn: Binding(
-                get: { dataManager.savedData.voiceAssistantEnabled ?? false },
-                set: {
-                    dataManager.savedData.voiceAssistantEnabled = $0
-                    dataManager.saveData()
+            // 1. Toggles
+            VStack(spacing: 12) {
+                Toggle(isOn: Binding(
+                    get: { dataManager.savedData.voiceAssistantEnabled ?? false },
+                    set: {
+                        dataManager.savedData.voiceAssistantEnabled = $0
+                        dataManager.saveData()
+                    }
+                )) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Enable Voice Assistant")
+                            .font(.system(size: 13, weight: .semibold))
+                        Text("Allows speech-to-text input and spoken companion voice replies.")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                    }
                 }
-            )) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Enable Voice Assistant")
-                        .font(.system(size: 13, weight: .semibold))
-                    Text("Allows speech-to-text input and spoken companion voice replies.")
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
+                .toggleStyle(.switch)
+
+                Divider()
+
+                Toggle(isOn: Binding(
+                    get: { dataManager.savedData.speakAiResponses ?? true },
+                    set: {
+                        dataManager.savedData.speakAiResponses = $0
+                        dataManager.saveData()
+                    }
+                )) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Speak Replies Aloud (TTS)")
+                            .font(.system(size: 13, weight: .medium))
+                        Text("Companion vocalizes responses using macOS speech synthesis.")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                    }
                 }
+                .toggleStyle(.switch)
             }
-            .toggleStyle(.switch)
-            .padding(12)
+            .padding(14)
             .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
 
-            Toggle(isOn: Binding(
-                get: { dataManager.savedData.speakAiResponses ?? true },
-                set: {
-                    dataManager.savedData.speakAiResponses = $0
-                    dataManager.saveData()
-                }
-            )) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Speak Replies Aloud (TTS)")
-                        .font(.system(size: 13, weight: .medium))
-                    Text("Pet vocalizes responses using native macOS speech synthesis.")
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
+            // 2. Curated Voice Presets
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Assistant Persona & Voice Presets")
+                    .font(.system(size: 13, weight: .semibold))
+
+                Text("Quickly match the companion's tone to your workflow.")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 8)], spacing: 8) {
+                    ForEach(AssistantVoicePreset.allCases) { preset in
+                        let isSelected = (dataManager.savedData.voicePreset == preset.rawValue)
+                        Button(action: {
+                            voice.applyVoicePreset(preset)
+                        }) {
+                            HStack {
+                                Text(preset.rawValue)
+                                    .font(.system(size: 11, weight: isSelected ? .bold : .medium))
+                                    .foregroundColor(isSelected ? .accentColor : .primary)
+                                Spacer()
+                                if isSelected {
+                                    Image(systemName: "checkmark")
+                                        .font(.system(size: 10, weight: .bold))
+                                        .foregroundColor(.accentColor)
+                                }
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 8)
+                            .background(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(isSelected ? Color.accentColor.opacity(0.12) : Color.primary.opacity(0.04))
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(isSelected ? Color.accentColor.opacity(0.5) : Color.clear, lineWidth: 1)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
             }
-            .padding(12)
+            .padding(14)
+            .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
+
+            // 3. Granular Voice Selector & Test Button
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Installed System Voice")
+                            .font(.system(size: 13, weight: .semibold))
+                        Text("Native macOS neural and standard synthesis voices.")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
+
+                    Picker("", selection: Binding(
+                        get: { dataManager.savedData.selectedVoiceId ?? "" },
+                        set: {
+                            dataManager.setSelectedVoiceId($0)
+                            dataManager.setVoicePreset("")
+                        }
+                    )) {
+                        ForEach(voice.availableVoices) { opt in
+                            Text("\(opt.name) (\(opt.language))").tag(opt.id)
+                        }
+                    }
+                    .frame(width: 200)
+                }
+
+                Divider()
+
+                // Speech Speed Slider
+                HStack {
+                    Text("Speed")
+                        .font(.system(size: 12, weight: .medium))
+                        .frame(width: 60, alignment: .leading)
+                    Slider(
+                        value: Binding(
+                            get: { dataManager.savedData.speechSpeed ?? 1.0 },
+                            set: { dataManager.setSpeechSpeed($0) }
+                        ),
+                        in: 0.5...2.0,
+                        step: 0.05
+                    )
+                    Text(String(format: "%.2fx", dataManager.savedData.speechSpeed ?? 1.0))
+                        .font(.system(size: 11, design: .monospaced))
+                        .frame(width: 50, alignment: .trailing)
+                }
+
+                // Speech Volume Slider
+                HStack {
+                    Text("Volume")
+                        .font(.system(size: 12, weight: .medium))
+                        .frame(width: 60, alignment: .leading)
+                    Slider(
+                        value: Binding(
+                            get: { dataManager.savedData.speechVolume ?? 1.0 },
+                            set: { dataManager.setSpeechVolume($0) }
+                        ),
+                        in: 0.1...1.0,
+                        step: 0.05
+                    )
+                    Text("\(Int((dataManager.savedData.speechVolume ?? 1.0) * 100))%")
+                        .font(.system(size: 11, design: .monospaced))
+                        .frame(width: 50, alignment: .trailing)
+                }
+
+                // Speech Pitch Slider
+                HStack {
+                    Text("Pitch")
+                        .font(.system(size: 12, weight: .medium))
+                        .frame(width: 60, alignment: .leading)
+                    Slider(
+                        value: Binding(
+                            get: { dataManager.savedData.speechPitch ?? 1.0 },
+                            set: { dataManager.setSpeechPitch($0) }
+                        ),
+                        in: 0.5...2.0,
+                        step: 0.05
+                    )
+                    Text(String(format: "%.2fx", dataManager.savedData.speechPitch ?? 1.0))
+                        .font(.system(size: 11, design: .monospaced))
+                        .frame(width: 50, alignment: .trailing)
+                }
+
+                Divider()
+
+                // Test Voice Button
+                HStack {
+                    Spacer()
+                    if voice.isSpeaking {
+                        Button(action: {
+                            voice.stopSpeaking()
+                        }) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "stop.fill")
+                                Text("Stop Speaking")
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    } else {
+                        Button(action: {
+                            voice.testVoicePreview()
+                        }) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "play.fill")
+                                Text("Test Voice Preview")
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                    }
+                }
+            }
+            .padding(14)
             .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
         }
     }
@@ -2873,6 +3033,238 @@ struct ScreenSettingsSection: View {
     }
 }
 
+// MARK: - Interactive Focus Duration Editor (Requirement 12)
+
+struct FocusDurationEditorView: View {
+    @ObservedObject var focus = FocusGuardian.shared
+    @State private var directInput: String = ""
+    @State private var hoursText: String = ""
+    @State private var minutesText: String = ""
+    @State private var secondsText: String = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Focus Duration Editor")
+                    .font(.system(size: 13, weight: .semibold))
+                Spacer()
+                if focus.isSessionActive {
+                    HStack(spacing: 4) {
+                        Image(systemName: "lock.fill")
+                            .font(.system(size: 10))
+                        Text("Session Active — Locked")
+                            .font(.system(size: 11, weight: .semibold))
+                    }
+                    .foregroundColor(.orange)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(Color.orange.opacity(0.12)))
+                } else {
+                    Text("Configured: \(focus.formattedSelectedDuration)")
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Capsule().fill(Color.accentColor.opacity(0.12)))
+                        .foregroundColor(.accentColor)
+                }
+            }
+
+            // Quick Presets
+            HStack(spacing: 8) {
+                Text("Quick Presets:")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+
+                ForEach([10, 25, 45, 60], id: \.self) { mins in
+                    Button("\(mins)m") {
+                        applyPresetMinutes(mins)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(focus.isSessionActive)
+                }
+            }
+
+            // Typeable HH : MM : SS
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("HH")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(.secondary)
+                    TextField("00", text: $hoursText)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 48)
+                        .multilineTextAlignment(.center)
+                        .font(.system(size: 13, weight: .medium, design: .monospaced))
+                        .disabled(focus.isSessionActive)
+                        .onChange(of: hoursText) { val in
+                            if let h = Int(val.filter({ $0.isNumber })) {
+                                focus.customHours = max(0, min(23, h))
+                                focus.applyPreset(seconds: (focus.customHours * 3600) + (focus.customMinutes * 60) + focus.customSeconds)
+                            }
+                        }
+                }
+
+                Text(":")
+                    .font(.system(size: 16, weight: .bold))
+                    .padding(.top, 12)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("MM")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(.secondary)
+                    TextField("25", text: $minutesText)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 48)
+                        .multilineTextAlignment(.center)
+                        .font(.system(size: 13, weight: .medium, design: .monospaced))
+                        .disabled(focus.isSessionActive)
+                        .onChange(of: minutesText) { val in
+                            if let m = Int(val.filter({ $0.isNumber })) {
+                                focus.customMinutes = max(0, min(59, m))
+                                focus.applyPreset(seconds: (focus.customHours * 3600) + (focus.customMinutes * 60) + focus.customSeconds)
+                            }
+                        }
+                }
+
+                Text(":")
+                    .font(.system(size: 16, weight: .bold))
+                    .padding(.top, 12)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("SS")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(.secondary)
+                    TextField("00", text: $secondsText)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 48)
+                        .multilineTextAlignment(.center)
+                        .font(.system(size: 13, weight: .medium, design: .monospaced))
+                        .disabled(focus.isSessionActive)
+                        .onChange(of: secondsText) { val in
+                            if let s = Int(val.filter({ $0.isNumber })) {
+                                focus.customSeconds = max(0, min(59, s))
+                                focus.applyPreset(seconds: (focus.customHours * 3600) + (focus.customMinutes * 60) + focus.customSeconds)
+                            }
+                        }
+                }
+
+                Spacer()
+
+                // Direct Input Field
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Direct Input (e.g. \"25\", \"45m\", \"1:30:00\")")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(.secondary)
+                    HStack(spacing: 6) {
+                        TextField("Enter duration...", text: $directInput)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 130)
+                            .font(.system(size: 12))
+                            .disabled(focus.isSessionActive)
+                            .onSubmit {
+                                parseAndApplyDirectInput()
+                            }
+
+                        Button("Apply") {
+                            parseAndApplyDirectInput()
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(focus.isSessionActive)
+                    }
+                }
+            }
+        }
+        .padding(14)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
+        .onAppear {
+            syncFromFocus()
+        }
+        .onChange(of: focus.customHours) { _ in syncFromFocus() }
+        .onChange(of: focus.customMinutes) { _ in syncFromFocus() }
+        .onChange(of: focus.customSeconds) { _ in syncFromFocus() }
+    }
+
+    private func syncFromFocus() {
+        hoursText = String(format: "%02d", focus.customHours)
+        minutesText = String(format: "%02d", focus.customMinutes)
+        secondsText = String(format: "%02d", focus.customSeconds)
+    }
+
+    private func applyPresetMinutes(_ mins: Int) {
+        focus.customHours = mins / 60
+        focus.customMinutes = mins % 60
+        focus.customSeconds = 0
+        focus.applyPreset(seconds: mins * 60)
+        syncFromFocus()
+    }
+
+    private func parseAndApplyDirectInput() {
+        let input = directInput.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !input.isEmpty else { return }
+
+        if input.contains(":") {
+            let parts = input.components(separatedBy: ":").compactMap { Int($0.trimmingCharacters(in: .whitespaces)) }
+            if parts.count == 3 {
+                let h = max(0, min(23, parts[0]))
+                let m = max(0, min(59, parts[1]))
+                let s = max(0, min(59, parts[2]))
+                focus.customHours = h
+                focus.customMinutes = m
+                focus.customSeconds = s
+                focus.applyPreset(seconds: (h * 3600) + (m * 60) + s)
+                syncFromFocus()
+                directInput = ""
+                return
+            } else if parts.count == 2 {
+                let m = max(0, min(59, parts[0]))
+                let s = max(0, min(59, parts[1]))
+                focus.customHours = 0
+                focus.customMinutes = m
+                focus.customSeconds = s
+                focus.applyPreset(seconds: (m * 60) + s)
+                syncFromFocus()
+                directInput = ""
+                return
+            }
+        }
+
+        var totalSec = 0
+        var foundUnit = false
+        if input.contains("h") || input.contains("m") || input.contains("s") {
+            let tokens = input.components(separatedBy: .whitespaces)
+            for token in tokens {
+                if token.hasSuffix("h"), let h = Int(token.dropLast()) {
+                    totalSec += h * 3600
+                    foundUnit = true
+                } else if token.hasSuffix("m"), let m = Int(token.dropLast()) {
+                    totalSec += m * 60
+                    foundUnit = true
+                } else if token.hasSuffix("s"), let s = Int(token.dropLast()) {
+                    totalSec += s
+                    foundUnit = true
+                }
+            }
+        }
+
+        if foundUnit && totalSec > 0 {
+            focus.customHours = totalSec / 3600
+            focus.customMinutes = (totalSec % 3600) / 60
+            focus.customSeconds = totalSec % 60
+            focus.applyPreset(seconds: totalSec)
+            syncFromFocus()
+            directInput = ""
+            return
+        }
+
+        if let num = Int(input.filter({ $0.isNumber })), num > 0 {
+            applyPresetMinutes(num)
+            directInput = ""
+        }
+    }
+}
+
 struct FocusSettingsSection: View {
     @ObservedObject var focus = FocusGuardian.shared
     @ObservedObject var dataManager = DataManager.shared
@@ -2882,81 +3274,8 @@ struct FocusSettingsSection: View {
             Text("Focus Guardian & Health Ergonomics")
                 .font(.system(size: 18, weight: .bold))
 
-            // 1. Default Session Duration
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Default Focus Duration")
-                    .font(.system(size: 13, weight: .semibold))
-
-                Text("Configure your standard timer length for new focus sessions.")
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary)
-
-                HStack(spacing: 16) {
-                    HStack(spacing: 4) {
-                        Picker("H", selection: Binding(
-                            get: { focus.customHours },
-                            set: {
-                                focus.customHours = $0
-                                focus.applyPreset(seconds: ($0 * 3600) + (focus.customMinutes * 60) + focus.customSeconds)
-                            }
-                        )) {
-                            ForEach(0...12, id: \.self) { h in
-                                Text("\(h)").tag(h)
-                            }
-                        }
-                        .frame(width: 60)
-                        Text("hr")
-                            .font(.system(size: 12))
-                            .foregroundColor(.secondary)
-                    }
-
-                    HStack(spacing: 4) {
-                        Picker("M", selection: Binding(
-                            get: { focus.customMinutes },
-                            set: {
-                                focus.customMinutes = $0
-                                focus.applyPreset(seconds: (focus.customHours * 3600) + ($0 * 60) + focus.customSeconds)
-                            }
-                        )) {
-                            ForEach(0...59, id: \.self) { m in
-                                Text("\(m)").tag(m)
-                            }
-                        }
-                        .frame(width: 60)
-                        Text("min")
-                            .font(.system(size: 12))
-                            .foregroundColor(.secondary)
-                    }
-
-                    HStack(spacing: 4) {
-                        Picker("S", selection: Binding(
-                            get: { focus.customSeconds },
-                            set: {
-                                focus.customSeconds = $0
-                                focus.applyPreset(seconds: (focus.customHours * 3600) + (focus.customMinutes * 60) + $0)
-                            }
-                        )) {
-                            ForEach(0...59, id: \.self) { s in
-                                Text("\(s)").tag(s)
-                            }
-                        }
-                        .frame(width: 60)
-                        Text("sec")
-                            .font(.system(size: 12))
-                            .foregroundColor(.secondary)
-                    }
-
-                    Spacer()
-
-                    Text("Preset: \(focus.formattedTime)")
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.06)))
-                }
-            }
-            .padding(14)
-            .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
+            // 1. Interactive Focus Duration Editor (Requirement 12)
+            FocusDurationEditorView()
 
             // 2. Step-Away Alerts Toggle
             VStack(alignment: .leading, spacing: 8) {

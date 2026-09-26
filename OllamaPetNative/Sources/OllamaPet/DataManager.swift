@@ -265,6 +265,11 @@ public class DataManager: ObservableObject {
         saveData()
     }
 
+    public func setVoicePreset(_ preset: String) {
+        savedData.voicePreset = preset
+        saveData()
+    }
+
     public func setSpeechSpeed(_ speed: Double) {
         savedData.speechSpeed = speed
         saveData()
@@ -272,6 +277,11 @@ public class DataManager: ObservableObject {
 
     public func setSpeechVolume(_ volume: Double) {
         savedData.speechVolume = volume
+        saveData()
+    }
+
+    public func setSpeechPitch(_ pitch: Double) {
+        savedData.speechPitch = pitch
         saveData()
     }
 

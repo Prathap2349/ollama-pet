@@ -7,8 +7,41 @@ import SwiftUI
 
 // MARK: - Presence State & Models
 
+public enum MonitoringState: Equatable {
+    case idle
+    case starting
+    case running
+    case recovering
+    case permissionRequired
+    case cameraUnavailable
+    case failed(String)
+    case stopped
+
+    public var displayText: String {
+        switch self {
+        case .idle: return "Idle"
+        case .starting: return "Starting Camera..."
+        case .running: return "Monitoring Active"
+        case .recovering: return "Recovering Pipeline..."
+        case .permissionRequired: return "Camera Permission Required"
+        case .cameraUnavailable: return "Camera Unavailable"
+        case .failed(let reason): return "Error: \(reason)"
+        case .stopped: return "Stopped"
+        }
+    }
+}
+
+public enum MonitoringError: Error, Equatable {
+    case permissionDenied
+    case noCameraDevice
+    case cannotAddInput(String)
+    case cannotAddOutput
+    case recoveryFailed
+}
+
 public enum PresenceStatus: String {
     case idle = "Camera Off"
+    case starting = "Starting..."
     case searching = "Scanning..."
     case ownerPresent = "Owner Verified 👤"
     case personDetectedNoOwner = "Person (Owner Not Set) 👤"
@@ -17,7 +50,11 @@ public enum PresenceStatus: String {
     case unknownDetected = "Unknown Subject 👀"
     case multipleDetected = "Multiple People 👥"
     case away = "No Person Detected 💤"
+    case recovering = "Recovering Pipeline..."
     case cameraUnavailable = "Camera Unavailable"
+    case permissionRequired = "Permission Required"
+    case failed = "Camera Error"
+    case stopped = "Stopped"
 
     public var isPositive: Bool {
         return self == .ownerPresent
@@ -25,6 +62,7 @@ public enum PresenceStatus: String {
 
     public var displayIndicator: String {
         switch self {
+        case .starting: return "🟡 Starting Camera"
         case .searching: return "● Scanning"
         case .uncertain: return "🟡 Checking Face"
         case .ownerPresent: return "🟢 Owner Verified"
@@ -33,7 +71,11 @@ public enum PresenceStatus: String {
         case .away: return "💤 No Person Detected"
         case .noFace: return "⚪ Face Obscured"
         case .personDetectedNoOwner: return "👤 Person Detected"
+        case .recovering: return "🟠 Recovering"
         case .cameraUnavailable: return "⚠️ Camera Unavailable"
+        case .permissionRequired: return "🔒 Permission Required"
+        case .failed: return "❌ Camera Error"
+        case .stopped: return "⏹ Stopped"
         case .idle: return "○ Camera Off"
         }
     }
@@ -655,10 +697,18 @@ private final class PresenceCaptureCoordinator: NSObject, AVCaptureVideoDataOutp
     var onPreviewFrameReady: ((CGImage) -> Void)?
     var onHeartbeat: (() -> Void)?
 
-    public private(set) var latestAnalysisFrame: CGImage? = nil
+    private let analysisFrameLock = NSLock()
+    private var _latestAnalysisFrame: CGImage? = nil
+    public var latestAnalysisFrame: CGImage? {
+        analysisFrameLock.lock()
+        defer { analysisFrameLock.unlock() }
+        return _latestAnalysisFrame
+    }
 
     private let sharedCIContext = CIContext(options: [.useSoftwareRenderer: false])
     private var captureSession: AVCaptureSession?
+    private var currentVideoInput: AVCaptureDeviceInput?
+    private var currentVideoOutput: AVCaptureVideoDataOutput?
     private let sessionQueue = DispatchQueue(label: "com.ollamapet.presence.sessionQueue", qos: .userInitiated)
 
     var intervalSeconds: Double = 1.0
@@ -680,57 +730,108 @@ private final class PresenceCaptureCoordinator: NSObject, AVCaptureVideoDataOutp
         self.trackerRef = tracker
     }
 
-    func start(interval: Double, centerStageEnabled: Bool = true, completion: @escaping (Bool) -> Void) {
+    func start(interval: Double, centerStageEnabled: Bool = true, completion: @escaping (Result<Void, MonitoringError>) -> Void) {
         self.intervalSeconds = interval
 
         sessionQueue.async { [weak self] in
             guard let self = self else { return }
 
+            // 1. Cleanly tear down any prior session
+            self.teardownCurrentSession()
+
+            // 2. Discover default video device
+            guard let camera = AVCaptureDevice.default(for: .video) else {
+                DispatchQueue.main.async { completion(.failure(.noCameraDevice)) }
+                return
+            }
+
+            // 3. Build session safely
             let session = AVCaptureSession()
             session.beginConfiguration()
             session.sessionPreset = .vga640x480
 
-            guard let camera = AVCaptureDevice.default(for: .video),
-                  let input = try? AVCaptureDeviceInput(device: camera),
-                  session.canAddInput(input) else {
+            let input: AVCaptureDeviceInput
+            do {
+                input = try AVCaptureDeviceInput(device: camera)
+            } catch {
                 session.commitConfiguration()
-                completion(false)
+                DispatchQueue.main.async { completion(.failure(.cannotAddInput(error.localizedDescription))) }
                 return
             }
-            if #available(macOS 12.3, *) {
-                AVCaptureDevice.isCenterStageEnabled = centerStageEnabled
+
+            guard session.canAddInput(input) else {
+                session.commitConfiguration()
+                DispatchQueue.main.async { completion(.failure(.cannotAddInput("Session rejected camera input"))) }
+                return
             }
             session.addInput(input)
+            self.currentVideoInput = input
 
+            // 4. Safe Center Stage Handling: ONLY touch if controlMode allows programmatic control!
+            if #available(macOS 12.3, *) {
+                if AVCaptureDevice.centerStageControlMode == .cooperative || AVCaptureDevice.centerStageControlMode == .app {
+                    AVCaptureDevice.isCenterStageEnabled = centerStageEnabled
+                }
+            }
+
+            // 5. Configure Video Data Output
             let output = AVCaptureVideoDataOutput()
             output.alwaysDiscardsLateVideoFrames = true
             output.videoSettings = [
                 kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_32BGRA)
             ]
 
-            // Video queue priority set to .userInitiated (NOT .userInteractive)
             let outputQueue = DispatchQueue(label: "com.ollamapet.presence.videoQueue", qos: .userInitiated)
             output.setSampleBufferDelegate(self, queue: outputQueue)
 
-            if session.canAddOutput(output) {
-                session.addOutput(output)
+            guard session.canAddOutput(output) else {
+                session.commitConfiguration()
+                self.teardownCurrentSession()
+                DispatchQueue.main.async { completion(.failure(.cannotAddOutput)) }
+                return
             }
+            session.addOutput(output)
+            self.currentVideoOutput = output
 
             session.commitConfiguration()
             session.startRunning()
 
             self.captureSession = session
-            completion(true)
+            DispatchQueue.main.async { completion(.success(())) }
         }
     }
 
-    func stop() {
+    func stop(completion: (() -> Void)? = nil) {
         sessionQueue.async { [weak self] in
-            guard let self = self else { return }
-            self.captureSession?.stopRunning()
-            self.captureSession = nil
-            self.isAnalyzing = false
+            guard let self = self else {
+                DispatchQueue.main.async { completion?() }
+                return
+            }
+            self.teardownCurrentSession()
+            DispatchQueue.main.async { completion?() }
         }
+    }
+
+    private func teardownCurrentSession() {
+        if let session = self.captureSession {
+            if session.isRunning {
+                session.stopRunning()
+            }
+            if let inP = self.currentVideoInput {
+                session.removeInput(inP)
+            }
+            if let outP = self.currentVideoOutput {
+                session.removeOutput(outP)
+            }
+        }
+        self.currentVideoOutput?.setSampleBufferDelegate(nil, queue: nil)
+        self.currentVideoOutput = nil
+        self.currentVideoInput = nil
+        self.captureSession = nil
+        self.isAnalyzing = false
+        analysisFrameLock.lock()
+        self._latestAnalysisFrame = nil
+        analysisFrameLock.unlock()
     }
 
     func captureOutput(
@@ -766,7 +867,9 @@ private final class PresenceCaptureCoordinator: NSObject, AVCaptureVideoDataOutp
 
         // Cache analysis frame for snapshots even when live preview is not requested
         if let cg = renderCGImage(from: pixelBuffer) {
-            self.latestAnalysisFrame = cg
+            analysisFrameLock.lock()
+            self._latestAnalysisFrame = cg
+            analysisFrameLock.unlock()
         }
 
         // Step 1: Human Detection First (Lightweight filter)
@@ -864,6 +967,7 @@ public final class PresenceMonitor: ObservableObject {
     public static let shared = PresenceMonitor()
 
     @Published public var isRunning: Bool = false
+    @Published public var monitoringState: MonitoringState = .idle
     @Published public var presenceStatus: PresenceStatus = .idle
     @Published public var trackedSubjects: [TrackedSubject] = []
     @Published public var latestPreviewImage: NSImage? = nil
@@ -980,39 +1084,67 @@ public final class PresenceMonitor: ObservableObject {
         coordinator.intervalSeconds = interval
     }
 
-    // MARK: - Session Control
+    // MARK: - Session Control (Safe State Machine)
 
     public func start() {
-        guard !isRunning else { return }
+        guard monitoringState != .starting && monitoringState != .running && monitoringState != .recovering else {
+            return
+        }
 
-        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        monitoringState = .starting
+        presenceStatus = .starting
+
+        let auth = AVCaptureDevice.authorizationStatus(for: .video)
+        switch auth {
         case .authorized:
             setupAndStartCapture()
         case .notDetermined:
             AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
                 DispatchQueue.main.async {
+                    guard let self = self else { return }
                     if granted {
-                        self?.setupAndStartCapture()
+                        self.setupAndStartCapture()
                     } else {
-                        self?.presenceStatus = .cameraUnavailable
+                        self.monitoringState = .permissionRequired
+                        self.presenceStatus = .permissionRequired
+                        self.isRunning = false
                     }
                 }
             }
-        default:
+        case .denied, .restricted:
+            monitoringState = .permissionRequired
+            presenceStatus = .permissionRequired
+            isRunning = false
+        @unknown default:
+            monitoringState = .cameraUnavailable
             presenceStatus = .cameraUnavailable
+            isRunning = false
         }
     }
 
     public func stop() {
-        guard isRunning else { return }
         isRunning = false
+        monitoringState = .stopped
+        presenceStatus = .stopped
         stopWatchdog()
-        presenceStatus = .idle
         trackedSubjects = []
         latestPreviewImage = nil
         tracker.clear()
         alertController.reset()
         coordinator.stop()
+    }
+
+    public func retry() {
+        stop()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            self?.start()
+        }
+    }
+
+    public func openSystemCameraSettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera") {
+            NSWorkspace.shared.open(url)
+        }
     }
 
     private func setupAndStartCapture() {
@@ -1021,15 +1153,28 @@ public final class PresenceMonitor: ObservableObject {
         lastSuccessfulAnalysisTime = Date()
 
         let centerStage = DataManager.shared.savedData.presenceCenterStageEnabled ?? true
-        coordinator.start(interval: coordinator.intervalSeconds, centerStageEnabled: centerStage) { [weak self] success in
+        coordinator.start(interval: coordinator.intervalSeconds, centerStageEnabled: centerStage) { [weak self] result in
             DispatchQueue.main.async {
                 guard let self = self else { return }
-                if success {
+                switch result {
+                case .success:
                     self.isRunning = true
+                    self.monitoringState = .running
                     self.presenceStatus = .searching
                     self.startWatchdog()
-                } else {
-                    self.presenceStatus = .cameraUnavailable
+                case .failure(let error):
+                    self.isRunning = false
+                    switch error {
+                    case .permissionDenied:
+                        self.monitoringState = .permissionRequired
+                        self.presenceStatus = .permissionRequired
+                    case .noCameraDevice:
+                        self.monitoringState = .cameraUnavailable
+                        self.presenceStatus = .cameraUnavailable
+                    case .cannotAddInput, .cannotAddOutput, .recoveryFailed:
+                        self.monitoringState = .failed("Camera initialization failed")
+                        self.presenceStatus = .failed
+                    }
                 }
             }
         }
@@ -1077,33 +1222,42 @@ public final class PresenceMonitor: ObservableObject {
         if recoveryAttemptsInWindow < maxRecoveriesPerWindow {
             recoveryAttemptsInWindow += 1
             isRecovering = true
+            monitoringState = .recovering
+            presenceStatus = .recovering
 
             // Gracefully reset camera session without terminal commands
-            coordinator.stop()
-            tracker.clear()
-            latestPreviewImage = nil
-            trackedSubjects = []
-
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+            coordinator.stop { [weak self] in
                 guard let self = self, self.isRunning else { return }
-                let centerStage = DataManager.shared.savedData.presenceCenterStageEnabled ?? true
-                self.coordinator.start(interval: self.coordinator.intervalSeconds, centerStageEnabled: centerStage) { [weak self] success in
-                    DispatchQueue.main.async {
-                        guard let self = self else { return }
-                        self.isRecovering = false
-                        if success {
-                            self.lastCameraFrameTime = Date()
-                            self.lastSuccessfulAnalysisTime = Date()
-                            self.presenceStatus = .searching
-                        } else {
-                            self.presenceStatus = .cameraUnavailable
+                self.tracker.clear()
+                self.latestPreviewImage = nil
+                self.trackedSubjects = []
+
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+                    guard let self = self, self.isRunning else { return }
+                    let centerStage = DataManager.shared.savedData.presenceCenterStageEnabled ?? true
+                    self.coordinator.start(interval: self.coordinator.intervalSeconds, centerStageEnabled: centerStage) { [weak self] result in
+                        DispatchQueue.main.async {
+                            guard let self = self else { return }
+                            self.isRecovering = false
+                            switch result {
+                            case .success:
+                                self.lastCameraFrameTime = Date()
+                                self.lastSuccessfulAnalysisTime = Date()
+                                self.monitoringState = .running
+                                self.presenceStatus = .searching
+                            case .failure:
+                                self.stop()
+                                self.monitoringState = .cameraUnavailable
+                                self.presenceStatus = .cameraUnavailable
+                            }
                         }
                     }
                 }
             }
         } else {
-            // Repeated recovery failures in short window -> safely pause monitoring
+            // Repeated recovery failures in short window -> safely pause monitoring subsystem ONLY
             stop()
+            monitoringState = .cameraUnavailable
             presenceStatus = .cameraUnavailable
             PetState.shared.showBubble("Camera paused: pipeline could not recover", duration: 3.5)
         }

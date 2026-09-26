@@ -214,6 +214,45 @@ struct PresenceWidgetView: View {
                         }
                     }
                     .frame(height: 140)
+                } else if monitor.monitoringState == .permissionRequired || monitor.presenceStatus == .permissionRequired {
+                    VStack(spacing: 4) {
+                        Image(systemName: "lock.shield.fill")
+                            .font(.system(size: 20))
+                            .foregroundColor(.orange)
+                        Text("Permission Needed")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(.white)
+                        HStack(spacing: 6) {
+                            Button("Retry") { monitor.retry() }
+                                .buttonStyle(.bordered)
+                                .controlSize(.mini)
+                            Button("Settings") { monitor.openSystemCameraSettings() }
+                                .buttonStyle(.borderedProminent)
+                                .controlSize(.mini)
+                        }
+                    }
+                    .padding(8)
+                } else if monitor.monitoringState == .cameraUnavailable || monitor.presenceStatus == .cameraUnavailable {
+                    VStack(spacing: 4) {
+                        Image(systemName: "video.slash.fill")
+                            .font(.system(size: 20))
+                            .foregroundColor(.red)
+                        Text("Camera Unavailable")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(.white)
+                        Button("Retry") { monitor.retry() }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.mini)
+                    }
+                    .padding(8)
+                } else if monitor.monitoringState == .starting || monitor.presenceStatus == .starting {
+                    VStack(spacing: 4) {
+                        ProgressView()
+                            .scaleEffect(0.7)
+                        Text("Starting camera...")
+                            .font(.system(size: 9))
+                            .foregroundColor(.secondary)
+                    }
                 } else {
                     VStack(spacing: 4) {
                         ProgressView()
@@ -303,8 +342,11 @@ struct PresenceWidgetView: View {
         case .noFace: return "eye.slash.fill"
         case .multipleDetected: return "person.2.fill"
         case .searching: return "viewfinder"
+        case .starting, .recovering: return "arrow.triangle.2.circlepath"
         case .away: return "moon.zzz.fill"
-        case .idle, .cameraUnavailable: return "video.slash.fill"
+        case .permissionRequired: return "lock.shield.fill"
+        case .failed: return "exclamationmark.triangle.fill"
+        case .idle, .stopped, .cameraUnavailable: return "video.slash.fill"
         }
     }
 
@@ -317,8 +359,13 @@ struct PresenceWidgetView: View {
         case .noFace: return "OBSCURED"
         case .multipleDetected: return "MULTIPLE"
         case .searching: return "SCANNING"
+        case .starting: return "STARTING"
+        case .recovering: return "RECOVERING"
         case .away: return "AWAY"
+        case .permissionRequired: return "PERMISSION"
+        case .failed: return "ERROR"
         case .idle: return "PAUSED"
+        case .stopped: return "STOPPED"
         case .cameraUnavailable: return "CAMERA OFF"
         }
     }
@@ -332,8 +379,13 @@ struct PresenceWidgetView: View {
         case .noFace: return "Turn toward camera"
         case .multipleDetected: return "Group nearby"
         case .searching: return "Looking for user"
+        case .starting: return "Starting feed..."
+        case .recovering: return "Recovering..."
         case .away: return "No person seen"
+        case .permissionRequired: return "Grant access"
+        case .failed: return "Camera error"
         case .idle: return "Monitoring off"
+        case .stopped: return "Monitoring stopped"
         case .cameraUnavailable: return "Check permission"
         }
     }
@@ -347,8 +399,10 @@ struct PresenceWidgetView: View {
         case .noFace: return .purple
         case .multipleDetected: return .yellow
         case .searching: return .cyan
+        case .starting, .recovering: return .yellow
         case .away: return .gray
-        case .idle, .cameraUnavailable: return .red
+        case .permissionRequired, .failed: return .red
+        case .idle, .stopped, .cameraUnavailable: return .red
         }
     }
 

@@ -23,12 +23,14 @@ public class SystemMonitor: ObservableObject {
     @Published public var memoryTotalGB: Double = 0.0
     @Published public var memoryPercent: Double = 0.0
 
-    // 3. Power & Battery (10-30s interval)
+    // 3. Power, Battery & Thermals (10-30s interval)
     @Published public var batteryPercent: Int = 100
     @Published public var isCharging: Bool = false
     @Published public var hasBattery: Bool = true
     @Published public var uptimeString: String = "0h 0m"
     @Published public var isPowerSavingMode: Bool = false
+    @Published public var thermalState: ProcessInfo.ThermalState = .nominal
+    @Published public var thermalStateDescription: String = "Cool & Nominal"
 
     // 4. Storage & Disk (30-60s interval)
     @Published public var diskAvailableGB: Double = 0.0
@@ -105,6 +107,7 @@ public class SystemMonitor: ObservableObject {
         updateUptime()
         updateDisk()
         updateProcessInfo()
+        updateThermals()
 
         rescheduleTimers()
     }
@@ -256,6 +259,24 @@ public class SystemMonitor: ObservableObject {
         self.isPowerSavingMode = (!self.isCharging && self.batteryPercent <= 20)
         if wasLowPower != self.isPowerSavingMode {
             self.rescheduleTimers()
+        }
+        updateThermals()
+    }
+
+    private func updateThermals() {
+        let state = ProcessInfo.processInfo.thermalState
+        self.thermalState = state
+        switch state {
+        case .nominal:
+            self.thermalStateDescription = "Nominal"
+        case .fair:
+            self.thermalStateDescription = "Fair"
+        case .serious:
+            self.thermalStateDescription = "High"
+        case .critical:
+            self.thermalStateDescription = "Throttling"
+        @unknown default:
+            self.thermalStateDescription = "Normal"
         }
     }
 

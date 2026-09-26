@@ -229,40 +229,61 @@ public class CharacterMotionStateMachine: ObservableObject {
         let levitationOffset: CGFloat
         let squashStretch: CGSize
 
+        // Check music / media reactivity
+        let musicActive = MusicManager.shared.isPlaying || (MusicManager.shared.isMediaPlaying && MusicManager.shared.danceWhenMusicDetected)
+        let beatAmp = musicActive ? max(0.2, MusicManager.shared.currentBeatAmplitude) : 0.0
+
         switch state {
         case .idle:
-            switch mood {
-            case .proud:
-                headTiltAngle = Angle(degrees: sin(time * 3.5) * 4.0)
-                levitationOffset = CGFloat(abs(sin(time * 4.0)) * 6.0 + 3.0)
-                squashStretch = CGSize(width: 1.05 + CGFloat(sin(time * 4.0) * 0.02), height: 1.06 - CGFloat(sin(time * 4.0) * 0.02))
-            case .concerned:
-                headTiltAngle = Angle(degrees: -5.0 + sin(time * 2.0) * 2.0)
-                levitationOffset = -2.0
-                squashStretch = CGSize(width: 0.96, height: 0.98)
-            case .angry:
-                headTiltAngle = Angle(degrees: sin(time * 16.0) * 2.0)
-                levitationOffset = 0.0
-                squashStretch = CGSize(width: 1.06, height: 0.94)
-            case .sad, .crying:
-                headTiltAngle = Angle(degrees: 4.5 + sin(time * 1.0) * 1.5)
-                levitationOffset = -4.0
-                squashStretch = CGSize(width: 0.98, height: 0.95)
-            case .excited:
-                headTiltAngle = Angle(degrees: sin(time * 6.0) * 6.0)
-                levitationOffset = CGFloat(abs(sin(time * 6.0)) * 7.0)
-                squashStretch = CGSize(width: 1.0 + CGFloat(sin(time * 8.0) * 0.05), height: 1.0 - CGFloat(sin(time * 8.0) * 0.05))
-            case .love:
-                headTiltAngle = Angle(degrees: sin(time * 1.8) * 5.0)
-                levitationOffset = CGFloat(sin(time * 2.0) * 3.5)
-                squashStretch = CGSize(width: 1.02, height: 1.03)
-            default:
-                headTiltAngle = Angle(degrees: sin(time * 1.2) * 2.5)
-                levitationOffset = 0.0
+            if musicActive && beatAmp > 0.25 {
+                // Beat-level rhythmic reactivity (head bob, bounce, beat drop dance)
+                let rhythm = sin(time * (beatAmp > 0.6 ? 7.5 : 5.5))
+                let bobAngle = rhythm * Double(beatAmp) * 14.0
+                let bounceY = CGFloat(abs(rhythm) * beatAmp * 11.0)
+                headTiltAngle = Angle(degrees: bobAngle)
+                levitationOffset = bounceY
                 squashStretch = CGSize(
-                    width: 1.0 - (breathOffset * 0.008),
-                    height: 1.0 + (breathOffset * 0.010)
+                    width: 1.0 + CGFloat(rhythm * beatAmp * 0.08),
+                    height: 1.0 - CGFloat(rhythm * beatAmp * 0.08)
                 )
+            } else {
+                switch mood {
+                case .proud:
+                    headTiltAngle = Angle(degrees: sin(time * 3.5) * 4.0)
+                    levitationOffset = CGFloat(abs(sin(time * 4.0)) * 6.0 + 3.0)
+                    squashStretch = CGSize(width: 1.05 + CGFloat(sin(time * 4.0) * 0.02), height: 1.06 - CGFloat(sin(time * 4.0) * 0.02))
+                case .concerned:
+                    headTiltAngle = Angle(degrees: -6.5 + sin(time * 2.0) * 2.5)
+                    levitationOffset = -2.0
+                    squashStretch = CGSize(width: 0.96, height: 0.98)
+                case .angry:
+                    headTiltAngle = Angle(degrees: sin(time * 16.0) * 2.0)
+                    levitationOffset = 0.0
+                    squashStretch = CGSize(width: 1.06, height: 0.94)
+                case .sad, .crying:
+                    headTiltAngle = Angle(degrees: 5.5 + sin(time * 1.0) * 1.5)
+                    levitationOffset = -4.5
+                    squashStretch = CGSize(width: 0.97, height: 0.94)
+                case .excited:
+                    headTiltAngle = Angle(degrees: sin(time * 6.0) * 6.0)
+                    levitationOffset = CGFloat(abs(sin(time * 6.0)) * 8.0)
+                    squashStretch = CGSize(width: 1.0 + CGFloat(sin(time * 8.0) * 0.06), height: 1.0 - CGFloat(sin(time * 8.0) * 0.06))
+                case .love:
+                    headTiltAngle = Angle(degrees: sin(time * 1.8) * 5.5)
+                    levitationOffset = CGFloat(sin(time * 2.0) * 4.0)
+                    squashStretch = CGSize(width: 1.02, height: 1.03)
+                case .sleepy:
+                    headTiltAngle = Angle(degrees: sin(time * 0.8) * 2.0)
+                    levitationOffset = -3.0
+                    squashStretch = CGSize(width: 1.02, height: 0.96)
+                default:
+                    headTiltAngle = Angle(degrees: sin(time * 1.2) * 2.5)
+                    levitationOffset = 0.0
+                    squashStretch = CGSize(
+                        width: 1.0 - (breathOffset * 0.008),
+                        height: 1.0 + (breathOffset * 0.010)
+                    )
+                }
             }
 
         case .thinking:
@@ -279,28 +300,36 @@ public class CharacterMotionStateMachine: ObservableObject {
             )
 
         case .walking(let gait):
+            // Natural animal procedural gait (lift, swing, contact, weight transfer, push-off)
+            let stepCycle = (time * 8.0).truncatingRemainder(dividingBy: 2.0 * .pi)
+            let liftSwing = sin(stepCycle)
+            let weightTransfer = cos(stepCycle / 2.0)
+            let pushOff = max(0.0, sin(stepCycle * 2.0))
+
             switch gait {
             case .bouncyMarch:
-                let step = sin(time * 8.0)
-                headTiltAngle = Angle(degrees: step * 5.0)
-                levitationOffset = CGFloat(abs(step) * 10.0)
-                squashStretch = CGSize(width: 1.0 - (step * 0.08), height: 1.0 + (step * 0.10))
+                headTiltAngle = Angle(degrees: liftSwing * 6.0 + Double(weightTransfer) * 2.5)
+                levitationOffset = CGFloat(abs(liftSwing) * 11.0 + pushOff * 3.0)
+                squashStretch = CGSize(
+                    width: 1.0 - (liftSwing * 0.09) + (CGFloat(pushOff) * 0.04),
+                    height: 1.0 + (liftSwing * 0.12) - (CGFloat(pushOff) * 0.04)
+                )
             case .stealthProwl:
-                let prowl = sin(time * 4.0)
-                headTiltAngle = Angle(degrees: prowl * 6.0)
-                levitationOffset = CGFloat(prowl * 2.5)
-                squashStretch = CGSize(width: 1.06, height: 0.95)
+                headTiltAngle = Angle(degrees: weightTransfer * 7.5 + liftSwing * 3.0)
+                levitationOffset = CGFloat(liftSwing * 3.0 - (pushOff * 1.5))
+                squashStretch = CGSize(width: 1.07 - CGFloat(abs(liftSwing) * 0.03), height: 0.94 + CGFloat(abs(liftSwing) * 0.03))
             case .hoverGlide:
-                headTiltAngle = Angle(degrees: sin(time * 2.5) * 3.5)
-                levitationOffset = CGFloat(sin(time * 2.8) * 8.0)
+                let drift = sin(time * 2.8)
+                headTiltAngle = Angle(degrees: drift * 4.0)
+                levitationOffset = CGFloat(sin(time * 3.2) * 8.0 + (liftSwing * 2.0))
                 squashStretch = CGSize(width: 1.02, height: 1.02)
             }
 
         case .dancing:
             let beat = sin(time * 7.5)
             headTiltAngle = Angle(degrees: beat * 18.0)
-            levitationOffset = CGFloat(abs(beat) * 12.0)
-            squashStretch = CGSize(width: 1.0 + CGFloat(beat * 0.10), height: 1.0 - CGFloat(beat * 0.08))
+            levitationOffset = CGFloat(abs(beat) * 13.0)
+            squashStretch = CGSize(width: 1.0 + CGFloat(beat * 0.12), height: 1.0 - CGFloat(beat * 0.10))
         }
 
         // 5. Species-Specific Kinematics

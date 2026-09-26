@@ -11,9 +11,32 @@ public class FocusGuardian: ObservableObject {
     @Published public var userIsAway: Bool = false
 
     // Custom configuration inputs
-    @Published public var customHours: Int = 0
-    @Published public var customMinutes: Int = 25
-    @Published public var customSeconds: Int = 0
+    @Published public var customHours: Int = 0 {
+        didSet { syncPendingDuration() }
+    }
+    @Published public var customMinutes: Int = 25 {
+        didSet { syncPendingDuration() }
+    }
+    @Published public var customSeconds: Int = 0 {
+        didSet { syncPendingDuration() }
+    }
+
+    public var selectedDurationSeconds: Int {
+        return max(1, (customHours * 3600) + (customMinutes * 60) + customSeconds)
+    }
+
+    public var formattedSelectedDuration: String {
+        let h = customHours
+        let m = customMinutes
+        let s = customSeconds
+        if h > 0 {
+            return String(format: "%dh %02dm %02ds", h, m, s)
+        } else if s > 0 {
+            return String(format: "%02dm %02ds", m, s)
+        } else {
+            return "\(m)m"
+        }
+    }
 
     public var hours: Int { remainingSeconds / 3600 }
     public var minutes: Int { (remainingSeconds % 3600) / 60 }
@@ -45,6 +68,13 @@ public class FocusGuardian: ObservableObject {
         startHydrationTimerIfNeeded()
     }
 
+    private func syncPendingDuration() {
+        guard !isSessionActive && !isPaused else { return }
+        let total = selectedDurationSeconds
+        sessionTotalSeconds = total
+        remainingSeconds = total
+    }
+
     // MARK: - Focus Session Lifecycle
 
     public func startFocusSession(totalSeconds: Int? = nil) {
@@ -56,8 +86,8 @@ public class FocusGuardian: ObservableObject {
             customHours = secs / 3600
             customMinutes = (secs % 3600) / 60
             customSeconds = secs % 60
-        } else if !isSessionActive && (remainingSeconds == 0 || remainingSeconds == sessionTotalSeconds) {
-            secs = max(1, (customHours * 3600) + (customMinutes * 60) + customSeconds)
+        } else if !isSessionActive && !isPaused {
+            secs = selectedDurationSeconds
             sessionTotalSeconds = secs
             remainingSeconds = secs
         } else {
@@ -123,7 +153,7 @@ public class FocusGuardian: ObservableObject {
             customMinutes = (secs % 3600) / 60
             customSeconds = secs % 60
         } else {
-            secs = max(1, (customHours * 3600) + (customMinutes * 60) + customSeconds)
+            secs = selectedDurationSeconds
         }
         sessionTotalSeconds = secs
         remainingSeconds = secs
@@ -135,12 +165,14 @@ public class FocusGuardian: ObservableObject {
     }
 
     public func applyPreset(seconds: Int) {
-        pauseFocusSession()
-        customHours = seconds / 3600
-        customMinutes = (seconds % 3600) / 60
-        customSeconds = seconds % 60
-        sessionTotalSeconds = seconds
-        remainingSeconds = seconds
+        let secs = max(1, seconds)
+        customHours = secs / 3600
+        customMinutes = (secs % 3600) / 60
+        customSeconds = secs % 60
+        if !isSessionActive {
+            sessionTotalSeconds = secs
+            remainingSeconds = secs
+        }
     }
 
     private func tick() {

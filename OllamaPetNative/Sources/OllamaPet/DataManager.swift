@@ -84,14 +84,21 @@ public class DataManager: ObservableObject {
         NotificationScheduler.shared.postImmediate(title: title, body: body)
     }
 
-    public func addReminder(text: String, minutes: Int) {
-        addReminder(text: text, seconds: minutes * 60)
+    public func addReminder(text: String, minutes: Int, isRecurring: Bool = false) {
+        addReminder(text: text, seconds: minutes * 60, isRecurring: isRecurring, repeatIntervalSeconds: isRecurring ? (minutes * 60) : nil)
     }
 
-    public func addReminder(text: String, seconds: Int) {
+    public func addReminder(text: String, seconds: Int, isRecurring: Bool = false, repeatIntervalSeconds: Int? = nil) {
         let secs = max(1, seconds)
         let due = Date().addingTimeInterval(Double(secs)).timeIntervalSince1970 * 1000
-        let newReminder = PetReminder(text: text, due: due)
+        let interval = repeatIntervalSeconds ?? (isRecurring ? secs : nil)
+        let newReminder = PetReminder(
+            text: text,
+            due: due,
+            isRecurring: isRecurring,
+            repeatIntervalSeconds: interval,
+            isPaused: false
+        )
         savedData.reminders.append(newReminder)
         saveData()
 
@@ -104,6 +111,33 @@ public class DataManager: ObservableObject {
         )
     }
 
+    public func toggleReminderPause(id: Int64) {
+        guard let index = savedData.reminders.firstIndex(where: { $0.id == id }) else { return }
+        let currentPaused = savedData.reminders[index].isPaused ?? false
+        let isNowPaused = !currentPaused
+        savedData.reminders[index].isPaused = isNowPaused
+
+        let rem = savedData.reminders[index]
+        let notifId = rem.notificationId ?? "reminder-\(id)"
+
+        if isNowPaused {
+            // Cancel pending system notification while paused
+            NotificationScheduler.shared.cancelReminder(notificationId: notifId)
+        } else {
+            // Resumed: recalculate due date from now using interval
+            let interval = rem.repeatIntervalSeconds ?? 300
+            let newDue = Date().addingTimeInterval(Double(interval)).timeIntervalSince1970 * 1000
+            savedData.reminders[index].due = newDue
+            NotificationScheduler.shared.scheduleReminder(
+                id: rem.id,
+                text: rem.text,
+                inSeconds: interval,
+                notificationId: notifId
+            )
+        }
+        saveData()
+    }
+
     public func removeReminder(id: Int64) {
         if let reminder = savedData.reminders.first(where: { $0.id == id }) {
             NotificationScheduler.shared.cancelReminder(notificationId: reminder.notificationId ?? "reminder-\(id)")
@@ -114,17 +148,37 @@ public class DataManager: ObservableObject {
 
     public func checkReminders(onTrigger: @escaping (PetReminder, Bool) -> Void) {
         let now = Date().timeIntervalSince1970 * 1000
-        var overdue: [PetReminder] = []
+        var triggered: [PetReminder] = []
 
         for reminder in savedData.reminders {
+            if (reminder.isPaused ?? false) {
+                continue
+            }
             if reminder.due <= now {
-                overdue.append(reminder)
+                triggered.append(reminder)
             }
         }
 
-        for item in overdue {
+        for item in triggered {
             onTrigger(item, true)
-            removeReminder(id: item.id)
+
+            if item.isRecurring == true {
+                // Auto-reschedule recurring reminder
+                let interval = max(60, item.repeatIntervalSeconds ?? 300)
+                let nextDue = now + Double(interval * 1000)
+                if let idx = savedData.reminders.firstIndex(where: { $0.id == item.id }) {
+                    savedData.reminders[idx].due = nextDue
+                    NotificationScheduler.shared.scheduleReminder(
+                        id: item.id,
+                        text: item.text,
+                        inSeconds: interval,
+                        notificationId: item.notificationId
+                    )
+                }
+                saveData()
+            } else {
+                removeReminder(id: item.id)
+            }
         }
     }
 

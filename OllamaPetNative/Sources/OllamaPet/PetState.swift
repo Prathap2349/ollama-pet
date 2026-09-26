@@ -37,6 +37,10 @@ public class PetState: ObservableObject {
     @Published public var celebrationPulseColor: Color = Color.yellow
     private var celebrationTimer: Timer?
 
+    // Autonomous Life Cycle
+    @Published public var autonomousLifeMode: String = "normal"
+    private var autonomousLifeTimer: Timer?
+
     private var bubbleTimer: Timer?
     private var dreamTimer: Timer?
     private var sleepTimer: Timer?
@@ -91,6 +95,7 @@ public class PetState: ObservableObject {
         self.streak = data.streak
         self.moodPoints = data.moodPoints
         self.activeTab = data.activeTab ?? "chat"
+        self.autonomousLifeMode = data.autonomousLifeMode ?? "normal"
     }
 
     public func setSpecies(_ species: PetSpecies) {
@@ -163,12 +168,74 @@ public class PetState: ObservableObject {
 
     private func startIdleAndDreamTimers() {
         resetSleepTimer()
+        restartAutonomousLifeTimer()
 
         Timer.scheduledTimer(withTimeInterval: 15.0, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 if Double.random(in: 0...1) < 0.35 {
                     self?.showDream()
                 }
+            }
+        }
+    }
+
+    public func setAutonomousLifeMode(_ mode: String) {
+        self.autonomousLifeMode = mode
+        DataManager.shared.savedData.autonomousLifeMode = mode
+        DataManager.shared.saveData()
+        restartAutonomousLifeTimer()
+    }
+
+    public func restartAutonomousLifeTimer() {
+        autonomousLifeTimer?.invalidate()
+        guard autonomousLifeMode != "off" else { return }
+
+        let interval: TimeInterval
+        switch autonomousLifeMode {
+        case "lively": interval = 22.0
+        case "minimal": interval = 75.0
+        default: interval = 40.0 // "normal"
+        }
+
+        autonomousLifeTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.performSubtleAutonomousAction()
+            }
+        }
+    }
+
+    private func performSubtleAutonomousAction() {
+        // Pauses when user is interacting: chatting, thinking, or during Focus sessions
+        guard !isChatOpen, !isThinking, animState == .idle || animState == .sleep else { return }
+        guard !FocusGuardian.shared.isSessionActive else { return }
+
+        if animState == .sleep {
+            if Double.random(in: 0...1) < 0.4 {
+                showDream()
+            }
+            return
+        }
+
+        let roll = Double.random(in: 0...1)
+        if roll < 0.28 {
+            // 1. Curious look around
+            setTemporaryMood(.concerned, duration: 3.5)
+        } else if roll < 0.52 {
+            // 2. Loving or relaxed gaze at user
+            setTemporaryMood(.love, duration: 4.0)
+        } else if roll < 0.72 {
+            // 3. Gentle stretch / yawn
+            let emotes = ["*stretches paws* 🐾", "*curious ear twitch*", "*gentle sigh* 🫧", "*purrs softly*"]
+            if let emote = emotes.randomElement() {
+                showBubble(emote, duration: 2.2)
+            }
+        } else if roll < 0.86 {
+            // 4. Happy bounce / flutter
+            setTemporaryMood(.happy, duration: 3.0)
+        } else {
+            // 5. Gentle stroll across screen
+            if !isChatOpen {
+                WalkerManager.shared.startWalk(species: currentSpecies, isTest: false)
             }
         }
     }

@@ -301,6 +301,9 @@ public struct PetReminder: Identifiable, Codable, Equatable {
     public var createdAt: Double
     public var status: String // "pending", "completed"
     public var notificationId: String?
+    public var isRecurring: Bool?
+    public var repeatIntervalSeconds: Int?
+    public var isPaused: Bool?
 
     public init(
         id: Int64 = Int64(Date().timeIntervalSince1970 * 1000),
@@ -308,7 +311,10 @@ public struct PetReminder: Identifiable, Codable, Equatable {
         due: Double,
         createdAt: Double = Date().timeIntervalSince1970 * 1000,
         status: String = "pending",
-        notificationId: String? = nil
+        notificationId: String? = nil,
+        isRecurring: Bool? = false,
+        repeatIntervalSeconds: Int? = nil,
+        isPaused: Bool? = false
     ) {
         self.id = id
         self.text = text
@@ -316,6 +322,9 @@ public struct PetReminder: Identifiable, Codable, Equatable {
         self.createdAt = createdAt
         self.status = status
         self.notificationId = notificationId ?? "reminder-\(id)"
+        self.isRecurring = isRecurring
+        self.repeatIntervalSeconds = repeatIntervalSeconds
+        self.isPaused = isPaused
     }
 }
 
@@ -419,6 +428,11 @@ public struct PetSavedData: Codable {
     // Safe Mac Control & Action Assistant Settings
     public var macControlSettings: MacControlSettings? = MacControlSettings()
     public var actionHistory: [ActionHistoryItem]? = []
+
+    // Media & Autonomous Life Settings
+    public var mediaDetectionEnabled: Bool? = false
+    public var danceWhenMusicDetected: Bool? = true
+    public var autonomousLifeMode: String? = "normal"
 
     public init(
         version: Int? = 1,

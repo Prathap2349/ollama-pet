@@ -929,6 +929,63 @@ struct AnimationSettingsSection: View {
 
             Divider()
 
+            // Autonomous Companion Life Cycle
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Autonomous Companion Life")
+                    .font(.system(size: 13, weight: .semibold))
+
+                Text("Controls subtle background behaviors (looking around, stretching, brief strolls, naps) when idle. Automatically pauses during chats, typing, or focus sessions.")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+
+                Picker("Autonomous Activity", selection: Binding(
+                    get: { PetState.shared.autonomousLifeMode },
+                    set: { PetState.shared.setAutonomousLifeMode($0) }
+                )) {
+                    Text("Off").tag("off")
+                    Text("Minimal").tag("minimal")
+                    Text("Normal (Recommended)").tag("normal")
+                    Text("Lively").tag("lively")
+                }
+                .pickerStyle(.segmented)
+            }
+
+            Divider()
+
+            // Music Reaction & Media Awareness
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Music & Media Awareness")
+                    .font(.system(size: 13, weight: .semibold))
+
+                VStack(spacing: 8) {
+                    SettingsToggleRow(
+                        icon: "music.note",
+                        iconColor: .pink,
+                        title: "Dance When Music Detected",
+                        subtitle: "Pet bobs head and bounces rhythmically with audio beats.",
+                        isOn: Binding(
+                            get: { MusicManager.shared.danceWhenMusicDetected },
+                            set: { MusicManager.shared.setDanceWhenMusicDetected($0) }
+                        )
+                    )
+                    Divider()
+                    SettingsToggleRow(
+                        icon: "headphones",
+                        iconColor: .purple,
+                        title: "Media Awareness (Spotify & Apple Music)",
+                        subtitle: "Safely detects active playback to display track info and groove with your tunes.",
+                        isOn: Binding(
+                            get: { MusicManager.shared.isMediaDetectionEnabled },
+                            set: { MusicManager.shared.setMediaDetectionEnabled($0) }
+                        )
+                    )
+                }
+                .padding(14)
+                .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
+            }
+
+            Divider()
+
             // Visual Enhancements & Shaders
             VStack(alignment: .leading, spacing: 10) {
                 Text("Visual Enhancements & Shaders")
@@ -1614,6 +1671,69 @@ struct PresenceSettingsSection: View {
                             .background(Capsule().fill(Color.black.opacity(0.65)))
                             .padding(8)
                         }
+                    } else if monitor.monitoringState == .permissionRequired || monitor.presenceStatus == .permissionRequired {
+                        VStack(spacing: 8) {
+                            Image(systemName: "lock.shield.fill")
+                                .font(.system(size: 28))
+                                .foregroundColor(.orange)
+                            Text("Camera Permission Required")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundColor(.white)
+                            Text("Please allow camera access in macOS System Settings.")
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal, 16)
+                            HStack(spacing: 8) {
+                                Button("Retry") {
+                                    monitor.retry()
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                                Button("Open System Settings") {
+                                    monitor.openSystemCameraSettings()
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .controlSize(.small)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else if monitor.monitoringState == .cameraUnavailable || monitor.presenceStatus == .cameraUnavailable {
+                        VStack(spacing: 8) {
+                            Image(systemName: "video.slash.fill")
+                                .font(.system(size: 28))
+                                .foregroundColor(.red)
+                            Text("Camera Unavailable")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundColor(.white)
+                            Text("No compatible camera found or video pipeline is locked.")
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal, 16)
+                            Button("Retry") {
+                                monitor.retry()
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.small)
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else if monitor.monitoringState == .starting || monitor.presenceStatus == .starting {
+                        VStack(spacing: 8) {
+                            ProgressView()
+                            Text("Starting camera pipeline...")
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else if monitor.monitoringState == .recovering || monitor.presenceStatus == .recovering {
+                        VStack(spacing: 8) {
+                            ProgressView()
+                            Text("Recovering video pipeline...")
+                                .font(.system(size: 11))
+                                .foregroundColor(.orange)
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else {
                         VStack(spacing: 8) {
                             Image(systemName: "camera.viewfinder")
@@ -2011,8 +2131,10 @@ struct PresenceSettingsSection: View {
         case .unknownDetected: return .orange
         case .multipleDetected: return .purple
         case .searching: return .cyan
+        case .starting, .recovering: return .yellow
         case .away: return .gray
-        case .cameraUnavailable, .idle: return .secondary
+        case .permissionRequired, .cameraUnavailable, .failed: return .red
+        case .idle, .stopped: return .secondary
         }
     }
 

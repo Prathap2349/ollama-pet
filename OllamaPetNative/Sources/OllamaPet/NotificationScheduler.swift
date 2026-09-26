@@ -184,7 +184,7 @@ public class NotificationScheduler {
         guard Bundle.main.bundleIdentifier != nil else { return }
         let nowMs = Date().timeIntervalSince1970 * 1000
 
-        for rem in reminders where rem.status == "pending" {
+        for rem in reminders where rem.status == "pending" && !(rem.isPaused ?? false) {
             let diffSecs = Int((rem.due - nowMs) / 1000)
             if diffSecs > 0 {
                 // Reschedule with native notification center

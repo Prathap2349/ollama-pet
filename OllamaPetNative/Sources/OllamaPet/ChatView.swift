@@ -26,7 +26,8 @@ struct ChatView: View {
 
     // Reminders input
     @State private var reminderText: String = ""
-    @State private var reminderMinutes: Int = 5
+    @State private var reminderMinutes: Int = 15
+    @State private var reminderIsRecurring: Bool = false
 
     // Settings state
     @State private var testingOllama: Bool = false
@@ -468,37 +469,72 @@ struct ChatView: View {
     @ViewBuilder
     private func messageBubble(_ msg: ChatMessage) -> some View {
         if !msg.content.isEmpty {
-            HStack(alignment: .top, spacing: 6) {
+            let timeString = msg.timestamp.formatted(date: .omitted, time: .shortened)
+            HStack(alignment: .top, spacing: 7) {
                 if msg.role == "user" {
-                    Spacer()
-                    Text(msg.content)
-                        .font(.system(size: 12))
-                        .foregroundColor(.white)
-                        .padding(8)
-                        .background(petState.currentSpecies.accentColor.opacity(0.45))
-                        .cornerRadius(12)
-                } else {
-                    VStack(alignment: .leading, spacing: 4) {
+                    Spacer(minLength: 32)
+                    VStack(alignment: .trailing, spacing: 2) {
                         Text(msg.content)
                             .font(.system(size: 12))
                             .foregroundColor(.white)
-                            .padding(8)
-                            .background(Color.white.opacity(0.1))
-                            .cornerRadius(12)
+                            .padding(.horizontal, 11)
+                            .padding(.vertical, 8)
+                            .background(
+                                RoundedRectangle(cornerRadius: 14)
+                                    .fill(petState.currentSpecies.accentColor.opacity(0.38))
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 14)
+                                    .stroke(petState.currentSpecies.accentColor.opacity(0.4), lineWidth: 1)
+                            )
 
-                        Button(action: {
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(msg.content, forType: .string)
-                            petState.showBubble("Copied! ⎘", duration: 1.0)
-                        }) {
-                            Text("⎘ copy")
+                        Text(timeString)
+                            .font(.system(size: 9, design: .monospaced))
+                            .foregroundColor(Color.white.opacity(0.35))
+                            .padding(.trailing, 4)
+                    }
+                } else {
+                    // Pet Companion Avatar
+                    Text(petState.currentSpecies.icon)
+                        .font(.system(size: 16))
+                        .padding(5)
+                        .background(Circle().fill(Color.white.opacity(0.08)))
+                        .padding(.top, 2)
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(msg.content)
+                            .font(.system(size: 12))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 11)
+                            .padding(.vertical, 8)
+                            .background(
+                                RoundedRectangle(cornerRadius: 14)
+                                    .fill(Color.white.opacity(0.08))
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 14)
+                                    .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                            )
+
+                        HStack(spacing: 8) {
+                            Text(timeString)
                                 .font(.system(size: 9, design: .monospaced))
-                                .foregroundColor(Color.white.opacity(0.4))
+                                .foregroundColor(Color.white.opacity(0.35))
+
+                            Button(action: {
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(msg.content, forType: .string)
+                                petState.showBubble("Copied! ⎘", duration: 1.0)
+                            }) {
+                                Text("⎘ copy")
+                                    .font(.system(size: 9, design: .monospaced))
+                                    .foregroundColor(Color.white.opacity(0.4))
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
                         .padding(.leading, 4)
                     }
-                    Spacer()
+                    Spacer(minLength: 32)
                 }
             }
             .padding(.horizontal, 10)
@@ -683,7 +719,7 @@ struct ChatView: View {
             let pendingReminders = dataManager.savedData.reminders
                 .filter { $0.status == "pending" }
                 .sorted { $0.due < $1.due }
-            let nextReminder = pendingReminders.first
+            let nextReminder = pendingReminders.first(where: { !($0.isPaused ?? false) })
 
             // 1. Top "Next Reminder" Highlight Card
             VStack(alignment: .leading, spacing: 6) {
@@ -706,10 +742,16 @@ struct ChatView: View {
                 if let next = nextReminder {
                     HStack(alignment: .center) {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(next.text)
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundColor(.white)
-                                .lineLimit(2)
+                            HStack(spacing: 4) {
+                                if next.isRecurring == true {
+                                    Text("🔁")
+                                        .font(.system(size: 10))
+                                }
+                                Text(next.text)
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundColor(.white)
+                                    .lineLimit(1)
+                            }
                             let timeStr = Date(timeIntervalSince1970: next.due / 1000).formatted(date: .omitted, time: .shortened)
                             Text("Scheduled for \(timeStr)")
                                 .font(.system(size: 10))
@@ -725,30 +767,50 @@ struct ChatView: View {
                                 Image(systemName: "checkmark")
                                 Text("Done")
                             }
-                            .font(.system(size: 11, weight: .bold))
+                            .font(.system(size: 10, weight: .bold))
                             .foregroundColor(.black)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 5)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
                             .background(Capsule().fill(Color.green))
                         }
                         .buttonStyle(.plain)
                     }
                 } else {
-                    Text("✨ No upcoming reminders. Set one below or ask in Chat!")
+                    Text("✨ No active reminders right now. Tap a quick preset below!")
                         .font(.system(size: 11))
                         .foregroundColor(Color.white.opacity(0.5))
-                        .padding(.vertical, 4)
+                        .padding(.vertical, 2)
                 }
             }
-            .padding(12)
+            .padding(10)
             .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.06)))
             .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.08), lineWidth: 1))
             .padding(.horizontal, 12)
-            .padding(.top, 8)
+            .padding(.top, 6)
 
-            // 2. Upcoming Reminders List
+            // 2. Health & Focus Presets (Horizontal Scrollable)
             VStack(alignment: .leading, spacing: 4) {
-                Text("UPCOMING REMINDERS (\(pendingReminders.count))")
+                Text("QUICK HEALTH PRESETS")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundColor(Color.white.opacity(0.4))
+                    .padding(.horizontal, 14)
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        reminderPresetChip(icon: "💧", title: "Water", minutes: 30, recurring: true)
+                        reminderPresetChip(icon: "👀", title: "Rest Eyes", minutes: 20, recurring: true)
+                        reminderPresetChip(icon: "🚶", title: "Stand Up", minutes: 45, recurring: true)
+                        reminderPresetChip(icon: "☕", title: "Break", minutes: 60, recurring: false)
+                        reminderPresetChip(icon: "🧘", title: "Breathe", minutes: 15, recurring: false)
+                        reminderPresetChip(icon: "🧍", title: "Posture", minutes: 30, recurring: true)
+                    }
+                    .padding(.horizontal, 12)
+                }
+            }
+
+            // 3. Reminders List
+            VStack(alignment: .leading, spacing: 4) {
+                Text("ACTIVE REMINDERS (\(pendingReminders.count))")
                     .font(.system(size: 9, weight: .bold))
                     .foregroundColor(Color.white.opacity(0.4))
                     .padding(.horizontal, 14)
@@ -759,25 +821,59 @@ struct ChatView: View {
                             Text("No reminders scheduled")
                                 .font(.system(size: 11))
                                 .foregroundColor(Color.white.opacity(0.35))
-                                .padding(.top, 14)
+                                .padding(.top, 10)
                         } else {
                             ForEach(pendingReminders) { rem in
+                                let isPaused = rem.isPaused ?? false
                                 HStack(spacing: 8) {
-                                    let minsLeft = max(0, Int((rem.due - Date().timeIntervalSince1970 * 1000) / 60000))
-                                    Text(minsLeft == 0 ? "now" : "\(minsLeft)m")
-                                        .font(.system(size: 10, weight: .bold, design: .monospaced))
-                                        .foregroundColor(petState.currentSpecies.accentColor)
-                                        .frame(width: 38, alignment: .center)
-                                        .padding(.vertical, 3)
-                                        .background(RoundedRectangle(cornerRadius: 5).fill(petState.currentSpecies.accentColor.opacity(0.15)))
+                                    // Time badge or recurring badge
+                                    if isPaused {
+                                        Text("paused")
+                                            .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                            .foregroundColor(.yellow)
+                                            .frame(width: 44, alignment: .center)
+                                            .padding(.vertical, 3)
+                                            .background(RoundedRectangle(cornerRadius: 5).fill(Color.yellow.opacity(0.15)))
+                                    } else if rem.isRecurring == true {
+                                        let interval = rem.repeatIntervalSeconds ?? 1800
+                                        let intervalText = interval >= 3600 ? "\(interval / 3600)h" : "\(interval / 60)m"
+                                        Text("🔁 \(intervalText)")
+                                            .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                            .foregroundColor(petState.currentSpecies.accentColor)
+                                            .frame(width: 50, alignment: .center)
+                                            .padding(.vertical, 3)
+                                            .background(RoundedRectangle(cornerRadius: 5).fill(petState.currentSpecies.accentColor.opacity(0.15)))
+                                    } else {
+                                        let minsLeft = max(0, Int((rem.due - Date().timeIntervalSince1970 * 1000) / 60000))
+                                        Text(minsLeft == 0 ? "now" : "\(minsLeft)m")
+                                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                            .foregroundColor(petState.currentSpecies.accentColor)
+                                            .frame(width: 38, alignment: .center)
+                                            .padding(.vertical, 3)
+                                            .background(RoundedRectangle(cornerRadius: 5).fill(petState.currentSpecies.accentColor.opacity(0.15)))
+                                    }
 
                                     Text(rem.text)
                                         .font(.system(size: 11, weight: .medium))
-                                        .foregroundColor(.white)
+                                        .foregroundColor(isPaused ? Color.white.opacity(0.4) : .white)
+                                        .strikethrough(isPaused)
                                         .lineLimit(1)
 
                                     Spacer()
 
+                                    // Pause / Resume Toggle Button
+                                    Button(action: {
+                                        dataManager.toggleReminderPause(id: rem.id)
+                                        SoundEffect.click.play()
+                                    }) {
+                                        Image(systemName: isPaused ? "play.circle.fill" : "pause.circle")
+                                            .font(.system(size: 12))
+                                            .foregroundColor(isPaused ? .yellow : Color.white.opacity(0.5))
+                                    }
+                                    .buttonStyle(.plain)
+                                    .help(isPaused ? "Resume reminder" : "Pause reminder")
+
+                                    // Delete Button
                                     Button(action: {
                                         dataManager.removeReminder(id: rem.id)
                                         SoundEffect.click.play()
@@ -790,8 +886,8 @@ struct ChatView: View {
                                     .help("Delete reminder")
                                 }
                                 .padding(.horizontal, 10)
-                                .padding(.vertical, 6)
-                                .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.04)))
+                                .padding(.vertical, 5)
+                                .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(isPaused ? 0.02 : 0.04)))
                             }
                         }
                     }
@@ -801,13 +897,13 @@ struct ChatView: View {
 
             Spacer(minLength: 0)
 
-            // 3. Bottom "+ Create Reminder" Section
-            VStack(spacing: 8) {
+            // 4. Bottom "+ Create Reminder" Section
+            VStack(spacing: 6) {
                 HStack(spacing: 6) {
                     TextField("Reminder note...", text: $reminderText)
                         .textFieldStyle(.plain)
                         .font(.system(size: 11))
-                        .padding(7)
+                        .padding(6)
                         .background(Color.white.opacity(0.08))
                         .cornerRadius(8)
                         .foregroundColor(.white)
@@ -822,28 +918,51 @@ struct ChatView: View {
                             .font(.system(size: 11, weight: .bold))
                             .foregroundColor(.white)
                             .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
+                            .padding(.vertical, 5)
                             .background(RoundedRectangle(cornerRadius: 8).fill(reminderText.trimmingCharacters(in: .whitespaces).isEmpty ? Color.white.opacity(0.2) : petState.currentSpecies.accentColor))
                     }
                     .buttonStyle(.plain)
                     .disabled(reminderText.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
 
-                // Quick Duration Pills (+5m, +15m, +30m, +1h)
+                // Controls: Recurring Toggle + Quick Intervals (5m, 15m, 30m, 1h, 2h)
                 HStack(spacing: 6) {
-                    Text("In:")
-                        .font(.system(size: 10))
-                        .foregroundColor(Color.white.opacity(0.5))
-                    ForEach([5, 15, 30, 60], id: \.self) { mins in
+                    Button(action: {
+                        reminderIsRecurring.toggle()
+                        SoundEffect.click.play()
+                    }) {
+                        HStack(spacing: 3) {
+                            Image(systemName: reminderIsRecurring ? "repeat.circle.fill" : "repeat.circle")
+                            Text("Repeat")
+                        }
+                        .font(.system(size: 10, weight: reminderIsRecurring ? .bold : .medium))
+                        .foregroundColor(reminderIsRecurring ? petState.currentSpecies.accentColor : Color.white.opacity(0.6))
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .background(
+                            Capsule().fill(reminderIsRecurring ? petState.currentSpecies.accentColor.opacity(0.2) : Color.white.opacity(0.06))
+                        )
+                    }
+                    .buttonStyle(.plain)
+
+                    Divider()
+                        .frame(height: 12)
+                        .background(Color.white.opacity(0.1))
+
+                    Text("Every:")
+                        .font(.system(size: 9))
+                        .foregroundColor(Color.white.opacity(0.45))
+
+                    ForEach([5, 15, 30, 60, 120], id: \.self) { mins in
                         Button(action: {
                             reminderMinutes = mins
                             SoundEffect.click.play()
                         }) {
-                            Text(mins == 60 ? "+1h" : "+\(mins)m")
+                            Text(mins >= 60 ? "\(mins / 60)h" : "\(mins)m")
                                 .font(.system(size: 10, weight: reminderMinutes == mins ? .bold : .medium))
                                 .foregroundColor(reminderMinutes == mins ? .white : Color.white.opacity(0.7))
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 3)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
                                 .background(
                                     Capsule().fill(reminderMinutes == mins ? petState.currentSpecies.accentColor : Color.white.opacity(0.08))
                                 )
@@ -858,11 +977,34 @@ struct ChatView: View {
         }
     }
 
+    private func reminderPresetChip(icon: String, title: String, minutes: Int, recurring: Bool) -> some View {
+        Button(action: {
+            dataManager.addReminder(text: "\(icon) \(title)", minutes: minutes, isRecurring: recurring)
+            petState.showBubble("Added \(title) (\(minutes >= 60 ? "\(minutes / 60)h" : "\(minutes)m")\(recurring ? " repeat" : ""))! ⏰")
+            SoundEffect.receive.play()
+        }) {
+            HStack(spacing: 4) {
+                Text(icon)
+                Text(title)
+                Text("(\(minutes >= 60 ? "\(minutes / 60)h" : "\(minutes)m"))")
+                    .font(.system(size: 8))
+                    .foregroundColor(Color.white.opacity(0.5))
+            }
+            .font(.system(size: 10, weight: .medium))
+            .foregroundColor(.white)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(RoundedRectangle(cornerRadius: 6).fill(Color.white.opacity(0.08)))
+        }
+        .buttonStyle(.plain)
+    }
+
     private func createReminder() {
         let note = reminderText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !note.isEmpty else { return }
-        dataManager.addReminder(text: note, minutes: reminderMinutes)
-        petState.showBubble("I'll remind you in \(reminderMinutes)m! ⏰")
+        dataManager.addReminder(text: note, minutes: reminderMinutes, isRecurring: reminderIsRecurring)
+        let intervalStr = reminderMinutes >= 60 ? "\(reminderMinutes / 60)h" : "\(reminderMinutes)m"
+        petState.showBubble(reminderIsRecurring ? "I'll remind you every \(intervalStr)! ⏰" : "I'll remind you in \(intervalStr)! ⏰")
         SoundEffect.receive.play()
         reminderText = ""
     }
@@ -871,118 +1013,235 @@ struct ChatView: View {
     private var systemTabContent: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
-                Text("System Vitals")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundColor(.white)
-
-                // CPU
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        Text("CPU Load")
-                        Spacer()
-                        Text(String(format: "%.1f%%", sysMon.cpuPercent))
-                    }
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundColor(Color.white.opacity(0.8))
-
-                    GeometryReader { geo in
-                        ZStack(alignment: .leading) {
-                            Rectangle()
-                                .fill(Color.white.opacity(0.1))
-                            Rectangle()
-                                .fill(sysMon.cpuPercent > 70 ? Color.red : (sysMon.cpuPercent > 40 ? Color.orange : Color.green))
-                                .frame(width: geo.size.width * CGFloat(sysMon.cpuPercent / 100.0))
-                        }
-                        .cornerRadius(4)
-                    }
-                    .frame(height: 6)
-                }
-
-                // Battery & Uptime
-                HStack(spacing: 20) {
-                    VStack(alignment: .leading) {
-                        Text("Battery")
-                            .font(.system(size: 10, design: .monospaced))
-                            .foregroundColor(Color.white.opacity(0.5))
-                        Text("\(sysMon.batteryPercent)% \(sysMon.isCharging ? "⚡ Charging" : "🔋")")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundColor(sysMon.batteryPercent < 20 ? .red : .green)
-                    }
-
-                    VStack(alignment: .leading) {
-                        Text("System Uptime")
-                            .font(.system(size: 10, design: .monospaced))
-                            .foregroundColor(Color.white.opacity(0.5))
-                        Text(sysMon.uptimeString)
-                            .font(.system(size: 12, weight: .semibold))
+                // 1. Device Info Header Banner
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(sysMon.macModel)
+                            .font(.system(size: 13, weight: .bold))
                             .foregroundColor(.white)
-                    }
-                }
-
-                Divider().background(Color.white.opacity(0.1))
-
-                // Running Apps
-                Text("Active Applications (\(sysMon.foregroundApps.count))")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundColor(Color.white.opacity(0.8))
-
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 90))], spacing: 6) {
-                    ForEach(sysMon.foregroundApps, id: \.self) { app in
-                        Text(app)
+                        Text("\(sysMon.architecture) • \(sysMon.macOSVersion)")
                             .font(.system(size: 10))
+                            .foregroundColor(Color.white.opacity(0.6))
+                    }
+                    Spacer()
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text("UPTIME")
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundColor(Color.white.opacity(0.4))
+                        Text(sysMon.uptimeString)
+                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
                             .foregroundColor(.white)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 3)
-                            .background(Color.white.opacity(0.08))
-                            .cornerRadius(4)
+                    }
+                }
+                .padding(10)
+                .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.05)))
+
+                // 2. Vitals Grid (2x2)
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                    // CPU Card
+                    VStack(alignment: .leading, spacing: 5) {
+                        HStack {
+                            Text("CPU LOAD")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundColor(Color.white.opacity(0.5))
+                            Spacer()
+                            Text(String(format: "%.1f%%", sysMon.cpuPercent))
+                                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                .foregroundColor(sysMon.cpuPercent > 75 ? .red : (sysMon.cpuPercent > 45 ? .yellow : .green))
+                        }
+
+                        GeometryReader { geo in
+                            ZStack(alignment: .leading) {
+                                RoundedRectangle(cornerRadius: 2)
+                                    .fill(Color.white.opacity(0.12))
+                                RoundedRectangle(cornerRadius: 2)
+                                    .fill(sysMon.cpuPercent > 75 ? Color.red : (sysMon.cpuPercent > 45 ? Color.yellow : Color.green))
+                                    .frame(width: geo.size.width * CGFloat(min(1.0, sysMon.cpuPercent / 100.0)))
+                            }
+                        }
+                        .frame(height: 4)
+
+                        Text("\(sysMon.cpuCores) Active Cores")
+                            .font(.system(size: 9))
+                            .foregroundColor(Color.white.opacity(0.45))
+                    }
+                    .padding(8)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.04)))
+
+                    // Memory Card
+                    VStack(alignment: .leading, spacing: 5) {
+                        HStack {
+                            Text("MEMORY")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundColor(Color.white.opacity(0.5))
+                            Spacer()
+                            Text(String(format: "%.0f%%", sysMon.memoryPercent))
+                                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                .foregroundColor(sysMon.memoryPercent > 85 ? .red : (sysMon.memoryPercent > 70 ? .yellow : petState.currentSpecies.accentColor))
+                        }
+
+                        GeometryReader { geo in
+                            ZStack(alignment: .leading) {
+                                RoundedRectangle(cornerRadius: 2)
+                                    .fill(Color.white.opacity(0.12))
+                                RoundedRectangle(cornerRadius: 2)
+                                    .fill(petState.currentSpecies.accentColor)
+                                    .frame(width: geo.size.width * CGFloat(min(1.0, sysMon.memoryPercent / 100.0)))
+                            }
+                        }
+                        .frame(height: 4)
+
+                        Text("\(String(format: "%.1f", sysMon.memoryUsedGB)) / \(String(format: "%.1f", sysMon.memoryTotalGB)) GB")
+                            .font(.system(size: 9, design: .monospaced))
+                            .foregroundColor(Color.white.opacity(0.45))
+                    }
+                    .padding(8)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.04)))
+
+                    // Power & Thermals Card
+                    VStack(alignment: .leading, spacing: 5) {
+                        HStack {
+                            Text("POWER & HEAT")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundColor(Color.white.opacity(0.5))
+                            Spacer()
+                            Text(sysMon.hasBattery ? "\(sysMon.batteryPercent)%" : "AC")
+                                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                .foregroundColor(sysMon.batteryPercent < 20 && !sysMon.isCharging ? .red : .green)
+                        }
+
+                        HStack(spacing: 4) {
+                            Text(sysMon.isCharging ? "⚡ Charging" : (sysMon.hasBattery ? "🔋 On Battery" : "🔌 Wall Power"))
+                                .font(.system(size: 9, weight: .medium))
+                                .foregroundColor(Color.white.opacity(0.75))
+                            Spacer()
+                        }
+
+                        HStack(spacing: 3) {
+                            Circle()
+                                .fill(sysMon.thermalState == .nominal ? Color.green : (sysMon.thermalState == .fair ? Color.yellow : Color.red))
+                                .frame(width: 5, height: 5)
+                            Text("Thermals: \(sysMon.thermalStateDescription)")
+                                .font(.system(size: 9))
+                                .foregroundColor(Color.white.opacity(0.45))
+                        }
+                    }
+                    .padding(8)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.04)))
+
+                    // Disk Card
+                    VStack(alignment: .leading, spacing: 5) {
+                        HStack {
+                            Text("STORAGE")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundColor(Color.white.opacity(0.5))
+                            Spacer()
+                            Text(String(format: "%.0f%%", sysMon.diskPercent))
+                                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                .foregroundColor(.cyan)
+                        }
+
+                        GeometryReader { geo in
+                            ZStack(alignment: .leading) {
+                                RoundedRectangle(cornerRadius: 2)
+                                    .fill(Color.white.opacity(0.12))
+                                RoundedRectangle(cornerRadius: 2)
+                                    .fill(Color.cyan)
+                                    .frame(width: geo.size.width * CGFloat(min(1.0, sysMon.diskPercent / 100.0)))
+                            }
+                        }
+                        .frame(height: 4)
+
+                        Text("\(String(format: "%.0f", sysMon.diskAvailableGB)) GB Available")
+                            .font(.system(size: 9, design: .monospaced))
+                            .foregroundColor(Color.white.opacity(0.45))
+                    }
+                    .padding(8)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.04)))
+                }
+
+                // 3. Active Applications
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text("RUNNING APPLICATIONS (\(sysMon.foregroundApps.count))")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundColor(Color.white.opacity(0.5))
+                        Spacer()
+                        Text("Active: \(sysMon.frontmostApp)")
+                            .font(.system(size: 9))
+                            .foregroundColor(petState.currentSpecies.accentColor)
                             .lineLimit(1)
                     }
+
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 95))], spacing: 5) {
+                        ForEach(sysMon.foregroundApps, id: \.self) { app in
+                            let isFront = (app == sysMon.frontmostApp)
+                            HStack(spacing: 4) {
+                                Circle()
+                                    .fill(isFront ? petState.currentSpecies.accentColor : Color.white.opacity(0.3))
+                                    .frame(width: 4, height: 4)
+                                Text(app)
+                                    .font(.system(size: 10, weight: isFront ? .semibold : .regular))
+                                    .foregroundColor(isFront ? .white : Color.white.opacity(0.8))
+                                    .lineLimit(1)
+                            }
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(RoundedRectangle(cornerRadius: 4).fill(isFront ? petState.currentSpecies.accentColor.opacity(0.18) : Color.white.opacity(0.06)))
+                        }
+                    }
                 }
+                .padding(10)
+                .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.04)))
             }
-            .padding(14)
+            .padding(12)
         }
     }
 
     // MARK: - Focus & Health Tab
     private var gameTabContent: some View {
         ScrollView {
-            VStack(spacing: 10) {
-                // 1. Timer Hero Display with Progress Bar
+            VStack(spacing: 12) {
+                // 1. Compact Timer Hero Display
                 VStack(spacing: 8) {
                     HStack {
                         HStack(spacing: 6) {
                             Circle()
                                 .fill(focusStatusColor)
-                                .frame(width: 8, height: 8)
+                                .frame(width: 7, height: 7)
                             Text(focusStatusText)
-                                .font(.system(size: 11, weight: .bold))
+                                .font(.system(size: 11, weight: .semibold))
                                 .foregroundColor(focusStatusColor)
                         }
                         Spacer()
                         if focusGuardian.isSessionActive {
-                            Text("\(Int(focusGuardian.progress * 100))% done")
+                            Text("\(Int(focusGuardian.progress * 100))% completed")
                                 .font(.system(size: 10, design: .monospaced))
                                 .foregroundColor(Color.white.opacity(0.6))
+                        } else {
+                            Text("Selected: \(focusGuardian.formattedSelectedDuration)")
+                                .font(.system(size: 10, design: .monospaced))
+                                .foregroundColor(Color.white.opacity(0.55))
                         }
                     }
 
-                    // Giant Timer Countdown
+                    // Compact Monospaced Timer Countdown
                     Text(focusGuardian.formattedTime)
-                        .font(.system(size: 38, weight: .bold, design: .monospaced))
+                        .font(.system(size: 28, weight: .bold, design: .monospaced))
                         .foregroundColor(.white)
                         .padding(.vertical, 2)
 
-                    // Smooth Progress Bar
+                    // Subtle 4pt Progress Bar
                     GeometryReader { geo in
                         ZStack(alignment: .leading) {
-                            RoundedRectangle(cornerRadius: 3)
+                            RoundedRectangle(cornerRadius: 2)
                                 .fill(Color.white.opacity(0.12))
-                            RoundedRectangle(cornerRadius: 3)
+                            RoundedRectangle(cornerRadius: 2)
                                 .fill(petState.currentSpecies.accentColor)
                                 .frame(width: geo.size.width * CGFloat(focusGuardian.progress))
                         }
                     }
-                    .frame(height: 6)
+                    .frame(height: 4)
 
                     // Start / Pause / Reset Controls
                     HStack(spacing: 10) {
@@ -995,10 +1254,10 @@ struct ChatView: View {
                             SoundEffect.click.play()
                         }) {
                             HStack(spacing: 5) {
-                                Image(systemName: focusGuardian.isSessionActive ? "pause.fill" : "play.fill")
-                                Text(focusGuardian.isSessionActive ? "Pause" : "Start Focus")
+                                Image(systemName: focusGuardian.isSessionActive ? (focusGuardian.isPaused ? "play.fill" : "pause.fill") : "play.fill")
+                                Text(focusGuardian.isSessionActive ? (focusGuardian.isPaused ? "Resume" : "Pause") : "Start Focus")
                             }
-                            .font(.system(size: 12, weight: .bold))
+                            .font(.system(size: 11, weight: .bold))
                             .foregroundColor(.white)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 6)
@@ -1011,7 +1270,7 @@ struct ChatView: View {
                             SoundEffect.click.play()
                         }) {
                             Text("Reset")
-                                .font(.system(size: 12, weight: .medium))
+                                .font(.system(size: 11, weight: .medium))
                                 .foregroundColor(Color.white.opacity(0.8))
                                 .padding(.horizontal, 14)
                                 .padding(.vertical, 6)
@@ -1021,86 +1280,97 @@ struct ChatView: View {
                     }
                     .padding(.top, 4)
                 }
-                .padding(14)
-                .background(RoundedRectangle(cornerRadius: 14).fill(Color.white.opacity(0.06)))
-                .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.08), lineWidth: 1))
+                .padding(12)
+                .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.06)))
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.08), lineWidth: 1))
 
                 // 2. Companion Focus Card
-                HStack(spacing: 12) {
+                HStack(spacing: 10) {
                     Text(petState.currentSpecies.icon)
-                        .font(.system(size: 26))
+                        .font(.system(size: 22))
                     VStack(alignment: .leading, spacing: 2) {
                         Text("\(petState.currentSpecies.displayName) is focusing with you")
-                            .font(.system(size: 12, weight: .bold))
+                            .font(.system(size: 11, weight: .bold))
                             .foregroundColor(.white)
-                        Text("Distractions silenced. Take deep breaths and work peacefully.")
+                        Text("Distractions silenced. Stay relaxed and work steadily.")
                             .font(.system(size: 10))
                             .foregroundColor(Color.white.opacity(0.6))
                     }
                     Spacer()
                 }
-                .padding(10)
+                .padding(9)
                 .background(RoundedRectangle(cornerRadius: 10).fill(petState.currentSpecies.accentColor.opacity(0.12)))
 
                 // 3. Quick Session Presets & Custom Configuration
-                if !focusGuardian.isSessionActive {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("QUICK PRESETS")
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text("SESSION DURATION")
                             .font(.system(size: 9, weight: .bold))
-                            .foregroundColor(Color.white.opacity(0.4))
-                            .padding(.horizontal, 4)
-
-                        HStack(spacing: 6) {
-                            presetButton("10m Quick", seconds: 10 * 60)
-                            presetButton("25m Pomodoro", seconds: 25 * 60)
-                            presetButton("45m Deep", seconds: 45 * 60)
-                            presetButton("60m", seconds: 60 * 60)
+                            .foregroundColor(Color.white.opacity(0.45))
+                        Spacer()
+                        if focusGuardian.isSessionActive {
+                            Text("Session Active — Settings Locked")
+                                .font(.system(size: 9))
+                                .foregroundColor(Color.orange.opacity(0.7))
                         }
-
-                        // Custom duration row
-                        HStack(spacing: 6) {
-                            Text("Custom:")
-                                .font(.system(size: 10, weight: .medium))
-                                .foregroundColor(.secondary)
-
-                            HStack(spacing: 1) {
-                                Text("H")
-                                    .font(.system(size: 9))
-                                    .foregroundColor(.secondary)
-                                Picker("", selection: $focusGuardian.customHours) {
-                                    ForEach(0..<12) { h in Text("\(h)").tag(h) }
-                                }
-                                .labelsHidden()
-                                .frame(width: 44)
-                            }
-
-                            HStack(spacing: 1) {
-                                Text("M")
-                                    .font(.system(size: 9))
-                                    .foregroundColor(.secondary)
-                                Picker("", selection: $focusGuardian.customMinutes) {
-                                    ForEach(0..<60) { m in Text(String(format: "%02d", m)).tag(m) }
-                                }
-                                .labelsHidden()
-                                .frame(width: 48)
-                            }
-
-                            HStack(spacing: 1) {
-                                Text("S")
-                                    .font(.system(size: 9))
-                                    .foregroundColor(.secondary)
-                                Picker("", selection: $focusGuardian.customSeconds) {
-                                    ForEach(0..<60) { s in Text(String(format: "%02d", s)).tag(s) }
-                                }
-                                .labelsHidden()
-                                .frame(width: 48)
-                            }
-                        }
-                        .padding(.top, 2)
                     }
-                    .padding(10)
-                    .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.04)))
+                    .padding(.horizontal, 2)
+
+                    HStack(spacing: 6) {
+                        presetButton("10m", seconds: 10 * 60)
+                        presetButton("25m", seconds: 25 * 60)
+                        presetButton("45m", seconds: 45 * 60)
+                        presetButton("60m", seconds: 60 * 60)
+                    }
+
+                    // Custom duration row
+                    HStack(spacing: 8) {
+                        Text("Custom:")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundColor(.secondary)
+
+                        HStack(spacing: 2) {
+                            Text("H")
+                                .font(.system(size: 9))
+                                .foregroundColor(.secondary)
+                            Picker("", selection: $focusGuardian.customHours) {
+                                ForEach(0..<12) { h in Text("\(h)").tag(h) }
+                            }
+                            .labelsHidden()
+                            .frame(width: 44)
+                            .disabled(focusGuardian.isSessionActive)
+                        }
+
+                        HStack(spacing: 2) {
+                            Text("M")
+                                .font(.system(size: 9))
+                                .foregroundColor(.secondary)
+                            Picker("", selection: $focusGuardian.customMinutes) {
+                                ForEach(0..<60) { m in Text(String(format: "%02d", m)).tag(m) }
+                            }
+                            .labelsHidden()
+                            .frame(width: 48)
+                            .disabled(focusGuardian.isSessionActive)
+                        }
+
+                        HStack(spacing: 2) {
+                            Text("S")
+                                .font(.system(size: 9))
+                                .foregroundColor(.secondary)
+                            Picker("", selection: $focusGuardian.customSeconds) {
+                                ForEach(0..<60) { s in Text(String(format: "%02d", s)).tag(s) }
+                            }
+                            .labelsHidden()
+                            .frame(width: 48)
+                            .disabled(focusGuardian.isSessionActive)
+                        }
+
+                        Spacer()
+                    }
+                    .padding(.top, 2)
                 }
+                .padding(10)
+                .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.04)))
 
                 // 4. Secondary Audio / Music Visualizer Section
                 VStack(spacing: 8) {
@@ -1167,30 +1437,39 @@ struct ChatView: View {
 
     private var focusStatusText: String {
         if !focusGuardian.isSessionActive {
-            return "⚪ Ready to Focus"
+            return "Ready"
         }
         if focusGuardian.isPaused {
-            return "🟡 Session Paused"
+            return "Paused"
         }
         if focusGuardian.userIsAway {
-            return "🔴 Stepped Away"
+            return "Away"
         }
-        return "🟢 Deep Focus Active"
+        return "Focusing"
     }
 
     private func presetButton(_ title: String, seconds: Int) -> some View {
-        Button(action: {
+        let isSelected = (focusGuardian.selectedDurationSeconds == seconds)
+        return Button(action: {
             focusGuardian.applyPreset(seconds: seconds)
             SoundEffect.click.play()
         }) {
             Text(title)
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundColor(.white)
-                .padding(.horizontal, 8)
+                .font(.system(size: 10, weight: isSelected ? .bold : .semibold))
+                .foregroundColor(isSelected ? .white : Color.white.opacity(0.7))
+                .padding(.horizontal, 10)
                 .padding(.vertical, 5)
-                .background(RoundedRectangle(cornerRadius: 6).fill(Color.white.opacity(0.08)))
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(isSelected ? petState.currentSpecies.accentColor.opacity(0.3) : Color.white.opacity(0.06))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(isSelected ? petState.currentSpecies.accentColor : Color.white.opacity(0.1), lineWidth: 1)
+                )
         }
         .buttonStyle(.plain)
+        .disabled(focusGuardian.isSessionActive)
     }
 
 

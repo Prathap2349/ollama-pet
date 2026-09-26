@@ -81,10 +81,8 @@ echo "5. Validating Info.plist..."
 plutil -lint "${APP_BUNDLE}/Contents/Info.plist"
 
 echo "6. Code Signing Bundle (Ad-hoc)..."
-dot_clean "${APP_BUNDLE}" 2>/dev/null || true
-xattr -cr "${APP_BUNDLE}" 2>/dev/null || true
-xattr -c "${APP_BUNDLE}" 2>/dev/null || true
-xattr -d com.apple.FinderInfo "${APP_BUNDLE}" 2>/dev/null || true
+xattr -rc "${APP_BUNDLE}" 2>/dev/null || true
+dot_clean -m "${APP_BUNDLE}" 2>/dev/null || true
 codesign --force --deep --sign - "${APP_BUNDLE}"
 
 echo "7. Validating Code Signature..."

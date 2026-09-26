@@ -680,7 +680,7 @@ struct CharacterSettingsSection: View {
                                 .stroke(Color.primary.opacity(0.1), lineWidth: 1)
                         )
 
-                    Pet3DSceneView()
+                    CharacterPreviewView(previewSpecies: nil)
                         .frame(width: 140, height: 140)
                         .clipShape(RoundedRectangle(cornerRadius: 12))
                 }
@@ -818,6 +818,50 @@ struct CharacterSettingsSection: View {
     }
 }
 
+// MARK: - Reusable 2D / 3D Character Preview View
+
+struct CharacterPreviewView: View {
+    let previewSpecies: PetSpecies?
+    @ObservedObject var petState = PetState.shared
+    @ObservedObject var motion = CharacterMotionStateMachine.shared
+    @ObservedObject var perf = PerformanceManager.shared
+
+    var effectiveSpecies: PetSpecies {
+        previewSpecies ?? petState.currentSpecies
+    }
+
+    var body: some View {
+        if petState.renderEngineMode == .threeD {
+            Pet3DSceneView(previewSpecies: previewSpecies)
+        } else {
+            TimelineView(.animation(minimumInterval: perf.minimumRenderInterval)) { timeline in
+                Canvas { context, size in
+                    let t = timeline.date.timeIntervalSinceReferenceDate
+                    let snapshot = motion.evaluateSnapshot(
+                        at: t,
+                        animState: petState.animState,
+                        mood: petState.currentMood,
+                        atmosphere: .clearDay,
+                        isSafeMode: perf.isSafeMode
+                    )
+                    let model = CharacterStructuralModel.model(for: effectiveSpecies)
+
+                    PetCanvasRenderer.draw(
+                        context: &context,
+                        size: size,
+                        species: effectiveSpecies,
+                        model: model,
+                        animState: petState.animState,
+                        mood: petState.currentMood,
+                        snapshot: snapshot,
+                        perf: perf
+                    )
+                }
+            }
+        }
+    }
+}
+
 // MARK: - Native Character Preview Card
 
 struct SpeciesPreviewCard: View {
@@ -830,12 +874,12 @@ struct SpeciesPreviewCard: View {
     var body: some View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 8) {
-                // Live 3D Preview Stage with Selection Badge
+                // Live 2D/3D Preview Stage with Selection Badge
                 ZStack(alignment: .topTrailing) {
                     RoundedRectangle(cornerRadius: 8)
                         .fill(perf.grayscaleTestMode ? Color(white: 0.15) : Color.black.opacity(0.85))
 
-                    Pet3DSceneView(previewSpecies: species)
+                    CharacterPreviewView(previewSpecies: species)
                         .frame(height: 86)
                         .clipShape(RoundedRectangle(cornerRadius: 8))
 
@@ -2510,6 +2554,7 @@ struct OwnerEnrollmentWizardView: View {
     @State private var stableHoldSeconds: Double = 0.0
     @State private var isAutoCapturing: Bool = false
     @State private var justCaptured: Bool = false
+    @State private var startedMonitorForWizard: Bool = false
 
     var body: some View {
         VStack(spacing: 16) {
@@ -2524,7 +2569,7 @@ struct OwnerEnrollmentWizardView: View {
                 }
                 Spacer()
                 Button("Done") {
-                    timer?.invalidate()
+                    performCleanup()
                     isPresented = false
                 }
                 .buttonStyle(.borderedProminent)
@@ -2777,16 +2822,35 @@ struct OwnerEnrollmentWizardView: View {
         }
         .frame(width: 580, height: 480)
         .onAppear {
+            monitor.isCalibrationActive = true
             monitor.isLivePreviewRequested = true
             if !monitor.isRunning {
+                startedMonitorForWizard = true
                 monitor.start()
+            } else {
+                startedMonitorForWizard = false
             }
             startInspectionLoop()
         }
         .onDisappear {
-            timer?.invalidate()
-            timer = nil
+            performCleanup()
         }
+    }
+
+    private func performCleanup() {
+        timer?.invalidate()
+        timer = nil
+        monitor.isLivePreviewRequested = false
+        monitor.isCalibrationActive = false
+        if startedMonitorForWizard {
+            monitor.stop()
+            startedMonitorForWizard = false
+        }
+        qualityReport = nil
+        stableHoldSeconds = 0.0
+        isAutoCapturing = false
+        justCaptured = false
+        statusFeedback = ""
     }
 
     private func qualityCheckRow(title: String, passed: Bool, detail: String) -> some View {

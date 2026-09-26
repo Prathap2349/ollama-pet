@@ -1220,6 +1220,9 @@ public final class PresenceMonitor: ObservableObject {
 
     public let alertController = PresenceAlertController()
 
+    /// Whether owner calibration wizard is currently open, suppressing normal presence alerts and reactions
+    @Published public var isCalibrationActive: Bool = false
+
     /// Whether any UI component (expanded monitor or settings) is actively watching the camera view
     @Published public var isLivePreviewRequested: Bool = false {
         didSet {
@@ -1518,8 +1521,10 @@ public final class PresenceMonitor: ObservableObject {
         self.trackedSubjects = subjects
         self.presenceStatus = status
 
-        // Connect presence status transitions to Pet emotions & reactions via Arrival State Machine
-        alertController.update(subjects: subjects, status: status, now: Date())
+        // Connect presence status transitions to Pet emotions & reactions via Arrival State Machine (suppressed during calibration)
+        if !isCalibrationActive {
+            alertController.update(subjects: subjects, status: status, now: Date())
+        }
 
         // Smooth Digital Auto-Framing (Prioritize: 1. Owner, 2. Verifying subject, 3. Largest visible subject)
         if autoFramingEnabled, !subjects.isEmpty {

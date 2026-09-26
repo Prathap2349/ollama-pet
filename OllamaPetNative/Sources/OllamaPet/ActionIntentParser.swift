@@ -5,7 +5,7 @@ import AppKit
 
 public struct SpeechNormalizer {
     public static func normalize(_ input: String) -> String {
-        var text = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return "" }
 
         // 1. Lowercase and normalize common punctuation / quotes / hyphens

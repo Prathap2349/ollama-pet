@@ -1930,9 +1930,11 @@ public final class PresenceMonitor: ObservableObject {
             try? data.write(to: printsURL)
         }
 
-        PetState.shared.setTemporaryMood(.proud, duration: 3.0)
-        PetState.shared.showBubble("Enrolled \(angle.title) sample! ✨", duration: 3.0)
-        SoundEffect.success.play()
+        if !isCalibrationActive {
+            PetState.shared.setTemporaryMood(.proud, duration: 3.0)
+            PetState.shared.showBubble("Enrolled \(angle.title) sample! ✨", duration: 3.0)
+            SoundEffect.success.play()
+        }
 
         return (true, "\(angle.title) sample enrolled successfully!")
     }

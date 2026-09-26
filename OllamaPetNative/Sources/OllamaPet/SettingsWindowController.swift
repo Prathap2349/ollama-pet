@@ -2556,271 +2556,450 @@ struct OwnerEnrollmentWizardView: View {
     @State private var justCaptured: Bool = false
     @State private var startedMonitorForWizard: Bool = false
 
+    // Explicit Camera State tracking for Timeout & Failures
+    @State private var initElapsedSeconds: Double = 0.0
+    @State private var isCameraTimedOut: Bool = false
+
+    private enum WizardCameraStatus {
+        case starting
+        case active
+        case permissionDenied
+        case unavailable(String)
+    }
+
+    private var cameraStatus: WizardCameraStatus {
+        if monitor.monitoringState == .permissionRequired {
+            return .permissionDenied
+        }
+        if monitor.monitoringState == .cameraUnavailable {
+            return .unavailable("Camera hardware is unavailable or in use by another application.")
+        }
+        if isCameraTimedOut && monitor.latestPreviewImage == nil {
+            return .unavailable("Camera preview initialization timed out. Click Retry to restart camera.")
+        }
+        if monitor.latestPreviewImage != nil {
+            return .active
+        }
+        return .starting
+    }
+
+    private var isAllAnglesEnrolled: Bool {
+        OwnerSampleAngle.allCases.allSatisfy { monitor.isSampleEnrolled(angle: $0) }
+    }
+
+    private var enrolledCount: Int {
+        OwnerSampleAngle.allCases.filter { monitor.isSampleEnrolled(angle: $0) }.count
+    }
+
     var body: some View {
         VStack(spacing: 16) {
-            // Header
+            // Header Bar with explicit Cancel (Secondary) and Finish (Primary)
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Owner Calibration Wizard")
                         .font(.system(size: 16, weight: .bold))
-                    Text("Calibrate up to 3 facial angles to ensure reliable, zero-prompt recognition under different postures.")
+                    Text("Calibrate facial angles for reliable, zero-prompt recognition.")
                         .font(.system(size: 11))
                         .foregroundColor(.secondary)
                 }
                 Spacer()
-                Button("Done") {
-                    performCleanup()
-                    isPresented = false
+
+                HStack(spacing: 10) {
+                    Button("Cancel") {
+                        performCancel()
+                    }
+                    .keyboardShortcut(.escape, modifiers: [])
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+
+                    Button("Finish") {
+                        performFinish()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
             }
             .padding(.horizontal, 20)
             .padding(.top, 16)
 
-            // Step Selector Pills (Front, Left, Right)
-            HStack(spacing: 12) {
-                ForEach(OwnerSampleAngle.allCases) { angle in
-                    Button(action: {
-                        currentAngle = angle
-                        statusFeedback = ""
-                        stableHoldSeconds = 0.0
-                        justCaptured = false
-                        isAutoCapturing = false
-                    }) {
-                        HStack(spacing: 6) {
-                            if monitor.isSampleEnrolled(angle: angle) {
+            if isAllAnglesEnrolled {
+                // MARK: - Completion Screen
+                VStack(spacing: 18) {
+                    Spacer()
+                    Image(systemName: "checkmark.seal.fill")
+                        .font(.system(size: 52))
+                        .foregroundColor(.green)
+
+                    Text("Calibration Complete!")
+                        .font(.system(size: 18, weight: .bold))
+
+                    Text("Your owner profile is fully calibrated with all 7 facial angles for zero-prompt recognition.")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 30)
+
+                    // 7 Angle Checklist Grid
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                        ForEach(OwnerSampleAngle.allCases) { angle in
+                            HStack(spacing: 6) {
                                 Image(systemName: "checkmark.circle.fill")
                                     .foregroundColor(.green)
-                            } else {
-                                Image(systemName: angle.icon)
+                                Text(angle.title)
+                                    .font(.system(size: 11, weight: .medium))
+                                Spacer()
                             }
-                            Text("Step \(angle.stepIndex): \(angle.title)")
-                                .font(.system(size: 12, weight: currentAngle == angle ? .bold : .medium))
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 7)
-                        .background(
-                            RoundedRectangle(cornerRadius: 8)
-                                .fill(currentAngle == angle ? Color.accentColor.opacity(0.18) : Color.primary.opacity(0.05))
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 8)
-                                .stroke(currentAngle == angle ? Color.accentColor : Color.clear, lineWidth: 1.5)
-                        )
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.horizontal, 20)
-
-            // Instruction Box
-            HStack(spacing: 10) {
-                Image(systemName: "info.circle.fill")
-                    .foregroundColor(.accentColor)
-                Text(currentAngle.instruction)
-                    .font(.system(size: 12, weight: .medium))
-                Spacer()
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(RoundedRectangle(cornerRadius: 8).fill(Color.accentColor.opacity(0.08)))
-            .padding(.horizontal, 20)
-
-            // Live Camera Viewfinder & Alignment Guide
-            HStack(spacing: 16) {
-                // Camera Box
-                ZStack {
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(Color.black.opacity(0.9))
-                        .frame(width: 320, height: 240)
-
-                    if let img = monitor.latestPreviewImage {
-                        Image(nsImage: img)
-                            .resizable()
-                            .aspectRatio(contentMode: .fit)
-                            .frame(width: 320, height: 240)
-                            .cornerRadius(10)
-
-                        // Center Alignment Oval
-                        Ellipse()
-                            .stroke(
-                                (qualityReport?.isReadyToCapture ?? false) ? Color.green : Color.white.opacity(0.4),
-                                style: StrokeStyle(lineWidth: 2, dash: (qualityReport?.isReadyToCapture ?? false) ? [] : [6, 4])
-                            )
-                            .frame(width: 140, height: 180)
-                    } else {
-                        VStack(spacing: 8) {
-                            ProgressView()
-                            Text(monitor.isRunning ? "Initializing Camera..." : "Camera is stopped")
-                                .font(.system(size: 11))
-                                .foregroundColor(.secondary)
+                            .padding(8)
+                            .background(RoundedRectangle(cornerRadius: 6).fill(Color.green.opacity(0.08)))
                         }
                     }
-                }
-                .frame(width: 320, height: 240)
-
-                // Live Quality Checklist
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Alignment & Quality Checks")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundColor(.secondary)
-
-                    qualityCheckRow(
-                        title: "Face Detected",
-                        passed: (qualityReport?.faceDetected ?? false) && !(qualityReport?.multipleFaces ?? false),
-                        detail: qualityReport?.multipleFaces == true ? "Multiple faces" : ((qualityReport?.faceDetected ?? false) ? "1 face" : "No face")
-                    )
-
-                    qualityCheckRow(
-                        title: "Positioning",
-                        passed: qualityReport?.isCentered ?? false,
-                        detail: (qualityReport?.isCentered ?? false) ? "Centered" : "Adjust position"
-                    )
-
-                    qualityCheckRow(
-                        title: "Face Distance",
-                        passed: qualityReport?.isGoodSize ?? false,
-                        detail: (qualityReport?.isGoodSize ?? false) ? "Good size" : "Too far/close"
-                    )
-
-                    qualityCheckRow(
-                        title: "Lighting",
-                        passed: qualityReport?.isGoodLighting ?? false,
-                        detail: (qualityReport?.isGoodLighting ?? false) ? "Good lighting" : "Check illumination"
-                    )
-
-                    qualityCheckRow(
-                        title: "Pose Alignment",
-                        passed: qualityReport?.angleMatched ?? false,
-                        detail: (qualityReport?.angleMatched ?? false) ? "Angle matched" : "Tilt to match"
-                    )
-
-                    qualityCheckRow(
-                        title: "Image Clarity",
-                        passed: qualityReport?.isGoodQuality ?? false,
-                        detail: (qualityReport?.isGoodQuality ?? false) ? "Clear" : "Hold still"
-                    )
+                    .padding(.horizontal, 20)
 
                     Spacer()
 
-                    // Saved Snapshot Thumbnail for Current Angle
-                    if let photo = monitor.getSamplePhoto(angle: currentAngle) {
-                        HStack(spacing: 8) {
-                            Image(nsImage: photo)
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                                .frame(width: 44, height: 36)
-                                .cornerRadius(4)
-                                .clipped()
+                    HStack(spacing: 16) {
+                        Button("Cancel") {
+                            performCancel()
+                        }
+                        .buttonStyle(.bordered)
 
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text("\(currentAngle.title) Enrolled")
-                                    .font(.system(size: 11, weight: .bold))
-                                    .foregroundColor(.green)
-                                Text("Stored securely on-device")
-                                    .font(.system(size: 9))
-                                    .foregroundColor(.secondary)
+                        Button("Finish & Save") {
+                            performFinish()
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+                    .padding(.bottom, 16)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                // MARK: - Compact Step Progress Header (P1 Fix for 7-Step UI)
+                VStack(spacing: 8) {
+                    HStack {
+                        Text("Step \(currentAngle.stepIndex) of 7: \(currentAngle.title)")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundColor(.accentColor)
+                        Spacer()
+                        Text("\(enrolledCount)/7 Enrolled")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(.secondary)
+                    }
+
+                    // Compact Dots Row: ● ● ● ◉ ○ ○ ○
+                    HStack(spacing: 10) {
+                        ForEach(OwnerSampleAngle.allCases) { angle in
+                            Button(action: {
+                                currentAngle = angle
+                                statusFeedback = ""
+                                stableHoldSeconds = 0.0
+                                justCaptured = false
+                                isAutoCapturing = false
+                            }) {
+                                HStack(spacing: 3) {
+                                    if monitor.isSampleEnrolled(angle: angle) {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .foregroundColor(.green)
+                                            .font(.system(size: 13))
+                                    } else if angle == currentAngle {
+                                        Image(systemName: "circle.circle.fill")
+                                            .foregroundColor(.accentColor)
+                                            .font(.system(size: 13))
+                                    } else {
+                                        Image(systemName: "circle")
+                                            .foregroundColor(Color.primary.opacity(0.3))
+                                            .font(.system(size: 12))
+                                    }
+                                }
                             }
-                            Spacer()
-                            Button("Retake") {
-                                captureCurrentAngle()
+                            .buttonStyle(.plain)
+                            .help("Step \(angle.stepIndex): \(angle.title)")
+                        }
+                    }
+                    .padding(.vertical, 4)
+                    .frame(maxWidth: .infinity)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.03)))
+                }
+                .padding(.horizontal, 20)
+
+                // Step Instruction Box
+                HStack(spacing: 10) {
+                    Image(systemName: "info.circle.fill")
+                        .foregroundColor(.accentColor)
+                    Text(currentAngle.instruction)
+                        .font(.system(size: 12, weight: .medium))
+                    Spacer()
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Color.accentColor.opacity(0.08)))
+                .padding(.horizontal, 20)
+
+                // Main Viewfinder / Camera State Machine
+                switch cameraStatus {
+                case .starting:
+                    VStack(spacing: 14) {
+                        Spacer()
+                        ProgressView()
+                            .controlSize(.large)
+                        Text("Starting Camera…")
+                            .font(.system(size: 13, weight: .semibold))
+                        Text("Initializing video stream for facial calibration.")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                        Spacer()
+                        Button("Cancel") {
+                            performCancel()
+                        }
+                        .buttonStyle(.bordered)
+                        .padding(.bottom, 16)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                case .unavailable(let reason):
+                    VStack(spacing: 14) {
+                        Spacer()
+                        Image(systemName: "video.slash.fill")
+                            .font(.system(size: 36))
+                            .foregroundColor(.orange)
+                        Text("Camera Preview Unavailable")
+                            .font(.system(size: 15, weight: .bold))
+                        Text(reason)
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 30)
+                        Spacer()
+                        HStack(spacing: 14) {
+                            Button("Cancel") {
+                                performCancel()
                             }
                             .buttonStyle(.bordered)
-                            .controlSize(.mini)
+
+                            Button("Retry Camera") {
+                                retryCamera()
+                            }
+                            .buttonStyle(.borderedProminent)
                         }
-                        .padding(6)
-                        .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.04)))
+                        .padding(.bottom, 16)
                     }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                case .permissionDenied:
+                    VStack(spacing: 14) {
+                        Spacer()
+                        Image(systemName: "lock.shield.fill")
+                            .font(.system(size: 36))
+                            .foregroundColor(.red)
+                        Text("Camera Access Required")
+                            .font(.system(size: 15, weight: .bold))
+                        Text("Allow camera access in System Settings to continue with facial calibration.")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 30)
+                        Spacer()
+                        HStack(spacing: 14) {
+                            Button("Cancel") {
+                                performCancel()
+                            }
+                            .buttonStyle(.bordered)
+
+                            Button("Open System Settings") {
+                                monitor.openSystemCameraSettings()
+                            }
+                            .buttonStyle(.borderedProminent)
+                        }
+                        .padding(.bottom, 16)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                case .active:
+                    // Live Viewfinder & Alignment Guide
+                    HStack(spacing: 16) {
+                        // Camera Box
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 10)
+                                .fill(Color.black.opacity(0.9))
+                                .frame(width: 320, height: 240)
+
+                            if let img = monitor.latestPreviewImage {
+                                Image(nsImage: img)
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fit)
+                                    .frame(width: 320, height: 240)
+                                    .cornerRadius(10)
+
+                                // Center Alignment Oval
+                                Ellipse()
+                                    .stroke(
+                                        (qualityReport?.isReadyToCapture ?? false) ? Color.green : Color.white.opacity(0.4),
+                                        style: StrokeStyle(lineWidth: 2, dash: (qualityReport?.isReadyToCapture ?? false) ? [] : [6, 4])
+                                    )
+                                    .frame(width: 140, height: 180)
+                            }
+                        }
+                        .frame(width: 320, height: 240)
+
+                        // Live Quality Checklist
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Alignment & Quality Checks")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundColor(.secondary)
+
+                            qualityCheckRow(
+                                title: "Face Detected",
+                                passed: (qualityReport?.faceDetected ?? false) && !(qualityReport?.multipleFaces ?? false),
+                                detail: qualityReport?.multipleFaces == true ? "Multiple faces" : ((qualityReport?.faceDetected ?? false) ? "1 face" : "No face")
+                            )
+
+                            qualityCheckRow(
+                                title: "Positioning",
+                                passed: qualityReport?.isCentered ?? false,
+                                detail: (qualityReport?.isCentered ?? false) ? "Centered" : "Adjust position"
+                            )
+
+                            qualityCheckRow(
+                                title: "Face Distance",
+                                passed: qualityReport?.isGoodSize ?? false,
+                                detail: (qualityReport?.isGoodSize ?? false) ? "Good size" : "Too far/close"
+                            )
+
+                            qualityCheckRow(
+                                title: "Lighting",
+                                passed: qualityReport?.isGoodLighting ?? false,
+                                detail: (qualityReport?.isGoodLighting ?? false) ? "Good lighting" : "Check illumination"
+                            )
+
+                            qualityCheckRow(
+                                title: "Pose Alignment",
+                                passed: qualityReport?.angleMatched ?? false,
+                                detail: (qualityReport?.angleMatched ?? false) ? "Angle matched" : "Tilt to match"
+                            )
+
+                            qualityCheckRow(
+                                title: "Image Clarity",
+                                passed: qualityReport?.isGoodQuality ?? false,
+                                detail: (qualityReport?.isGoodQuality ?? false) ? "Clear" : "Hold still"
+                            )
+
+                            Spacer()
+
+                            // Saved Snapshot Thumbnail for Current Angle
+                            if let photo = monitor.getSamplePhoto(angle: currentAngle) {
+                                HStack(spacing: 8) {
+                                    Image(nsImage: photo)
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fill)
+                                        .frame(width: 44, height: 36)
+                                        .cornerRadius(4)
+                                        .clipped()
+
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Text("\(currentAngle.title) Enrolled")
+                                            .font(.system(size: 11, weight: .bold))
+                                            .foregroundColor(.green)
+                                        Text("Stored securely on-device")
+                                            .font(.system(size: 9))
+                                            .foregroundColor(.secondary)
+                                    }
+                                    Spacer()
+                                    Button("Retake") {
+                                        captureCurrentAngle()
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .controlSize(.mini)
+                                }
+                                .padding(6)
+                                .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.04)))
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                    }
+                    .padding(.horizontal, 20)
+
+                    // Status Feedback Message & Hold Progress Bar
+                    if justCaptured {
+                        HStack(spacing: 8) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(.green)
+                            Text("Captured ✓ \(currentAngle.title) calibrated successfully")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundColor(.green)
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(RoundedRectangle(cornerRadius: 8).fill(Color.green.opacity(0.15)))
+                        .padding(.horizontal, 20)
+                    } else if let report = qualityReport {
+                        HStack(spacing: 12) {
+                            if report.isReadyToCapture {
+                                Image(systemName: "timer")
+                                    .foregroundColor(.green)
+                                ProgressView(value: min(1.0, stableHoldSeconds / 0.5))
+                                    .frame(width: 80)
+                                Text("Hold still... (\(Int(min(1.0, stableHoldSeconds / 0.5) * 100))%)")
+                                    .font(.system(size: 12, weight: .bold))
+                                    .foregroundColor(.green)
+                            } else {
+                                Image(systemName: "exclamationmark.circle.fill")
+                                    .foregroundColor(.orange)
+                                Text(report.statusMessage)
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundColor(.orange)
+                            }
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(RoundedRectangle(cornerRadius: 8).fill((report.isReadyToCapture ? Color.green : Color.orange).opacity(0.12)))
+                        .padding(.horizontal, 20)
+                    }
+
+                    // Bottom Action Bar
+                    HStack(spacing: 14) {
+                        Button("Cancel") {
+                            performCancel()
+                        }
+                        .buttonStyle(.bordered)
+
+                        if currentAngle.stepIndex > 1 {
+                            Button("← Previous") {
+                                navigateToPreviousAngle()
+                            }
+                            .buttonStyle(.bordered)
+                        }
+
+                        Spacer()
+
+                        Button(action: {
+                            captureCurrentAngle()
+                        }) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "camera.fill")
+                                Text(monitor.isSampleEnrolled(angle: currentAngle) ? "Re-capture \(currentAngle.title)" : "Capture \(currentAngle.title)")
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+
+                        if currentAngle.stepIndex < 7 {
+                            Button("Next →") {
+                                navigateToNextAngle()
+                            }
+                            .buttonStyle(.bordered)
+                        } else {
+                            Button("Finish & Save") {
+                                performFinish()
+                            }
+                            .buttonStyle(.borderedProminent)
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 16)
                 }
-                .frame(maxWidth: .infinity, alignment: .topLeading)
             }
-            .padding(.horizontal, 20)
-
-            // Status Feedback Message & Hold Progress Bar
-            if justCaptured {
-                HStack(spacing: 8) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundColor(.green)
-                    Text("Captured ✓ \(currentAngle.title) calibrated successfully")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundColor(.green)
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-                .background(RoundedRectangle(cornerRadius: 8).fill(Color.green.opacity(0.15)))
-                .padding(.horizontal, 20)
-            } else if let report = qualityReport {
-                HStack(spacing: 12) {
-                    if report.isReadyToCapture {
-                        Image(systemName: "timer")
-                            .foregroundColor(.green)
-                        ProgressView(value: min(1.0, stableHoldSeconds / 0.5))
-                            .frame(width: 80)
-                        Text("Hold still... (\(Int(min(1.0, stableHoldSeconds / 0.5) * 100))%)")
-                            .font(.system(size: 12, weight: .bold))
-                            .foregroundColor(.green)
-                    } else {
-                        Image(systemName: "exclamationmark.circle.fill")
-                            .foregroundColor(.orange)
-                        Text(report.statusMessage)
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundColor(.orange)
-                    }
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-                .background(RoundedRectangle(cornerRadius: 8).fill((report.isReadyToCapture ? Color.green : Color.orange).opacity(0.12)))
-                .padding(.horizontal, 20)
-            }
-
-            // Bottom Action Bar
-            HStack(spacing: 14) {
-                // Previous Step Button
-                if currentAngle != .front {
-                    Button(action: {
-                        if currentAngle == .rightProfile { currentAngle = .leftProfile }
-                        else if currentAngle == .leftProfile { currentAngle = .front }
-                        stableHoldSeconds = 0.0
-                        justCaptured = false
-                        isAutoCapturing = false
-                    }) {
-                        Text("← Previous Step")
-                    }
-                    .buttonStyle(.bordered)
-                }
-
-                Spacer()
-
-                // Capture Button
-                Button(action: {
-                    captureCurrentAngle()
-                }) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "camera.fill")
-                        Text(monitor.isSampleEnrolled(angle: currentAngle) ? "Re-capture \(currentAngle.title)" : "Capture \(currentAngle.title)")
-                    }
-                }
-                .buttonStyle(.borderedProminent)
-
-                // Next Step Button
-                if currentAngle != .rightProfile {
-                    Button(action: {
-                        if currentAngle == .front { currentAngle = .leftProfile }
-                        else if currentAngle == .leftProfile { currentAngle = .rightProfile }
-                        stableHoldSeconds = 0.0
-                        justCaptured = false
-                        isAutoCapturing = false
-                    }) {
-                        Text("Next Step →")
-                    }
-                    .buttonStyle(.bordered)
-                }
-            }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 16)
         }
-        .frame(width: 580, height: 480)
+        .frame(width: 580, height: 490)
+        .onExitCommand {
+            performCancel()
+        }
         .onAppear {
             monitor.isCalibrationActive = true
             monitor.isLivePreviewRequested = true
@@ -2837,6 +3016,16 @@ struct OwnerEnrollmentWizardView: View {
         }
     }
 
+    private func performCancel() {
+        performCleanup()
+        isPresented = false
+    }
+
+    private func performFinish() {
+        performCleanup()
+        isPresented = false
+    }
+
     private func performCleanup() {
         timer?.invalidate()
         timer = nil
@@ -2851,6 +3040,37 @@ struct OwnerEnrollmentWizardView: View {
         isAutoCapturing = false
         justCaptured = false
         statusFeedback = ""
+        initElapsedSeconds = 0.0
+        isCameraTimedOut = false
+    }
+
+    private func retryCamera() {
+        performCleanup()
+        monitor.isCalibrationActive = true
+        monitor.isLivePreviewRequested = true
+        startedMonitorForWizard = true
+        monitor.start()
+        startInspectionLoop()
+    }
+
+    private func navigateToPreviousAngle() {
+        let all = OwnerSampleAngle.allCases
+        if let idx = all.firstIndex(of: currentAngle), idx > 0 {
+            currentAngle = all[idx - 1]
+            stableHoldSeconds = 0.0
+            justCaptured = false
+            isAutoCapturing = false
+        }
+    }
+
+    private func navigateToNextAngle() {
+        let all = OwnerSampleAngle.allCases
+        if let idx = all.firstIndex(of: currentAngle), idx < all.count - 1 {
+            currentAngle = all[idx + 1]
+            stableHoldSeconds = 0.0
+            justCaptured = false
+            isAutoCapturing = false
+        }
     }
 
     private func qualityCheckRow(title: String, passed: Bool, detail: String) -> some View {
@@ -2868,8 +3088,20 @@ struct OwnerEnrollmentWizardView: View {
     }
 
     private func startInspectionLoop() {
+        initElapsedSeconds = 0.0
+        isCameraTimedOut = false
         timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
             Task { @MainActor in
+                if monitor.latestPreviewImage == nil {
+                    self.initElapsedSeconds += 0.1
+                    if self.initElapsedSeconds >= 6.0 {
+                        self.isCameraTimedOut = true
+                    }
+                } else {
+                    self.initElapsedSeconds = 0.0
+                    self.isCameraTimedOut = false
+                }
+
                 let report = monitor.evaluateEnrollmentFrame(for: currentAngle)
                 self.qualityReport = report
 
@@ -2899,15 +3131,20 @@ struct OwnerEnrollmentWizardView: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                 self.justCaptured = false
                 self.isAutoCapturing = false
-                if currentAngle == .front && !monitor.isSampleEnrolled(angle: .leftProfile) {
-                    currentAngle = .leftProfile
-                } else if currentAngle == .leftProfile && !monitor.isSampleEnrolled(angle: .rightProfile) {
-                    currentAngle = .rightProfile
-                }
+                self.advanceToNextAngle()
             }
         } else {
             isAutoCapturing = false
             stableHoldSeconds = 0.0
+        }
+    }
+
+    private func advanceToNextAngle() {
+        for angle in OwnerSampleAngle.allCases {
+            if !monitor.isSampleEnrolled(angle: angle) {
+                currentAngle = angle
+                return
+            }
         }
     }
 
@@ -2920,12 +3157,11 @@ struct OwnerEnrollmentWizardView: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                 self.justCaptured = false
                 self.isAutoCapturing = false
-                if currentAngle == .front && !monitor.isSampleEnrolled(angle: .leftProfile) {
-                    currentAngle = .leftProfile
-                } else if currentAngle == .leftProfile && !monitor.isSampleEnrolled(angle: .rightProfile) {
-                    currentAngle = .rightProfile
-                }
+                self.advanceToNextAngle()
             }
+        } else {
+            isAutoCapturing = false
+            stableHoldSeconds = 0.0
         }
     }
 }

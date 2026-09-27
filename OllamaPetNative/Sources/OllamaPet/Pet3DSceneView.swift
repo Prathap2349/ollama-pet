@@ -136,6 +136,9 @@ public struct Pet3DSceneView: NSViewRepresentable {
         private var fireStartTime: TimeInterval = 0
         private var activeFlameBurstNodes: [SCNNode] = []
 
+        // Species-Specific Choreography Engine
+        private let danceController = SpeciesDanceController()
+
         init(_ parent: Pet3DSceneView) {
             self.parent = parent
             super.init()
@@ -268,17 +271,11 @@ public struct Pet3DSceneView: NSViewRepresentable {
             var targetHeadRoll: CGFloat = 0.0
             var targetHeadYaw: CGFloat = 0.0
 
-            // Music Beat Reactivity
-            if musicAmp > 0.05 && !reduceMotion {
+            // Music Beat Reactivity (Idle Subtle Groove)
+            if musicAmp > 0.05 && !reduceMotion && !isDancing {
                 bobY += CGFloat(musicAmp) * 0.08
                 scaleY += CGFloat(musicAmp) * 0.05
                 scaleXZ -= CGFloat(musicAmp) * 0.03
-            } else if isDancing && !reduceMotion {
-                // Tasteful generic groove rhythm (~118 BPM) when dancing to external media
-                let groove = CGFloat(abs(sin(t * 6.2))) * 0.05
-                bobY += groove
-                scaleY += groove * 0.6
-                scaleXZ -= groove * 0.4
             }
 
             // 2. Natural Blinking State Machine (Requirement 2)
@@ -776,7 +773,24 @@ public struct Pet3DSceneView: NSViewRepresentable {
                 rig.rootNode.eulerAngles.y = 0.35
                 targetHeadYaw = 0.25
 
+            } else if isDancing {
+                danceController.update(
+                    rig: rig,
+                    species: species,
+                    time: t,
+                    beatAmplitude: parent.music.currentBeatAmplitude,
+                    beatIntensity: parent.music.currentBeatIntensity,
+                    energyLevel: parent.music.currentEnergyLevel,
+                    isMusicActive: parent.music.isPlaying || parent.music.isMediaPlaying,
+                    bobY: &bobY,
+                    scaleY: &scaleY,
+                    scaleXZ: &scaleXZ,
+                    targetHeadPitch: &targetHeadPitch,
+                    targetHeadRoll: &targetHeadRoll,
+                    targetHeadYaw: &targetHeadYaw
+                )
             } else {
+                danceController.reset(rig: rig)
                 // Standing rest position
                 rig.frontLeftLeg?.eulerAngles.x = 0
                 rig.frontLeftShin?.eulerAngles.x = 0
@@ -900,54 +914,8 @@ public struct Pet3DSceneView: NSViewRepresentable {
                 }
             }
 
-            // Species-Specific Dancing (Requirement 22)
-            if isDancing {
-                switch species {
-                case .dragon:
-                    let danceBeat = sin(t * 8.0)
-                    bobY += CGFloat(abs(danceBeat)) * 0.05
-                    rig.leftWingNode?.eulerAngles.z = CGFloat(Double.pi / 3) + CGFloat(sin(t * 10.0)) * 0.45
-                    rig.rightWingNode?.eulerAngles.z = -CGFloat(Double.pi / 3) - CGFloat(sin(t * 10.0)) * 0.45
-                    rig.tailNode?.eulerAngles.y = CGFloat(sin(t * 12.0)) * 0.65
-
-                case .robot:
-                    // Mechanical popping & locking with dual arms
-                    let beat = sin(t * 6.5)
-                    rig.rightShoulderNode?.eulerAngles.x = -CGFloat(Double.pi / 2.2) + CGFloat(sin(t * 6.5)) * 0.35
-                    rig.leftShoulderNode?.eulerAngles.x = CGFloat(sin(t * 6.5 + Double.pi)) * 0.35
-                    rig.rightElbowNode?.eulerAngles.x = 0.85 + CGFloat(cos(t * 6.5)) * 0.25
-                    rig.leftElbowNode?.eulerAngles.x = 0.85 - CGFloat(cos(t * 6.5)) * 0.25
-                    bobY += CGFloat(abs(beat)) * 0.04
-                    rig.frontLeftLeg?.eulerAngles.x = CGFloat(beat) * 0.25
-                    rig.frontRightLeg?.eulerAngles.x = -CGFloat(beat) * 0.25
-
-                case .cat:
-                    bobY += CGFloat(abs(sin(t * 6.0))) * 0.04
-                    rig.rootNode.eulerAngles.z = CGFloat(sin(t * 6.0)) * 0.06
-                    rig.tailNode?.eulerAngles.y = CGFloat(sin(t * 8.0)) * 0.50
-
-                case .fox:
-                    bobY += CGFloat(abs(sin(t * 7.0))) * 0.05
-                    rig.tailNode?.eulerAngles.y = CGFloat(sin(t * 9.0)) * 0.70
-
-                case .bunny:
-                    bobY += CGFloat(abs(sin(t * 8.5))) * 0.12
-                    rig.leftEarNode?.eulerAngles.x = CGFloat(sin(t * 8.5)) * 0.35
-                    rig.rightEarNode?.eulerAngles.x = CGFloat(sin(t * 8.5)) * 0.35
-
-                case .robotcat:
-                    bobY += CGFloat(abs(sin(t * 6.5))) * 0.04
-                    rig.tailNode?.eulerAngles.y = CGFloat(sin(t * 10.0)) * 0.45
-
-                case .ghost:
-                    bobY += CGFloat(sin(t * 5.0)) * 0.10
-                    rig.leftArmNode?.eulerAngles.z = CGFloat(Double.pi / 2.5) + CGFloat(sin(t * 5.0)) * 0.30
-                    rig.rightArmNode?.eulerAngles.z = -CGFloat(Double.pi / 2.5) - CGFloat(sin(t * 5.0)) * 0.30
-                }
-            }
-
             // 9. Emotion Engine Full Mapping (Requirement 4)
-            let isCustomPoseState = (animState == .lookAround || animState == .watchUser || animState == .curious || animState == .stretch || animState == .groom || animState == .turnLeft || animState == .turnRight)
+            let isCustomPoseState = (animState == .lookAround || animState == .watchUser || animState == .curious || animState == .stretch || animState == .groom || animState == .turnLeft || animState == .turnRight || animState == .dance)
             if !isCustomPoseState {
                 switch mood {
                 case .calm:

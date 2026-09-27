@@ -170,10 +170,10 @@ public class MusicManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
     private func startMediaDetection() {
         mediaPollTimer?.invalidate()
-        // Poll every 2.0s for responsive reaction
-        mediaPollTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+        // Responsive 0.8s polling interval (non-blocking async resolution)
+        mediaPollTimer = Timer.scheduledTimer(withTimeInterval: 0.8, repeats: true) { [weak self] _ in
             Task { @MainActor in
-                self?.pollActiveMediaPlayback()
+                await self?.pollActiveMediaPlayback()
             }
         }
     }
@@ -187,7 +187,7 @@ public class MusicManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
         transitionMediaState(to: .noMedia)
     }
 
-    private func pollActiveMediaPlayback() {
+    private func pollActiveMediaPlayback() async {
         guard isMediaDetectionEnabled else { return }
 
         // If local audio player is playing, local takes precedence
@@ -195,18 +195,10 @@ public class MusicManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
             return
         }
 
-        // 1. Check System-Wide MediaRemote framework (Detects anything playing across macOS)
-        let remoteResult = queryMediaRemote()
+        let resolution = await MediaPlaybackResolver.shared.resolve()
 
-        // 2. Check Browser & Application specific metadata (Correlated with MediaRemote state)
-        let appMetadata = queryActiveApplications(mediaRemotePlaying: remoteResult.isPlaying)
-
-        let isActuallyPlaying = remoteResult.isPlaying || appMetadata.isPlaying
-        let track = appMetadata.title.isEmpty ? (remoteResult.title ?? "") : appMetadata.title
-        let artist = appMetadata.artist.isEmpty ? (remoteResult.artist ?? "") : appMetadata.artist
-        let source = appMetadata.source.isEmpty ? (isActuallyPlaying ? "macOS Media" : "") : appMetadata.source
-
-        if isActuallyPlaying {
+        switch resolution {
+        case .playing(let track, let artist, let source, _):
             let activeTrack = track.isEmpty ? (mediaTrackTitle.isEmpty ? "Audio Stream" : mediaTrackTitle) : track
             let activeArtist = artist.isEmpty ? mediaArtist : artist
             let activeSource = source.isEmpty ? (mediaSource.isEmpty ? "macOS Media" : mediaSource) : source
@@ -214,15 +206,17 @@ public class MusicManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
             if mediaState != .playing || (activeTrack != mediaTrackTitle && !activeTrack.isEmpty) {
                 transitionMediaState(to: .playing, track: activeTrack, artist: activeArtist, source: activeSource)
             } else if danceWhenMusicDetected && (reactionTask == nil || !isReacting) {
-                // Ensure dance reaction starts or resumes if music is playing and reaction wasn't running (Requirement 5)
                 startExternalBeatClock()
                 triggerMusicStartReaction(track: activeTrack, artist: activeArtist, source: activeSource)
             }
-        } else if mediaState == .playing {
-            // It was playing, now stopped or paused
-            if remoteResult.isPaused {
+
+        case .paused(let track, let artist, let source, _):
+            if mediaState == .playing {
                 transitionMediaState(to: .paused, track: track, artist: artist, source: source)
-            } else {
+            }
+
+        case .noMedia:
+            if mediaState != .noMedia {
                 transitionMediaState(to: .noMedia)
             }
         }
@@ -280,26 +274,11 @@ public class MusicManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
                 PetState.shared.showBubble("\(badge) \(subtitle)", duration: 4.5)
             }
 
-            // Quick curious/excited intro only if not blocked by high priority activity
-            if PetState.shared.activeEventPriority <= .musicReaction &&
-               !PetState.shared.isChatOpen &&
-               !PetState.shared.isThinking &&
-               !VoiceAssistant.shared.isSpeaking &&
-               !FocusGuardian.shared.isSessionActive {
-                PetState.shared.setTemporaryMood(.curious, duration: 1.0)
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
-                guard !Task.isCancelled else { return }
-
-                PetState.shared.setTemporaryMood(.excited, duration: 1.2)
-                try? await Task.sleep(nanoseconds: 1_200_000_000)
-                guard !Task.isCancelled else { return }
-            }
-
-            // Step 3: DANCE CONTINUOUSLY while media is playing
+            // Immediately engage dance state so 3D character enters its choreography
             if danceWhenMusicDetected {
                 PetState.shared.currentMood = .happy
 
-                // Continuous dance loop while music is active (Requirements 5, 6, 7)
+                // Continuous dance loop while media is active (Requirements 5, 6, 7)
                 while !Task.isCancelled && (self.isMediaPlaying || self.isPlaying) && self.danceWhenMusicDetected {
                     let isVoiceSpeaking = VoiceAssistant.shared.isSpeaking
                     let priority = PetState.shared.activeEventPriority
@@ -324,7 +303,7 @@ public class MusicManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
                             PetState.shared.animState = .dance
                         }
                     }
-                    try? await Task.sleep(nanoseconds: 500_000_000)
+                    try? await Task.sleep(nanoseconds: 350_000_000)
                 }
 
                 // Gracefully finish motion when stopped or paused
@@ -398,225 +377,6 @@ public class MusicManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
     private func stopExternalBeatClock() {
         externalBeatTimer?.invalidate()
         externalBeatTimer = nil
-    }
-
-    // MARK: - System-Wide MediaRemote Dynamic Loader
-
-    private struct MediaRemoteResult {
-        let isPlaying: Bool
-        let isPaused: Bool
-        let title: String?
-        let artist: String?
-    }
-
-    private func queryMediaRemote() -> MediaRemoteResult {
-        guard let handle = dlopen("/System/Library/PrivateFrameworks/MediaRemote.framework/MediaRemote", RTLD_NOW) else {
-            return MediaRemoteResult(isPlaying: false, isPaused: false, title: nil, artist: nil)
-        }
-        defer { dlclose(handle) }
-
-        var isPlaying = false
-        var isPaused = false
-        var title: String?
-        var artist: String?
-
-        typealias MRMediaRemoteGetNowPlayingApplicationIsPlayingFunction = @convention(c) (DispatchQueue, @escaping (Bool) -> Void) -> Void
-        if let sym = dlsym(handle, "MRMediaRemoteGetNowPlayingApplicationIsPlaying") {
-            let fn = unsafeBitCast(sym, to: MRMediaRemoteGetNowPlayingApplicationIsPlayingFunction.self)
-            let sem = DispatchSemaphore(value: 0)
-            fn(DispatchQueue.global(qos: .userInitiated)) { playing in
-                isPlaying = playing
-                sem.signal()
-            }
-            _ = sem.wait(timeout: .now() + 0.15)
-        }
-
-        typealias MRMediaRemoteGetNowPlayingInfoFunction = @convention(c) (DispatchQueue, @escaping ([String: Any]) -> Void) -> Void
-        if let sym = dlsym(handle, "MRMediaRemoteGetNowPlayingInfo") {
-            let fn = unsafeBitCast(sym, to: MRMediaRemoteGetNowPlayingInfoFunction.self)
-            let sem = DispatchSemaphore(value: 0)
-            fn(DispatchQueue.global(qos: .userInitiated)) { info in
-                if let t = info["kMRMediaRemoteNowPlayingInfoTitle"] as? String, !t.isEmpty {
-                    title = t
-                }
-                if let a = info["kMRMediaRemoteNowPlayingInfoArtist"] as? String, !a.isEmpty {
-                    artist = a
-                }
-                if let rate = info["kMRMediaRemoteNowPlayingInfoPlaybackRate"] as? Double {
-                    if rate == 0.0 && title != nil {
-                        isPaused = true
-                    }
-                }
-                sem.signal()
-            }
-            _ = sem.wait(timeout: .now() + 0.15)
-        }
-
-        return MediaRemoteResult(isPlaying: isPlaying, isPaused: isPaused, title: title, artist: artist)
-    }
-
-    // MARK: - Browser & Media Player Inspection (YouTube in Chrome/Safari/Brave/Edge, Spotify, Music, VLC)
-
-    private struct AppMediaResult {
-        let isPlaying: Bool
-        let title: String
-        let artist: String
-        let source: String
-    }
-
-    private func queryActiveApplications(mediaRemotePlaying: Bool) -> AppMediaResult {
-        let runningApps = NSWorkspace.shared.runningApplications
-
-        // 1. Spotify (Native player state)
-        if runningApps.contains(where: { $0.bundleIdentifier == "com.spotify.client" }) {
-            let script = """
-            tell application "Spotify"
-                if player state is playing then
-                    return (name of current track) & ":::" & (artist of current track)
-                else
-                    return ""
-                end if
-            end tell
-            """
-            if let res = executeAppleScript(script), !res.isEmpty {
-                let p = res.components(separatedBy: ":::")
-                return AppMediaResult(isPlaying: true, title: p[0], artist: p.count > 1 ? p[1] : "", source: "Spotify")
-            }
-        }
-
-        // 2. Apple Music (Native player state)
-        if runningApps.contains(where: { $0.bundleIdentifier == "com.apple.Music" }) {
-            let script = """
-            tell application "Music"
-                if player state is playing then
-                    return (name of current track) & ":::" & (artist of current track)
-                else
-                    return ""
-                end if
-            end tell
-            """
-            if let res = executeAppleScript(script), !res.isEmpty {
-                let p = res.components(separatedBy: ":::")
-                return AppMediaResult(isPlaying: true, title: p[0], artist: p.count > 1 ? p[1] : "", source: "Apple Music")
-            }
-        }
-
-        // 3. VLC (Native player state)
-        if runningApps.contains(where: { $0.bundleIdentifier == "org.videolan.vlc" }) {
-            let script = """
-            tell application "VLC"
-                if playing then
-                    return (name of current item) & ":::VLC"
-                else
-                    return ""
-                end if
-            end tell
-            """
-            if let res = executeAppleScript(script), !res.isEmpty {
-                let p = res.components(separatedBy: ":::")
-                return AppMediaResult(isPlaying: true, title: p[0], artist: "VLC Player", source: "VLC")
-            }
-        }
-
-        // 4. Google Chrome (YouTube Tabs - Verified with MediaRemote audio state)
-        if runningApps.contains(where: { $0.bundleIdentifier == "com.google.Chrome" }) {
-            let script = """
-            tell application "Google Chrome"
-                repeat with w in windows
-                    repeat with t in tabs of w
-                        set u to URL of t
-                        if u contains "youtube.com/watch" or u contains "music.youtube.com" or u contains "soundcloud.com" then
-                            return (title of t) & ":::YouTube"
-                        end if
-                    end repeat
-                end repeat
-            end tell
-            return ""
-            """
-            if let res = executeAppleScript(script), !res.isEmpty {
-                let p = res.components(separatedBy: ":::")
-                return AppMediaResult(isPlaying: mediaRemotePlaying, title: p[0], artist: "YouTube", source: "YouTube (Chrome)")
-            }
-        }
-
-        // 5. Safari (YouTube Tabs - Verified with MediaRemote audio state)
-        if runningApps.contains(where: { $0.bundleIdentifier == "com.apple.Safari" }) {
-            let script = """
-            tell application "Safari"
-                repeat with w in windows
-                    repeat with t in tabs of w
-                        set u to URL of t
-                        if u contains "youtube.com/watch" or u contains "music.youtube.com" or u contains "soundcloud.com" then
-                            return (name of t) & ":::YouTube"
-                        end if
-                    end repeat
-                end repeat
-            end tell
-            return ""
-            """
-            if let res = executeAppleScript(script), !res.isEmpty {
-                let p = res.components(separatedBy: ":::")
-                return AppMediaResult(isPlaying: mediaRemotePlaying, title: p[0], artist: "YouTube", source: "YouTube (Safari)")
-            }
-        }
-
-        // 6. Brave Browser (YouTube Tabs - Verified with MediaRemote audio state)
-        if runningApps.contains(where: { $0.bundleIdentifier == "com.brave.Browser" }) {
-            let script = """
-            tell application "Brave Browser"
-                repeat with w in windows
-                    repeat with t in tabs of w
-                        set u to URL of t
-                        if u contains "youtube.com/watch" or u contains "music.youtube.com" then
-                            return (title of t) & ":::YouTube"
-                        end if
-                    end repeat
-                end repeat
-            end tell
-            return ""
-            """
-            if let res = executeAppleScript(script), !res.isEmpty {
-                let p = res.components(separatedBy: ":::")
-                return AppMediaResult(isPlaying: mediaRemotePlaying, title: p[0], artist: "YouTube", source: "YouTube (Brave)")
-            }
-        }
-
-        // 7. Microsoft Edge (YouTube Tabs - Verified with MediaRemote audio state)
-        if runningApps.contains(where: { $0.bundleIdentifier == "com.microsoft.edgemac" }) {
-            let script = """
-            tell application "Microsoft Edge"
-                repeat with w in windows
-                    repeat with t in tabs of w
-                        set u to URL of t
-                        if u contains "youtube.com/watch" or u contains "music.youtube.com" then
-                            return (title of t) & ":::YouTube"
-                        end if
-                    end repeat
-                end repeat
-            end tell
-            return ""
-            """
-            if let res = executeAppleScript(script), !res.isEmpty {
-                let p = res.components(separatedBy: ":::")
-                return AppMediaResult(isPlaying: mediaRemotePlaying, title: p[0], artist: "YouTube", source: "YouTube (Edge)")
-            }
-        }
-
-        if mediaRemotePlaying {
-            return AppMediaResult(isPlaying: true, title: "Web / System Audio", artist: "Playing", source: "macOS Audio")
-        }
-
-        return AppMediaResult(isPlaying: false, title: "", artist: "", source: "")
-    }
-
-    private func executeAppleScript(_ source: String) -> String? {
-        guard let script = NSAppleScript(source: source) else { return nil }
-        var errorInfo: NSDictionary?
-        let result = script.executeAndReturnError(&errorInfo)
-        if errorInfo == nil, let stringValue = result.stringValue, !stringValue.isEmpty {
-            return stringValue
-        }
-        return nil
     }
 
     public nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {

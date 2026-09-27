@@ -40,8 +40,19 @@ Unlike web wrappers or heavy electron apps, Ollama Pet is engineered specificall
 * **Auto-Model Discovery**: Automatically detects installed models (`llama3`, `mistral`, `qwen`, `gemma`, `phi3`, etc.) with quick switching in Settings.
 * **Typing Indicator**: Smooth, staggered 3-dot typing bubble that fades cleanly when streaming begins.
 
+### ☀️ Daily Awareness (Local-Only Morning Digest & Briefings)
+* **Reactive Natural Inquiries**: Ask your pet naturally—*"What's happening today?"*, *"What's new?"*, *"Any big earnings today?"*, or *"What's on my calendar today?"*—to trigger instant, factual awareness briefings.
+* **Multi-Source Factual Normalization**:
+  * **Apple Calendar**: Native EventKit integration formatting today's agenda with timezone precision, automatically stripping private metadata, notes, and attendee lists.
+  * **World & Tech News**: Built-in zero-config RSS XML parser (BBC World News & BBC Tech) with entity unescaping and CDATA handling, plus optional Keychain-backed GNews API support.
+  * **Earnings & Market Watch**: Benchmark ticker watch (AAPL, NVDA, MSFT, GOOGL) with deterministic Swift arithmetic, plus optional Finnhub API integration for earnings calendars (clearly distinguishing delayed vs. reported data).
+* **100% Local AI Privacy Guarantee**: Daily Awareness strictly enforces an isolated `.localOnly` generation policy. Calendar events, schedules, and awareness snapshots are processed exclusively on your Mac using local Ollama and are **never** transmitted to cloud AI providers.
+* **Anti-Hallucination Prompt Architecture**: Guided by strict factual rules ensuring the LLM acts as an expressive summarizer rather than an invented source of truth.
+* **Sleep-Resilient Morning Scheduling**: Configurable morning briefing scheduler with local timezone handling (`Calendar.autoupdatingCurrent`) and duplicate-run protection after system sleep.
+* **Full Voice & UI Integration**: Subtle `"● Daily Awareness"` badge, quick-action trigger button in the chat bar, live source fetching progress, and optional spoken readouts via native macOS speech synthesis.
+
 ### ☁️ Optional Cloud AI Providers
-* **Multi-Provider Support**: Optionally configure OpenAI, Google Gemini, or Anthropic Claude models alongside local Ollama.
+* **Multi-Provider Support**: Optionally configure OpenAI, Google Gemini, or Anthropic Claude models alongside local Ollama for standard chat conversations.
 * **Hardware Keychain Security**: API keys are securely stored directly in your macOS Keychain—never plaintext in dotfiles or preferences.
 * **Zero Telemetry**: No user prompts or chat transcripts are logged to any third-party analytics servers.
 
@@ -104,29 +115,30 @@ Unlike web wrappers or heavy electron apps, Ollama Pet is engineered specificall
 ## 🏗️ Architecture
 
 ```text
-┌────────────────────────────────────────────────────────┐
-│                      Ollama Pet                        │
-│                (Native macOS Application)              │
-└───────────┬────────────────────────────────┬───────────┘
-            │                                │
-    ┌───────▼────────┐               ┌───────▼────────┐
-    │ Companion Core │               │   AI Engine    │
-    ├────────────────┤               ├────────────────┤
-    │ PetStageView   │               │ OllamaClient   │
-    │ CanvasRenderer │               │ AIProviderMgr  │
-    │ MotionStateMachine             │ APIKeyManager  │
-    │ WalkerManager  │               │ (Keychain)     │
-    └───────┬────────┘               └───────┬────────┘
-            │                                │
-    ┌───────▼────────────────────────────────▼────────┐
-    │            Hardware & OS Integration            │
-    ├─────────────────────────────────────────────────┤
-    │ AVFoundation (Camera & Audio Capture)           │
-    │ Apple Vision (Human & Face Analysis)            │
-    │ Apple Speech & NSSpeechSynthesizer              │
-    │ AppKit Floating Windows (NSPanel)               │
-    │ CoreImage & Metal Graphics Acceleration         │
-    └─────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────┐
+│                              Ollama Pet                                │
+│                       (Native macOS Application)                       │
+└───────────┬──────────────────────┬──────────────────────┬──────────────┘
+            │                      │                      │
+    ┌───────▼────────┐     ┌───────▼────────┐     ┌───────▼────────┐
+    │ Companion Core │     │ Awareness Core │     │   AI Engine    │
+    ├────────────────┤     ├────────────────┤     ├────────────────┤
+    │ PetStageView   │     │ DailyAwareness │     │ OllamaClient   │
+    │ CanvasRenderer │     │ DataSources    │     │ AIProviderMgr  │
+    │ MotionMachine  │     │ (RSS/EventKit) │     │ (.localOnly)   │
+    │ WalkerManager  │     │ Scheduler      │     │ APIKeyManager  │
+    └───────┬────────┘     └───────┬────────┘     └───────┬────────┘
+            │                      │                      │
+    ┌───────▼──────────────────────▼──────────────────────▼────────┐
+    │                  Hardware & OS Integration                   │
+    ├──────────────────────────────────────────────────────────────┤
+    │ EventKit (Apple Calendar Integration)                        │
+    │ AVFoundation & Apple Speech (Audio / Voice I/O)              │
+    │ Apple Vision (Human & Face Analysis)                         │
+    │ AppKit Floating Windows (NSPanel) & SwiftUI                  │
+    │ UserNotifications (Native Morning Briefing Alerts)           │
+    │ CoreImage & Metal Graphics Acceleration                      │
+    └──────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -178,6 +190,7 @@ Unlike web wrappers or heavy electron apps, Ollama Pet is engineered specificall
 ## 🔒 Privacy & Permissions
 
 * **100% On-Device Processing**: Ollama Pet never transmits camera frames, speech audio, or companion interactions to external cloud servers unless you explicitly configure a Cloud AI API key.
+* **Apple Calendar Security**: Daily Awareness reads only today's schedule locally via Apple EventKit. Private metadata, notes, and attendee lists are stripped. Calendar items are NEVER transmitted to cloud AI services.
 * **Explicit Microphone Access**: Used solely when you click and hold the Push-to-Talk button.
 * **Explicit Camera Access**: Used solely for the local Presence Monitor. Can be disabled or paused at any time from the status bar or widget.
 * **Local Keychain Storage**: Cloud API credentials remain encrypted within the macOS Keychain.
@@ -185,6 +198,14 @@ Unlike web wrappers or heavy electron apps, Ollama Pet is engineered specificall
 ---
 
 ## 📝 Changelog & Recent Fixes
+
+### ☀️ Daily Awareness Feature
+* **Natural Intent Detection**: Ask your pet *"What's happening today?"*, *"What's new?"*, or *"What's on my calendar?"* to trigger instant factual summaries.
+* **Local EventKit Integration**: Securely fetches and formats your personal calendar events for today.
+* **Public News & Market Feeds**: Built-in RSS feed parser (BBC World & Tech) plus benchmark stock metrics and optional Finnhub earnings reports.
+* **Strict `.localOnly` AI Policy**: Ensures private awareness data and calendar schedules are processed solely by local Ollama with zero cloud AI fallback.
+* **Morning Scheduler & Notifications**: Sleep-resilient morning briefing scheduler with local timezone handling and native macOS notifications.
+* **Settings Tab**: Dedicated Daily Awareness tab to configure briefing times, test snapshots, and manage permissions.
 
 ### Presence Monitor Live Preview Request Ownership Fix
 * **Issue Addressed**: Fixed camera preview image becoming blank/hidden when multiple UI components were open simultaneously (e.g., Settings Presence tab, Owner Calibration Wizard, and Floating Presence Widget). Previously, closing any single component set a shared `isLivePreviewRequested` boolean to `false`, cutting off live video preview frames for remaining active screens even though face detection continued working.

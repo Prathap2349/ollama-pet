@@ -45,6 +45,11 @@ public enum AIProvider: String, CaseIterable, Codable, Identifiable {
     }
 }
 
+public enum AIGenerationPolicy {
+    case normal
+    case localOnly
+}
+
 /// Unified manager handling local Ollama and Cloud AI providers (OpenAI, Gemini, Anthropic, Groq).
 /// Ensures Ollama is strictly optional and automatically falls back to configured cloud providers if Ollama is unavailable.
 @MainActor
@@ -75,16 +80,34 @@ public final class AIProviderManager: ObservableObject {
         DataManager.shared.saveData()
     }
 
-    /// Stream a chat completion with automatic fallback
+    /// Stream a chat completion with policy enforcement (e.g. local-only for Daily Awareness)
     public func streamChat(
         systemPrompt: String,
         messages: [ChatMessage],
+        policy: AIGenerationPolicy = .normal,
         onToken: @MainActor @escaping (String) -> Void
     ) async throws -> String {
         isGenerating = true
         defer { isGenerating = false }
 
-        // Determine effective provider
+        // Enforce Local-Only Policy for Daily Awareness (Never send private data or fallback to Cloud AI)
+        if policy == .localOnly {
+            let ollama = OllamaClient.shared
+            if !ollama.isOnline {
+                await ollama.checkHealth(preferredModel: DataManager.shared.savedData.selectedModel)
+            }
+            guard ollama.isOnline else {
+                throw NSError(
+                    domain: "AIProviderManager",
+                    code: 503,
+                    userInfo: [NSLocalizedDescriptionKey: "Daily Awareness operates exclusively in local-only mode to safeguard your personal calendar and private information. Ollama is currently offline. Please start Ollama to generate your briefing."]
+                )
+            }
+            lastUsedProvider = .ollama
+            return try await ollama.streamChat(systemPrompt: systemPrompt, messages: messages, onToken: onToken)
+        }
+
+        // Determine effective provider for Normal Policy (with automatic cloud fallback if configured)
         let provider = activeProvider
 
         // If local Ollama is chosen:

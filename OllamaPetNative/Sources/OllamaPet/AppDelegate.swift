@@ -130,6 +130,11 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         }
         log.complete(s10)
 
+        // ── Stage 11: Daily Awareness morning scheduler ────────────────────
+        let s11 = log.begin("Daily Awareness morning scheduler")
+        DailyAwarenessScheduler.shared.startScheduler()
+        log.complete(s11)
+
         log.begin("Application startup complete ✓")
         NSLog("[Startup] All stages complete. Application is running.")
     }

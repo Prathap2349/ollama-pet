@@ -15,6 +15,7 @@ struct ChatView: View {
     @ObservedObject var screenGuardian = ScreenGuardian.shared
     @ObservedObject var focusGuardian = FocusGuardian.shared
     @ObservedObject var motion = CharacterMotionStateMachine.shared
+    @ObservedObject var dailyAwareness = DailyAwarenessService.shared
 
     @State private var inputText: String = ""
     @State private var messages: [ChatMessage] = []
@@ -146,6 +147,20 @@ struct ChatView: View {
                             .background(Capsule().fill(Color.orange.opacity(0.7)))
                     }
                     .buttonStyle(.plain)
+                }
+
+                if dailyAwareness.isFetching || dailyAwareness.isSummarizing || dailyAwareness.currentMode != .chat {
+                    HStack(spacing: 4) {
+                        Circle()
+                            .fill(Color.orange)
+                            .frame(width: 6, height: 6)
+                        Text("Daily Awareness")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundColor(.orange)
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(Color.orange.opacity(0.15)))
                 }
 
                 Spacer()
@@ -425,7 +440,8 @@ struct ChatView: View {
                                             .frame(maxWidth: .infinity, alignment: .leading)
                                             .padding(.horizontal, 4)
 
-                                        suggestionPill("What can you help me with?")
+                                        suggestionPill("What's happening today?")
+                                        suggestionPill("What's on my calendar today?")
                                         suggestionPill("Open Safari")
                                         suggestionPill("Set a 25m focus timer")
                                         suggestionPill("How is the weather today?")
@@ -447,9 +463,21 @@ struct ChatView: View {
                         }
 
                         if petState.isThinking && (messages.isEmpty || messages.last?.role == "user") {
-                            HStack {
-                                TypingDotsView(accentColor: petState.currentSpecies.accentColor)
-                                Spacer()
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack {
+                                    TypingDotsView(accentColor: petState.currentSpecies.accentColor)
+                                    Spacer()
+                                }
+                                if dailyAwareness.isFetching || dailyAwareness.isSummarizing {
+                                    HStack(spacing: 5) {
+                                        ProgressView()
+                                            .scaleEffect(0.5)
+                                            .frame(width: 12, height: 12)
+                                        Text(dailyAwareness.statusMessage)
+                                            .font(.system(size: 10, design: .monospaced))
+                                            .foregroundColor(Color.white.opacity(0.65))
+                                    }
+                                }
                             }
                             .padding(.horizontal, 12)
                             .padding(.vertical, 4)
@@ -507,6 +535,19 @@ struct ChatView: View {
                 }
                 .buttonStyle(.plain)
                 .help("Push-to-Talk Voice Assistant (\(ShortcutManager.shared.voiceShortcut.displayString))")
+
+                // Quick Daily Awareness Briefing button
+                Button(action: {
+                    inputText = "What's happening today?"
+                    sendMessage()
+                }) {
+                    Image(systemName: "sun.max.fill")
+                        .font(.system(size: 16))
+                        .foregroundColor(petState.currentSpecies.accentColor.opacity(0.85))
+                }
+                .buttonStyle(.plain)
+                .help("Daily Awareness Briefing (\"What's happening today?\")")
+                .disabled(petState.isThinking)
 
                 TextField(voiceAssistant.state == .listening ? "Listening to your voice..." : "Message \(petState.currentSpecies.displayName)...", text: $inputText)
                     .textFieldStyle(.plain)
@@ -1964,13 +2005,71 @@ struct ChatView: View {
                 }
             }
 
+            // 2. Check if Daily Awareness handles this request
+            if let intent = AwarenessIntentDetector.detectIntent(from: text) {
+                do {
+                    let fullReply = try await dailyAwareness.generateBriefing(
+                        userQuery: text,
+                        intent: intent,
+                        forceRefresh: false
+                    ) { token in
+                        if let index = messages.firstIndex(where: { $0.id == assistantMsgId }) {
+                            messages[index] = ChatMessage(
+                                id: assistantMsgId,
+                                role: "assistant",
+                                content: messages[index].content + token
+                            )
+                        } else {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                petState.isThinking = false
+                            }
+                            messages.append(ChatMessage(
+                                id: assistantMsgId,
+                                role: "assistant",
+                                content: token
+                            ))
+                        }
+                        motion.transitionTo(.streamingResponse)
+                    }
+
+                    SoundEffect.receive.play()
+                    petState.showBubble("☀️ Briefing ready!", duration: 2.0)
+                    petState.moodPoints = min(100.0, petState.moodPoints + 15.0)
+                    saveMessages()
+
+                    let speakEnabled = (dataManager.savedData.speakAiResponses ?? false) || (dataManager.savedData.dailyAwarenessSpeak ?? false)
+                    if speakEnabled {
+                        voiceAssistant.speak(text: fullReply)
+                    }
+                } catch {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        petState.isThinking = false
+                    }
+                    errorMessage = error.localizedDescription
+                    lastFailedPrompt = text
+                    messages.removeAll { $0.id == assistantMsgId }
+                    petState.animState = .shock
+                    petState.showBubble("Awareness Error 😿", duration: 3.0)
+                    SoundEffect.alert.play()
+                }
+
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    petState.isThinking = false
+                }
+                petState.animState = .idle
+                motion.transitionTo(.idle)
+                return
+            }
+
+            // 3. Standard Chat with PetPromptBuilder
             do {
-                let systemCtx = "You are \(petState.currentSpecies.displayName), a cute friendly desktop companion. Keep answers concise, helpful, and in character."
+                let systemCtx = PetPromptBuilder.makePrompt(mode: .chat, species: petState.currentSpecies)
                 let nonStreamingHistory = messages
 
                 let fullReply = try await AIProviderManager.shared.streamChat(
                     systemPrompt: systemCtx,
-                    messages: nonStreamingHistory
+                    messages: nonStreamingHistory,
+                    policy: .normal
                 ) { token in
                     if let index = messages.firstIndex(where: { $0.id == assistantMsgId }) {
                         messages[index] = ChatMessage(

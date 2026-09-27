@@ -242,13 +242,54 @@ public class VoiceAssistant: NSObject, ObservableObject, AVSpeechSynthesizerDele
             }
         }
 
+        // 2. Check if Daily Awareness handles this voice request
+        if let intent = AwarenessIntentDetector.detectIntent(from: recognizedText) {
+            do {
+                var accumulated = ""
+                let reply = try await DailyAwarenessService.shared.generateBriefing(
+                    userQuery: recognizedText,
+                    intent: intent,
+                    forceRefresh: false
+                ) { token in
+                    accumulated += token
+                    petState.showBubble(accumulated, duration: 4.0)
+                }
+
+                // Save reply to history
+                history.append(ChatMessage(role: "assistant", content: reply))
+                dataManager.savedData.history = history.suffix(20).map { PetSavedMessage(role: $0.role, content: $0.content) }
+                dataManager.saveData()
+
+                petState.isThinking = false
+                petState.animState = .idle
+                petState.showBubble(reply, duration: 4.0)
+
+                // Speak response if enabled and not in Quiet Mode
+                let isQuiet = dataManager.savedData.quietModeEnabled ?? false
+                let speakEnabled = (dataManager.savedData.speakAiResponses ?? true) || (dataManager.savedData.dailyAwarenessSpeak ?? false)
+                if !isQuiet && speakEnabled {
+                    speak(text: reply)
+                } else {
+                    state = .idle
+                }
+                return
+            } catch {
+                petState.isThinking = false
+                petState.animState = .shock
+                petState.showBubble("Awareness Error: \(error.localizedDescription)", duration: 3.5)
+                state = .idle
+                return
+            }
+        }
+
         do {
-            let systemCtx = "You are \(petState.currentSpecies.displayName), a cute friendly desktop companion. Keep answers short, conversational, and direct (1-3 sentences max)."
+            let systemCtx = PetPromptBuilder.makePrompt(mode: .chat, species: petState.currentSpecies)
             var accumulated = ""
 
             let reply = try await AIProviderManager.shared.streamChat(
                 systemPrompt: systemCtx,
-                messages: history
+                messages: history,
+                policy: .normal
             ) { token in
                 accumulated += token
                 petState.showBubble(accumulated, duration: 4.0)

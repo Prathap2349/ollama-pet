@@ -101,6 +101,7 @@ public enum SettingsTab: String, CaseIterable, Identifiable {
     case ollama = "Ollama Local AI"
     case cloudAi = "Cloud AI Providers"
     case voice = "Voice Assistant"
+    case dailyAwareness = "Daily Awareness"
     case macControl = "Mac Control"
     case actionHistory = "Action History"
     case presenceMonitor = "Presence Monitor"
@@ -122,6 +123,7 @@ public enum SettingsTab: String, CaseIterable, Identifiable {
         case .ollama: return "cpu.fill"
         case .cloudAi: return "sparkles"
         case .voice: return "mic.fill"
+        case .dailyAwareness: return "sun.max.fill"
         case .macControl: return "macmini.fill"
         case .actionHistory: return "clock.arrow.circlepath"
         case .presenceMonitor: return "person.crop.rectangle.badge.plus"
@@ -527,6 +529,8 @@ public struct SettingsContainerView: View {
                             AnimationSettingsSection()
                         case .voice:
                             VoiceSettingsSection()
+                        case .dailyAwareness:
+                            DailyAwarenessSettingsSection()
                         case .shortcuts:
                             ShortcutsSettingsSection()
                         case .ollama:

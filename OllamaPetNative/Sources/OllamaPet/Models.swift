@@ -654,6 +654,13 @@ public struct PetSavedData: Codable {
     public var quietModeEnabled: Bool? = false
     public var ollamaKeepAlive: String? = "10m"
 
+    // Daily Awareness Settings
+    public var dailyAwarenessEnabled: Bool? = true
+    public var dailyAwarenessHour: Int? = 8
+    public var dailyAwarenessMinute: Int? = 30
+    public var dailyAwarenessSpeak: Bool? = false
+    public var lastAwarenessDigestDate: String? = nil
+
     public init(
         version: Int? = 1,
         currentChar: String = "cat",

@@ -100,38 +100,86 @@ public final class DailyAwarenessService: ObservableObject {
 
     private init() {}
 
-    // MARK: - Snapshot Acquisition & Caching
+    // MARK: - Snapshot Acquisition & Caching (Scoped by Intent - Requirements 3 & 8)
 
-    /// Retrieves cached snapshot or fetches fresh data if expired or forced
-    public func getOrFetchSnapshot(forceRefresh: Bool = false) async -> AwarenessSnapshot {
+    /// Retrieves cached snapshot or fetches fresh data targeted to the requested intent
+    public func getOrFetchSnapshot(for intent: AwarenessIntent = .dailyOverview, forceRefresh: Bool = false) async -> AwarenessSnapshot {
         if !forceRefresh, let cached = lastSnapshot, let lastTime = lastFetchTime {
             let elapsed = Date().timeIntervalSince(lastTime)
             if elapsed < cacheTTL {
-                NSLog("[DailyAwarenessService] Reusing valid cached snapshot (age: %.0fs)", elapsed)
-                return cached
+                let hasRequiredData: Bool
+                switch intent {
+                case .news:
+                    hasRequiredData = cached.freshness.contains(where: { $0.sourceName == "News" && $0.status.isAvailable })
+                case .calendar:
+                    hasRequiredData = cached.freshness.contains(where: { $0.sourceName == "Apple Calendar" && $0.status.isAvailable })
+                case .earnings:
+                    hasRequiredData = cached.freshness.contains(where: { $0.sourceName == "Earnings & Markets" && $0.status.isAvailable })
+                case .dailyOverview:
+                    hasRequiredData = cached.freshness.count >= 2
+                }
+                if hasRequiredData {
+                    NSLog("[DailyAwarenessService] Reusing valid cached snapshot for intent '%@' (age: %.0fs)", intent.rawValue, elapsed)
+                    return cached
+                }
             }
         }
 
-        return await fetchFreshSnapshot()
+        return await fetchFreshSnapshot(for: intent)
     }
 
-    /// Fetches all sources in parallel with structured concurrency and partial failure tolerance
-    public func fetchFreshSnapshot() async -> AwarenessSnapshot {
+    /// Backward-compatible overload
+    public func getOrFetchSnapshot(forceRefresh: Bool = false) async -> AwarenessSnapshot {
+        return await getOrFetchSnapshot(for: .dailyOverview, forceRefresh: forceRefresh)
+    }
+
+    /// Fetches ONLY the data sources required for the requested intent
+    public func fetchFreshSnapshot(for intent: AwarenessIntent = .dailyOverview) async -> AwarenessSnapshot {
         isFetching = true
-        statusMessage = "Checking news, calendar & markets..."
         defer {
             isFetching = false
             statusMessage = "Ready"
         }
 
-        // Parallel non-blocking execution
-        async let newsResult = fetchNewsSafe()
-        async let marketResult = fetchMarketSafe()
-        async let calendarResult = fetchCalendarSafe()
+        var newsItems: [AwarenessNewsItem] = []
+        var earningsItems: [AwarenessEarningsItem] = []
+        var calendarItems: [AwarenessCalendarItem] = []
+        var freshnessList: [SourceFreshness] = []
 
-        let (newsItems, newsFreshness) = await newsResult
-        let (earningsItems, marketFreshness) = await marketResult
-        let (calendarItems, calFreshness) = await calendarResult
+        switch intent {
+        case .news:
+            statusMessage = "Fetching fresh headlines..."
+            let (items, freshness) = await fetchNewsSafe()
+            newsItems = items
+            freshnessList = [freshness]
+
+        case .calendar:
+            statusMessage = "Checking your calendar..."
+            let (items, freshness) = await fetchCalendarSafe()
+            calendarItems = items
+            freshnessList = [freshness]
+
+        case .earnings:
+            statusMessage = "Fetching market & earnings data..."
+            let (items, freshness) = await fetchMarketSafe()
+            earningsItems = items
+            freshnessList = [freshness]
+
+        case .dailyOverview:
+            statusMessage = "Checking calendar, news & markets..."
+            async let newsResult = fetchNewsSafe()
+            async let marketResult = fetchMarketSafe()
+            async let calendarResult = fetchCalendarSafe()
+
+            let (nItems, nFresh) = await newsResult
+            let (eItems, mFresh) = await marketResult
+            let (cItems, cFresh) = await calendarResult
+
+            newsItems = nItems
+            earningsItems = eItems
+            calendarItems = cItems
+            freshnessList = [cFresh, nFresh, mFresh]
+        }
 
         let snapshot = AwarenessSnapshot(
             generatedAt: Date(),
@@ -139,7 +187,7 @@ public final class DailyAwarenessService: ObservableObject {
             news: newsItems,
             earnings: earningsItems,
             calendarEvents: calendarItems,
-            freshness: [calFreshness, newsFreshness, marketFreshness]
+            freshness: freshnessList
         )
 
         self.lastSnapshot = snapshot
@@ -214,15 +262,17 @@ public final class DailyAwarenessService: ObservableObject {
         isSummarizing = true
         defer { isSummarizing = false }
 
-        // 1. Fetch / Retrieve cached data
-        let snapshot = await getOrFetchSnapshot(forceRefresh: forceRefresh)
+        // 1. Fetch targeted data for this specific intent (Requirements 3 & 8)
+        let snapshot = await getOrFetchSnapshot(for: intent, forceRefresh: forceRefresh)
 
-        // 2. Build anti-hallucination factual prompt
+        // 2. Build anti-hallucination factual prompt with selected communication style (Requirement 9)
         let species = PetState.shared.currentSpecies
+        let style = DataManager.shared.savedData.dailyAwarenessStyle ?? .friendlyCompanion
         let systemPrompt = PetPromptBuilder.makePrompt(
             mode: .dailyAwareness(intent: intent),
             species: species,
-            snapshot: snapshot
+            snapshot: snapshot,
+            style: style
         )
 
         // 3. Invoke local-only AI policy

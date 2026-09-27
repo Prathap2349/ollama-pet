@@ -246,7 +246,7 @@ public struct Pet3DSceneView: NSViewRepresentable {
             let isMoving = isDancing || isWalking
             let isThinking = (animState == .thinking || petState.isThinking)
             let isSleeping = (animState == .sleep || mood == .sleepy)
-            let isTalking = (isThinking || petState.isBubbleVisible)
+            let isTalking = (isThinking || petState.isBubbleVisible || VoiceAssistant.shared.isSpeaking)
 
             // Music amplitude reactivity
             let musicAmp = parent.music.isPlaying ? parent.music.currentBeatAmplitude : 0.0

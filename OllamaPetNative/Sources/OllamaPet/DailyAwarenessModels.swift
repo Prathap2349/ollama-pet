@@ -284,3 +284,24 @@ public enum PetInteractionMode: Equatable {
     case chat
     case dailyAwareness(intent: AwarenessIntent)
 }
+
+// MARK: - Awareness Communication Style (Issue 9)
+
+public enum AwarenessCommunicationStyle: String, CaseIterable, Codable {
+    case personalAssistant = "Personal Assistant"
+    case friendlyCompanion = "Friendly Companion"
+    case professionalCompanion = "Professional Companion"
+
+    public var title: String { rawValue }
+
+    public var instructions: String {
+        switch self {
+        case .personalAssistant:
+            return "Polite, respectful, calm, efficient, and helpful, with a polished assistant tone."
+        case .friendlyCompanion:
+            return "Warm, natural, casual, supportive, and conversational, like an encouraging friend."
+        case .professionalCompanion:
+            return "Concise, clear, composed, informative, and direct, with minimal playfulness."
+        }
+    }
+}

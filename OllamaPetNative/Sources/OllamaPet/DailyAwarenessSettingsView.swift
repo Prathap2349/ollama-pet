@@ -21,6 +21,8 @@ public struct DailyAwarenessSettingsSection: View {
 
     @State private var isTestingFetch: Bool = false
     @State private var testResultSnippet: String? = nil
+    @State private var gnewsTestStatus: String? = nil
+    @State private var isTestingGNews: Bool = false
 
     public init() {}
 
@@ -126,7 +128,35 @@ public struct DailyAwarenessSettingsSection: View {
             .padding(14)
             .background(RoundedRectangle(cornerRadius: 12).fill(Color.primary.opacity(0.04)))
 
-            // 2. Data Sources Configuration
+            // 2. Communication Persona Style (Issue 9)
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Communication Style")
+                    .font(.system(size: 13, weight: .semibold))
+                Text("Select your preferred briefing style while preserving species personality.")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+
+                Picker("Style", selection: Binding(
+                    get: { dataManager.savedData.dailyAwarenessStyle ?? .friendlyCompanion },
+                    set: { val in
+                        dataManager.savedData.dailyAwarenessStyle = val
+                        dataManager.saveData()
+                    }
+                )) {
+                    ForEach(AwarenessCommunicationStyle.allCases, id: \.self) { style in
+                        Text(style.rawValue).tag(style)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                Text((dataManager.savedData.dailyAwarenessStyle ?? .friendlyCompanion).instructions)
+                    .font(.system(size: 10, design: .rounded))
+                    .foregroundColor(.secondary)
+            }
+            .padding(14)
+            .background(RoundedRectangle(cornerRadius: 12).fill(Color.primary.opacity(0.04)))
+
+            // 3. Data Sources Configuration
             VStack(alignment: .leading, spacing: 14) {
                 Text("Awareness Data Sources")
                     .font(.system(size: 13, weight: .semibold))
@@ -194,16 +224,46 @@ public struct DailyAwarenessSettingsSection: View {
                                 Button("Save") {
                                     APIKeyManager.shared.setKey(gnewsKeyInput, for: "gnews")
                                     gnewsKeyInput = ""
+                                    gnewsTestStatus = nil
                                 }
                                 .controlSize(.small)
                             } else if APIKeyManager.shared.hasKey(for: "gnews") {
+                                Button("Test API Key") {
+                                    testGNewsKeyAction()
+                                }
+                                .controlSize(.small)
+                                .disabled(isTestingGNews)
+
                                 Button("Remove") {
                                     APIKeyManager.shared.deleteKey(for: "gnews")
+                                    gnewsTestStatus = nil
                                 }
                                 .controlSize(.small)
                             }
                         }
                         .padding(.top, 2)
+
+                        // API Key Test Status Display (Issue 2)
+                        if isTestingGNews {
+                            HStack(spacing: 4) {
+                                ProgressView()
+                                    .controlSize(.mini)
+                                Text("Testing API Key...")
+                                    .font(.system(size: 10))
+                                    .foregroundColor(.secondary)
+                            }
+                            .padding(.top, 2)
+                        } else if let status = gnewsTestStatus {
+                            HStack(spacing: 4) {
+                                Circle()
+                                    .fill(status == "API Key Valid" ? Color.green : (status == "Rate Limited" ? Color.orange : Color.red))
+                                    .frame(width: 6, height: 6)
+                                Text(status)
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundColor(status == "API Key Valid" ? .green : (status == "Rate Limited" ? .orange : .red))
+                            }
+                            .padding(.top, 2)
+                        }
                     }
                 }
 
@@ -365,5 +425,19 @@ public struct DailyAwarenessSettingsSection: View {
 
     private func updateCalendarStatus() {
         calendarStatus = EKEventStore.authorizationStatus(for: .event)
+    }
+
+    private func testGNewsKeyAction() {
+        guard let key = APIKeyManager.shared.getKey(for: "gnews"), !key.isEmpty else {
+            gnewsTestStatus = "API Key Invalid"
+            return
+        }
+        isTestingGNews = true
+        gnewsTestStatus = nil
+        Task {
+            let result = await NewsDataSource.testGNewsKey(apiKey: key)
+            self.gnewsTestStatus = result.displayText
+            self.isTestingGNews = false
+        }
     }
 }

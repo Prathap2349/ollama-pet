@@ -374,7 +374,7 @@ public class VoiceAssistant: NSObject, ObservableObject, AVSpeechSynthesizerDele
 
         isSpeaking = true
         state = .speaking
-        PetState.shared.animState = .dance
+        PetState.shared.animState = .watchUser // Attentive speaking posture, visually distinct from dance (Requirement 6)
         synthesizer.speak(utterance)
     }
 
@@ -384,7 +384,10 @@ public class VoiceAssistant: NSObject, ObservableObject, AVSpeechSynthesizerDele
         }
         isSpeaking = false
         state = .idle
-        if PetState.shared.animState == .dance {
+        // If music is playing, resume dancing; otherwise return to idle (Requirements 5, 6, 7)
+        if MusicManager.shared.isMediaPlaying || MusicManager.shared.isPlaying {
+            PetState.shared.animState = .dance
+        } else if PetState.shared.animState == .watchUser {
             PetState.shared.animState = .idle
         }
     }
@@ -403,7 +406,9 @@ public class VoiceAssistant: NSObject, ObservableObject, AVSpeechSynthesizerDele
         Task { @MainActor in
             self.isSpeaking = false
             self.state = .idle
-            if PetState.shared.animState == .dance {
+            if MusicManager.shared.isMediaPlaying || MusicManager.shared.isPlaying {
+                PetState.shared.animState = .dance
+            } else if PetState.shared.animState == .watchUser {
                 PetState.shared.animState = .idle
             }
         }
@@ -413,7 +418,9 @@ public class VoiceAssistant: NSObject, ObservableObject, AVSpeechSynthesizerDele
         Task { @MainActor in
             self.isSpeaking = false
             self.state = .idle
-            if PetState.shared.animState == .dance {
+            if MusicManager.shared.isMediaPlaying || MusicManager.shared.isPlaying {
+                PetState.shared.animState = .dance
+            } else if PetState.shared.animState == .watchUser {
                 PetState.shared.animState = .idle
             }
         }

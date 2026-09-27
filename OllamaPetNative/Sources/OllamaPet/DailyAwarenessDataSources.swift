@@ -22,11 +22,13 @@ final class RSSXMLParserDelegate: NSObject, XMLParserDelegate {
     private let sourceTitle: String
     private let categoryName: String?
     private let maxItems: Int
+    private let cutoffDate: Date?
 
-    init(sourceTitle: String, categoryName: String? = nil, maxItems: Int = 5) {
+    init(sourceTitle: String, categoryName: String? = nil, maxItems: Int = 5, cutoffDate: Date? = nil) {
         self.sourceTitle = sourceTitle
         self.categoryName = categoryName
         self.maxItems = maxItems
+        self.cutoffDate = cutoffDate
     }
 
     func parse(data: Data) -> [AwarenessNewsItem] {
@@ -103,6 +105,12 @@ final class RSSXMLParserDelegate: NSObject, XMLParserDelegate {
 
             if !cleanTitle.isEmpty && items.count < maxItems {
                 let parsedDate = parseDate(currentPubDate)
+
+                // Discard clearly stale articles older than cutoffDate
+                if let cutoff = cutoffDate, let date = parsedDate, date < cutoff {
+                    return
+                }
+
                 let item = AwarenessNewsItem(
                     title: cleanTitle,
                     source: sourceTitle,
@@ -140,18 +148,66 @@ final class RSSXMLParserDelegate: NSObject, XMLParserDelegate {
 
         let rfc822 = DateFormatter()
         rfc822.locale = Locale(identifier: "en_US_POSIX")
-        rfc822.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
-        if let d = rfc822.date(from: trimmed) { return d }
 
-        rfc822.dateFormat = "EEE, dd MMM yyyy HH:mm:ss Z"
-        if let d = rfc822.date(from: trimmed) { return d }
+        let formats = [
+            "EEE, dd MMM yyyy HH:mm:ss zzz",
+            "EEE, d MMM yyyy HH:mm:ss zzz",
+            "EEE, dd MMM yyyy HH:mm:ss Z",
+            "EEE, d MMM yyyy HH:mm:ss Z",
+            "yyyy-MM-dd'T'HH:mm:ssZ",
+            "yyyy-MM-dd'T'HH:mm:ss.SSSZ"
+        ]
+        for fmt in formats {
+            rfc822.dateFormat = fmt
+            if let d = rfc822.date(from: trimmed) { return d }
+        }
 
         let iso = ISO8601DateFormatter()
         return iso.date(from: trimmed)
     }
 }
 
-// MARK: - News Data Source (RSS + Optional GNews)
+// MARK: - GNews Status & Test Types (Issue 2)
+
+public enum GNewsTestResult: Equatable {
+    case valid
+    case invalidKey
+    case rateLimited
+    case networkError(String)
+    case apiUnavailable(Int)
+
+    public var displayText: String {
+        switch self {
+        case .valid: return "API Key Valid"
+        case .invalidKey: return "API Key Invalid"
+        case .rateLimited: return "Rate Limited"
+        case .networkError: return "Network Error"
+        case .apiUnavailable: return "API Unavailable"
+        }
+    }
+}
+
+public enum GNewsError: LocalizedError {
+    case invalidKey
+    case rateLimited
+    case networkError(String)
+    case apiUnavailable(Int)
+    case invalidResponse
+
+    public var userFacingMessage: String {
+        switch self {
+        case .invalidKey: return "GNews API Key is invalid or unauthorized"
+        case .rateLimited: return "GNews API rate limit reached"
+        case .networkError(let msg): return "GNews network error: \(msg)"
+        case .apiUnavailable(let code): return "GNews API unavailable (HTTP \(code))"
+        case .invalidResponse: return "GNews returned unexpected data format"
+        }
+    }
+
+    public var errorDescription: String? { userFacingMessage }
+}
+
+// MARK: - News Data Source (GNews Priority + Public RSS Fallback only when unconfigured)
 
 public final class NewsDataSource: AwarenessDataSource {
     public typealias Output = [AwarenessNewsItem]
@@ -161,78 +217,183 @@ public final class NewsDataSource: AwarenessDataSource {
 
     public init() {
         let config = URLSessionConfiguration.ephemeral
-        config.timeoutIntervalForRequest = 10.0
-        config.timeoutIntervalForResource = 15.0
+        config.timeoutIntervalForRequest = 6.0
+        config.timeoutIntervalForResource = 8.0
         self.session = URLSession(configuration: config)
     }
 
+    /// Lightweight test for GNews API Key validity (Requirement 2)
+    public static func testGNewsKey(apiKey: String) async -> GNewsTestResult {
+        let trimmedKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedKey.isEmpty else { return .invalidKey }
+
+        guard let url = URL(string: "https://gnews.io/api/v4/top-headlines?category=general&lang=en&max=1&apikey=\(trimmedKey)") else {
+            return .invalidKey
+        }
+
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 6.0
+        request.setValue("OllamaPetNative/1.0", forHTTPHeaderField: "User-Agent")
+
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = 6.0
+        let testSession = URLSession(configuration: config)
+
+        do {
+            let (data, response) = try await testSession.data(for: request)
+            guard let http = response as? HTTPURLResponse else {
+                return .apiUnavailable(500)
+            }
+
+            switch http.statusCode {
+            case 200:
+                struct TestResponse: Decodable {
+                    struct Article: Decodable { let title: String? }
+                    let articles: [Article]?
+                }
+                if let decoded = try? JSONDecoder().decode(TestResponse.self, from: data), decoded.articles != nil {
+                    return .valid
+                }
+                return .valid
+            case 401, 403:
+                return .invalidKey
+            case 429:
+                return .rateLimited
+            case 500...599:
+                return .apiUnavailable(http.statusCode)
+            default:
+                return .apiUnavailable(http.statusCode)
+            }
+        } catch let err as URLError {
+            return .networkError(err.localizedDescription)
+        } catch {
+            return .networkError(error.localizedDescription)
+        }
+    }
+
     public func fetch() async throws -> (output: [AwarenessNewsItem], freshness: SourceFreshness) {
-        // Option B: If user has configured a GNews key in Keychain, we can use it
+        // 1. If user configured a GNews key in Keychain: MUST use GNews and NEVER silently fall back to RSS (Requirement 1 & 2)
         if let gnewsKey = APIKeyManager.shared.getKey(for: "gnews"), !gnewsKey.isEmpty {
             do {
                 let gnewsItems = try await fetchGNews(apiKey: gnewsKey)
-                if !gnewsItems.isEmpty {
+                if gnewsItems.isEmpty {
                     return (
-                        gnewsItems,
-                        SourceFreshness(sourceName: sourceName, status: .available, detail: "GNews API")
+                        [],
+                        SourceFreshness(
+                            sourceName: sourceName,
+                            status: .empty,
+                            detail: "GNews API returned no stories within the freshness window (36h)"
+                        )
                     )
                 }
+
+                let newestDate = gnewsItems.compactMap { $0.publishedAt }.max()
+                let dateStr = newestDate.map { DateFormatter.localizedString(from: $0, dateStyle: .short, timeStyle: .short) } ?? "Recent"
+
+                return (
+                    gnewsItems,
+                    SourceFreshness(
+                        sourceName: sourceName,
+                        status: .available,
+                        detail: "GNews API (\(gnewsItems.count) headlines, newest: \(dateStr))"
+                    )
+                )
+            } catch let gError as GNewsError {
+                // DO NOT SILENTLY FALL BACK TO RSS WHEN GNEWS FAILS!
+                NSLog("[NewsDataSource] Configured GNews failed: %@", gError.userFacingMessage)
+                return (
+                    [],
+                    SourceFreshness(
+                        sourceName: sourceName,
+                        status: .error(message: gError.userFacingMessage),
+                        detail: "Configured GNews failed: \(gError.userFacingMessage)"
+                    )
+                )
             } catch {
-                NSLog("[NewsDataSource] GNews failed, falling back to public RSS: %@", error.localizedDescription)
+                NSLog("[NewsDataSource] Configured GNews failed: %@", error.localizedDescription)
+                return (
+                    [],
+                    SourceFreshness(
+                        sourceName: sourceName,
+                        status: .error(message: error.localizedDescription),
+                        detail: "Configured GNews failed: \(error.localizedDescription)"
+                    )
+                )
             }
         }
 
-        // Option A (Default): Public RSS Feeds (No API key needed, zero-config, highly reliable)
+        // 2. Default: Public RSS Feeds (Only when no GNews key is configured)
+        // Discard stale articles older than 36 hours (Requirement 1)
+        let cutoffDate = Calendar.current.date(byAdding: .hour, value: -36, to: Date()) ?? Date().addingTimeInterval(-36 * 3600)
         var allItems: [AwarenessNewsItem] = []
 
-        // 1. General World Headlines (BBC World News RSS)
-        let worldUrl = URL(string: "https://feeds.bbci.co.uk/news/world/rss.xml")!
-        if let worldItems = await fetchRSS(url: worldUrl, source: "BBC News", category: "World", max: 5) {
-            allItems.append(contentsOf: worldItems)
-        } else {
-            // Fallback general feed (NPR News)
-            let nprUrl = URL(string: "https://feeds.npr.org/1001/rss.xml")!
-            if let nprItems = await fetchRSS(url: nprUrl, source: "NPR", category: "General", max: 5) {
-                allItems.append(contentsOf: nprItems)
-            }
+        // Fetch BBC World & Tech concurrently
+        async let worldItemsTask = fetchRSS(
+            url: URL(string: "https://feeds.bbci.co.uk/news/world/rss.xml")!,
+            source: "BBC News",
+            category: "World",
+            max: 6,
+            cutoffDate: cutoffDate
+        )
+        async let techItemsTask = fetchRSS(
+            url: URL(string: "https://feeds.bbci.co.uk/news/technology/rss.xml")!,
+            source: "BBC Tech",
+            category: "Technology",
+            max: 4,
+            cutoffDate: cutoffDate
+        )
+
+        let (worldItems, techItems) = await (worldItemsTask, techItemsTask)
+        if let w = worldItems { allItems.append(contentsOf: w) }
+        if let t = techItems { allItems.append(contentsOf: t) }
+
+        // Deduplicate headlines by normalized alphanumeric title
+        var uniqueHeadlines = Set<String>()
+        var dedupedItems: [AwarenessNewsItem] = []
+        for item in allItems {
+            let normKey = item.title.lowercased().filter { $0.isLetter || $0.isNumber }
+            guard !uniqueHeadlines.contains(normKey) else { continue }
+            uniqueHeadlines.insert(normKey)
+            dedupedItems.append(item)
         }
 
-        // 2. Technology & Business Headlines (BBC Tech RSS)
-        let techUrl = URL(string: "https://feeds.bbci.co.uk/news/technology/rss.xml")!
-        if let techItems = await fetchRSS(url: techUrl, source: "BBC Tech", category: "Technology", max: 3) {
-            allItems.append(contentsOf: techItems)
-        }
+        // Sort newest first
+        dedupedItems.sort { ($0.publishedAt ?? .distantPast) > ($1.publishedAt ?? .distantPast) }
 
-        if allItems.isEmpty {
+        if dedupedItems.isEmpty {
             return (
                 [],
                 SourceFreshness(
                     sourceName: sourceName,
-                    status: .error(message: "Could not reach news feeds"),
-                    detail: "Network or feed unavailable"
+                    status: .empty,
+                    detail: "No fresh public news stories found within the last 36 hours"
                 )
             )
         }
 
+        let newestDate = dedupedItems.compactMap { $0.publishedAt }.max()
+        let dateStr = newestDate.map { DateFormatter.localizedString(from: $0, dateStyle: .short, timeStyle: .short) } ?? "Recent"
+
         return (
-            allItems,
+            Array(dedupedItems.prefix(6)),
             SourceFreshness(
                 sourceName: sourceName,
                 status: .available,
-                detail: "Public RSS (\(allItems.count) headlines)"
+                detail: "Public RSS (\(dedupedItems.count) headlines, newest: \(dateStr))"
             )
         )
     }
 
-    private func fetchRSS(url: URL, source: String, category: String?, max: Int) async -> [AwarenessNewsItem]? {
+    private func fetchRSS(url: URL, source: String, category: String?, max: Int, cutoffDate: Date?) async -> [AwarenessNewsItem]? {
         var request = URLRequest(url: url)
         request.setValue("OllamaPetNative/1.0 (macOS)", forHTTPHeaderField: "User-Agent")
+        request.timeoutInterval = 5.0
         do {
             let (data, response) = try await session.data(for: request)
             guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
                 return nil
             }
-            let parser = RSSXMLParserDelegate(sourceTitle: source, categoryName: category, maxItems: max)
+            let parser = RSSXMLParserDelegate(sourceTitle: source, categoryName: category, maxItems: max, cutoffDate: cutoffDate)
             let items = parser.parse(data: data)
             return items.isEmpty ? nil : items
         } catch {
@@ -241,14 +402,46 @@ public final class NewsDataSource: AwarenessDataSource {
     }
 
     private func fetchGNews(apiKey: String) async throws -> [AwarenessNewsItem] {
-        guard let url = URL(string: "https://gnews.io/api/v4/top-headlines?category=general&lang=en&max=5&apikey=\(apiKey)") else {
-            return []
+        let trimmedKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedKey.isEmpty else { throw GNewsError.invalidKey }
+
+        // Date window: strictly last 36 hours
+        let cutoffDate = Calendar.current.date(byAdding: .hour, value: -36, to: Date()) ?? Date().addingTimeInterval(-36 * 3600)
+        let isoFormatter = ISO8601DateFormatter()
+        let fromDateStr = isoFormatter.string(from: cutoffDate)
+
+        // Request freshest available articles using search with sortby=publishedAt & from date window
+        guard let url = URL(string: "https://gnews.io/api/v4/search?q=news&sortby=publishedAt&lang=en&max=10&from=\(fromDateStr)&apikey=\(trimmedKey)") else {
+            throw GNewsError.invalidKey
         }
+
         var request = URLRequest(url: url)
-        request.timeoutInterval = 10.0
-        let (data, response) = try await session.data(for: request)
-        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
-            throw NSError(domain: "NewsDataSource", code: (response as? HTTPURLResponse)?.statusCode ?? 500, userInfo: [NSLocalizedDescriptionKey: "GNews error"])
+        request.timeoutInterval = 6.0
+        request.setValue("OllamaPetNative/1.0 (macOS)", forHTTPHeaderField: "User-Agent")
+
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: request)
+        } catch let err as URLError {
+            throw GNewsError.networkError(err.localizedDescription)
+        } catch {
+            throw GNewsError.networkError(error.localizedDescription)
+        }
+
+        guard let http = response as? HTTPURLResponse else {
+            throw GNewsError.invalidResponse
+        }
+
+        switch http.statusCode {
+        case 200:
+            break
+        case 401, 403:
+            throw GNewsError.invalidKey
+        case 429:
+            throw GNewsError.rateLimited
+        default:
+            throw GNewsError.apiUnavailable(http.statusCode)
         }
 
         struct GNewsResponse: Decodable {
@@ -265,20 +458,48 @@ public final class NewsDataSource: AwarenessDataSource {
             let articles: [Article]?
         }
 
-        let decoded = try JSONDecoder().decode(GNewsResponse.self, from: data)
-        guard let articles = decoded.articles else { return [] }
+        guard let decoded = try? JSONDecoder().decode(GNewsResponse.self, from: data),
+              let articles = decoded.articles else {
+            throw GNewsError.invalidResponse
+        }
 
-        let iso = ISO8601DateFormatter()
-        return articles.prefix(5).map { art in
-            AwarenessNewsItem(
-                title: art.title,
+        var uniqueHeadlines = Set<String>()
+        var validItems: [AwarenessNewsItem] = []
+
+        for art in articles {
+            let cleanTitle = art.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !cleanTitle.isEmpty else { continue }
+
+            let normKey = cleanTitle.lowercased().filter { $0.isLetter || $0.isNumber }
+            guard !uniqueHeadlines.contains(normKey) else { continue }
+            uniqueHeadlines.insert(normKey)
+
+            let pubDate = art.publishedAt.flatMap { isoFormatter.date(from: $0) }
+            if let date = pubDate, date < cutoffDate {
+                continue // Discard stale articles
+            }
+
+            let item = AwarenessNewsItem(
+                title: cleanTitle,
                 source: art.source?.name ?? "GNews",
-                publishedAt: art.publishedAt.flatMap { iso.date(from: $0) },
+                publishedAt: pubDate,
                 url: art.url,
                 snippet: art.description,
                 category: "General"
             )
+            validItems.append(item)
         }
+
+        validItems.sort { ($0.publishedAt ?? .distantPast) > ($1.publishedAt ?? .distantPast) }
+
+        if let newest = validItems.first?.publishedAt {
+            let df = DateFormatter()
+            df.dateStyle = .short
+            df.timeStyle = .short
+            NSLog("[NewsDataSource] GNews: %d fresh articles. Cutoff: %@, Newest: %@", validItems.count, df.string(from: cutoffDate), df.string(from: newest))
+        }
+
+        return Array(validItems.prefix(6))
     }
 }
 
@@ -292,8 +513,8 @@ public final class MarketDataSource: AwarenessDataSource {
 
     public init() {
         let config = URLSessionConfiguration.ephemeral
-        config.timeoutIntervalForRequest = 10.0
-        config.timeoutIntervalForResource = 15.0
+        config.timeoutIntervalForRequest = 5.0
+        config.timeoutIntervalForResource = 6.0
         self.session = URLSession(configuration: config)
     }
 
@@ -360,7 +581,7 @@ public final class MarketDataSource: AwarenessDataSource {
         }
 
         var request = URLRequest(url: url)
-        request.timeoutInterval = 10.0
+        request.timeoutInterval = 5.0
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
             throw NSError(domain: "MarketDataSource", code: (response as? HTTPURLResponse)?.statusCode ?? 500, userInfo: [NSLocalizedDescriptionKey: "Finnhub error"])
@@ -416,15 +637,21 @@ public final class MarketDataSource: AwarenessDataSource {
     }
 
     private func fetchQuotes(for symbols: [String]) async -> [AwarenessEarningsItem] {
-        var results: [AwarenessEarningsItem] = []
         let todayStr = DateFormatter.localizedString(from: Date(), dateStyle: .short, timeStyle: .none)
-
-        for sym in symbols {
-            if let quote = await fetchYahooQuote(symbol: sym, dateStr: todayStr) {
-                results.append(quote)
+        return await withTaskGroup(of: AwarenessEarningsItem?.self) { group in
+            for sym in symbols {
+                group.addTask {
+                    await self.fetchYahooQuote(symbol: sym, dateStr: todayStr)
+                }
             }
+            var results: [AwarenessEarningsItem] = []
+            for await quote in group {
+                if let q = quote {
+                    results.append(q)
+                }
+            }
+            return results
         }
-        return results
     }
 
     private func fetchYahooQuote(symbol: String, dateStr: String) async -> AwarenessEarningsItem? {
@@ -434,7 +661,7 @@ public final class MarketDataSource: AwarenessDataSource {
 
         var request = URLRequest(url: url)
         request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36", forHTTPHeaderField: "User-Agent")
-        request.timeoutInterval = 8.0
+        request.timeoutInterval = 4.0
 
         do {
             let (data, response) = try await session.data(for: request)

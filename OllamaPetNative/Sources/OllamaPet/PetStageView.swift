@@ -84,18 +84,21 @@ struct PetStageView: View {
                 if !isLocomotionActive {
                     VStack {
                         HStack {
-                            Button(action: {
-                                petState.cycleMood()
-                            }) {
-                                Text(petState.currentSpecies.moodEmoji(for: petState.currentMood))
-                                    .font(.system(size: 15))
-                                    .padding(4)
-                                    .background(Color.black.opacity(0.45))
-                                    .clipShape(Circle())
+                            // Mood Indicator & Cycle Button (Shown only for 2D character / fallback; 3D uses animation/posture)
+                            if petState.renderEngineMode != .threeD {
+                                Button(action: {
+                                    petState.cycleMood()
+                                }) {
+                                    Text(petState.currentSpecies.moodEmoji(for: petState.currentMood))
+                                        .font(.system(size: 15))
+                                        .padding(4)
+                                        .background(Color.black.opacity(0.45))
+                                        .clipShape(Circle())
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("Current Mood: \(petState.currentMood.rawValue.capitalized)")
+                                .accessibilityHint("Double tap to cycle to the next character mood")
                             }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("Current Mood: \(petState.currentMood.rawValue.capitalized)")
-                            .accessibilityHint("Double tap to cycle to the next character mood")
 
                             Spacer()
 

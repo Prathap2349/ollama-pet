@@ -206,11 +206,18 @@ public class MusicManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
         let artist = appMetadata.artist.isEmpty ? (remoteResult.artist ?? "") : appMetadata.artist
         let source = appMetadata.source.isEmpty ? (isActuallyPlaying ? "macOS Media" : "") : appMetadata.source
 
-        if isActuallyPlaying && !track.isEmpty {
-            transitionMediaState(to: .playing, track: track, artist: artist, source: source)
-        } else if isActuallyPlaying {
-            // Media is playing but title unavailable
-            transitionMediaState(to: .playing, track: "Audio Stream", artist: "", source: "System Audio")
+        if isActuallyPlaying {
+            let activeTrack = track.isEmpty ? (mediaTrackTitle.isEmpty ? "Audio Stream" : mediaTrackTitle) : track
+            let activeArtist = artist.isEmpty ? mediaArtist : artist
+            let activeSource = source.isEmpty ? (mediaSource.isEmpty ? "macOS Media" : mediaSource) : source
+
+            if mediaState != .playing || (activeTrack != mediaTrackTitle && !activeTrack.isEmpty) {
+                transitionMediaState(to: .playing, track: activeTrack, artist: activeArtist, source: activeSource)
+            } else if danceWhenMusicDetected && (reactionTask == nil || !isReacting) {
+                // Ensure dance reaction starts or resumes if music is playing and reaction wasn't running (Requirement 5)
+                startExternalBeatClock()
+                triggerMusicStartReaction(track: activeTrack, artist: activeArtist, source: activeSource)
+            }
         } else if mediaState == .playing {
             // It was playing, now stopped or paused
             if remoteResult.isPaused {
@@ -221,7 +228,7 @@ public class MusicManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
         }
     }
 
-    // MARK: - Media State Machine & Reaction Pipeline (Requirement 1)
+    // MARK: - Media State Machine & Reaction Pipeline (Requirements 5, 6, 7)
 
     private func transitionMediaState(to newState: MediaPlaybackState, track: String = "", artist: String = "", source: String = "") {
         let oldState = mediaState
@@ -235,14 +242,9 @@ public class MusicManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
         self.mediaArtist = artist
         self.mediaSource = source
 
-        // Check Event Priority: Yield to user interaction or focus sessions
-        if PetState.shared.activeEventPriority > .musicReaction {
-            return
-        }
-
         switch (oldState, newState) {
         case (.noMedia, .playing), (.paused, .playing), (.unknown, .playing):
-            // Sequence: NO_MEDIA -> PLAYING -> CURIOUS -> EXCITED -> DANCE
+            // Sequence: NO_MEDIA/PAUSED -> PLAYING -> DANCE (resilient to priority conflicts)
             startExternalBeatClock()
             triggerMusicStartReaction(track: track, artist: artist, source: source)
 
@@ -265,61 +267,74 @@ public class MusicManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
         reactionTask?.cancel()
         reactionTask = Task { @MainActor in
             isReacting = true
+            defer { isReacting = false }
+
             let cleanTrack = track
                 .replacingOccurrences(of: " - YouTube", with: "")
                 .replacingOccurrences(of: " - YouTube Music", with: "")
             let subtitle = artist.isEmpty ? cleanTrack : "\(cleanTrack) — \(artist)"
 
-            if !cleanTrack.isEmpty && cleanTrack != lastAnnouncedTrack {
+            if !cleanTrack.isEmpty && cleanTrack != lastAnnouncedTrack && !PetState.shared.isChatOpen && !VoiceAssistant.shared.isSpeaking {
                 lastAnnouncedTrack = cleanTrack
                 let badge = source.contains("YouTube") ? "📺 ♪" : "♪"
                 PetState.shared.showBubble("\(badge) \(subtitle)", duration: 4.5)
             }
 
-            // Step 1: CURIOUS (1.5s) - Head tilt, attentive listening
-            PetState.shared.setTemporaryMood(.curious, duration: 1.5)
-            try? await Task.sleep(nanoseconds: 1_500_000_000)
-            guard !Task.isCancelled else { return }
+            // Quick curious/excited intro only if not blocked by high priority activity
+            if PetState.shared.activeEventPriority <= .musicReaction &&
+               !PetState.shared.isChatOpen &&
+               !PetState.shared.isThinking &&
+               !VoiceAssistant.shared.isSpeaking &&
+               !FocusGuardian.shared.isSessionActive {
+                PetState.shared.setTemporaryMood(.curious, duration: 1.0)
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                guard !Task.isCancelled else { return }
 
-            // Step 2: EXCITED (2.0s) - Happy recognition, smile
-            PetState.shared.setTemporaryMood(.excited, duration: 2.0)
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
-            guard !Task.isCancelled else { return }
+                PetState.shared.setTemporaryMood(.excited, duration: 1.2)
+                try? await Task.sleep(nanoseconds: 1_200_000_000)
+                guard !Task.isCancelled else { return }
+            }
 
             // Step 3: DANCE CONTINUOUSLY while media is playing
             if danceWhenMusicDetected {
-                PetState.shared.animState = .dance
                 PetState.shared.currentMood = .happy
 
-                // Continuous dance loop while music is active
+                // Continuous dance loop while music is active (Requirements 5, 6, 7)
                 while !Task.isCancelled && (self.isMediaPlaying || self.isPlaying) && self.danceWhenMusicDetected {
-                    // Priority guard: yield immediately during higher priority activities
+                    let isVoiceSpeaking = VoiceAssistant.shared.isSpeaking
                     let priority = PetState.shared.activeEventPriority
+
+                    // Priority guard: yield immediately during higher priority activities or speech
                     if priority > .musicReaction ||
                        PetState.shared.isChatOpen ||
                        PetState.shared.isThinking ||
-                       VoiceAssistant.shared.isSpeaking ||
+                       isVoiceSpeaking ||
                        FocusGuardian.shared.isSessionActive {
-                        if PetState.shared.animState == .dance {
+                        if isVoiceSpeaking {
+                            // Speech temporarily has priority: visually distinct talking state (Requirement 6)
+                            if PetState.shared.animState != .watchUser {
+                                PetState.shared.animState = .watchUser
+                            }
+                        } else if PetState.shared.animState == .dance {
                             PetState.shared.animState = .idle
                         }
                     } else {
+                        // Resume dance when speech/chat finishes while music is still playing (Requirement 5 & 6)
                         if PetState.shared.animState != .dance && PetState.shared.animState != .walk {
                             PetState.shared.animState = .dance
                         }
                     }
-                    try? await Task.sleep(nanoseconds: 1_000_000_000)
+                    try? await Task.sleep(nanoseconds: 500_000_000)
                 }
 
                 // Gracefully finish motion when stopped or paused
                 if PetState.shared.animState == .dance {
                     PetState.shared.animState = .idle
-                    PetState.shared.setTemporaryMood(.relaxed, duration: 4.0)
+                    PetState.shared.setTemporaryMood(.relaxed, duration: 3.0)
                 }
             } else {
-                PetState.shared.setTemporaryMood(.relaxed, duration: 4.0)
+                PetState.shared.setTemporaryMood(.relaxed, duration: 3.0)
             }
-            isReacting = false
         }
     }
 
@@ -331,7 +346,7 @@ public class MusicManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
         if PetState.shared.animState == .dance {
             PetState.shared.animState = .idle
         }
-        PetState.shared.setTemporaryMood(.relaxed, duration: 4.0)
+        PetState.shared.setTemporaryMood(.relaxed, duration: 3.0)
     }
 
     private func triggerMusicStopReaction() {
@@ -342,7 +357,7 @@ public class MusicManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
         if PetState.shared.animState == .dance {
             PetState.shared.animState = .idle
         }
-        PetState.shared.setTemporaryMood(.relaxed, duration: 3.5)
+        PetState.shared.setTemporaryMood(.relaxed, duration: 3.0)
     }
 
     // MARK: - Deterministic External Rhythm Clock (~118 BPM / 2.0 Hz)

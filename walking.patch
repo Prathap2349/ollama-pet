@@ -1,0 +1,552 @@
+--- a/Pet3DSceneView.swift
++++ b/Pet3DSceneView.swift
+@@ -90,6 +90,17 @@
+         }
+         /// Per-frame neutral reset, joint clamping and easing for `currentRig` (rebuilt whenever the rig changes).
+         private var poseLayer: RigPoseLayer?
++
++        // Gait state. The phase is accumulated (never recomputed from absolute time), so changing
++        // speed can never make it jump.
++        private var gaitPhase: Double = 0
++        /// Window distance (points) measured but not yet converted into gait phase.
++        private var gaitDistanceBacklog: CGFloat = 0
++        private var lastPetOriginX: CGFloat?
++        /// Smoothed speed (points/second) of the pet window, measured from its real movement.
++        private var smoothedPetSpeed: CGFloat = 0
++        /// Stride amplitude envelope: fades in as the window starts moving and out as it stops.
++        private var gaitAmplitude: CGFloat = 0
+         var rimLightNode: SCNNode?
+         var lastSpecies: PetSpecies?
+         var lastHorn: Bool?
+@@ -243,6 +254,8 @@
+         private func tick() {
+             guard let rig = currentRig, let poseLayer = poseLayer else { return }
+             let t = Date().timeIntervalSinceReferenceDate
++            let dt = lastTime > 0 ? min(max(t - lastTime, 0.0), 0.1) : 0.0
++            lastTime = t
+ 
+             // Frame start: every animated joint goes back to its neutral pose. All pose code below
+             // writes into `pose` (a scratch rig) as offsets from neutral; nothing carries over from
+@@ -481,14 +494,56 @@
+             rig.jawNode?.eulerAngles.x = currentJawAngle
+ 
+             // 6. Direction-Aware 3D Orientation (Requirement 6)
++            // One continuous ease (about 0.16 per frame at 60 fps, but independent of frame rate).
++            // The same value drives the turn, the walk and the pause that follows it.
+             let targetMovementYaw = petState.movementDirection.yawAngle
+-            currentMovementYaw += (targetMovementYaw - currentMovementYaw) * 0.16
+-            pose.rootNode.eulerAngles.y = CGFloat(currentMovementYaw)
++            currentMovementYaw += (targetMovementYaw - currentMovementYaw) * Float(1.0 - exp(-10.5 * dt))
+ 
+             // 7. Species-Specific Locomotion & Resting Behavior Engine (Requirements 5, 7, 8)
+             let walkSpeed: Double = reduceMotion ? 2.2 : (isDancing ? 5.2 : 3.8)
+-            let motionMultiplier: CGFloat = reduceMotion ? 0.35 : 1.0
+-            let phase = t * walkSpeed
++            let isRunning = (animState == .run)
++
++            // Measure how far the window really moved since the last frame.
++            let petWindow = PetWindowController.shared
++            let petOriginX = petWindow.petOrigin.x
++            let movedDistance: CGFloat = lastPetOriginX.map { abs(petOriginX - $0) } ?? 0
++            lastPetOriginX = petOriginX
++
++            if dt > 0 {
++                let rawSpeed = movedDistance / CGFloat(dt)
++                smoothedPetSpeed += (rawSpeed - smoothedPetSpeed) * CGFloat(1.0 - exp(-dt / 0.10))
++            }
++
++            // Gait phase. While walking it advances in proportion to the distance moved, so the
++            // feet match the ground speed and nothing slides. The distance goes through a short
++            // backlog so uneven window-move timing doesn't make the legs stutter. Otherwise
++            // (dancing, idle) it advances by dt * speed.
++            if isWalking {
++                let petWidth = max(1.0, petWindow.petStageSize.width)
++                var radiansPerPoint = WalkerManager.nominalGaitRate / Double(WalkerManager.nominalWalkSpeed)
++                radiansPerPoint *= Double(WalkerManager.referencePetSize / petWidth)
++                if isRunning { radiansPerPoint *= WalkerManager.runStrideFactor }
++                if reduceMotion { radiansPerPoint *= 2.2 / 3.8 }
++
++                gaitDistanceBacklog = min(gaitDistanceBacklog + movedDistance, 120.0)
++                let released = gaitDistanceBacklog * CGFloat(1.0 - exp(-dt / 0.06))
++                gaitDistanceBacklog -= released
++                gaitPhase += Double(released) * radiansPerPoint
++            } else {
++                gaitDistanceBacklog = 0
++                gaitPhase += dt * walkSpeed
++            }
++            let phase = gaitPhase
++
++            // Stride amplitude follows the pet's actual speed, so it fades in as the window starts
++            // moving and out as it stops (WalkerManager holds the walk pose briefly after arriving).
++            let fullStrideSpeed = WalkerManager.nominalWalkSpeed * (isRunning ? WalkerManager.runSpeedFactor : 1.0) * 0.4
++            let targetAmplitude: CGFloat = isWalking
++                ? min(1.0, smoothedPetSpeed / fullStrideSpeed) * (isRunning ? 1.3 : 1.0)
++                : 0.0
++            gaitAmplitude += (targetAmplitude - gaitAmplitude) * CGFloat(1.0 - exp(-dt / 0.12))
++            let strideAmp: CGFloat = isWalking ? gaitAmplitude : 1.0
++            let motionMultiplier: CGFloat = (reduceMotion ? 0.35 : 1.0) * strideAmp
+ 
+             if isWalking {
+                 switch species {
+@@ -521,9 +576,9 @@
+                     pose.rootNode.eulerAngles.z = CGFloat(sin(stride)) * 0.05 * motionMultiplier
+ 
+                     // Wing micro-lift & tail counterbalance
+-                    pose.leftWingNode?.eulerAngles.z = CGFloat(Double.pi / 3) + CGFloat(sin(stride * 2.0)) * 0.18
+-                    pose.rightWingNode?.eulerAngles.z = -CGFloat(Double.pi / 3) - CGFloat(sin(stride * 2.0)) * 0.18
+-                    pose.tailNode?.eulerAngles.y = -CGFloat(sin(stride)) * 0.48
++                    pose.leftWingNode?.eulerAngles.z = CGFloat(Double.pi / 3) + CGFloat(sin(stride * 2.0)) * 0.18 * strideAmp
++                    pose.rightWingNode?.eulerAngles.z = -CGFloat(Double.pi / 3) - CGFloat(sin(stride * 2.0)) * 0.18 * strideAmp
++                    pose.tailNode?.eulerAngles.y = -CGFloat(sin(stride)) * 0.48 * strideAmp
+ 
+                 case .cat:
+                     // Soft feline walk with flexible spine and quiet paws
+@@ -555,7 +610,7 @@
+                     pose.bodyNode.eulerAngles.z = CGFloat(sin(stride)) * 0.025 * motionMultiplier
+                     bobY += CGFloat(abs(sin(stride))) * 0.018 * motionMultiplier
+                     pose.tailNode?.eulerAngles.x = 0.22
+-                    pose.tailNode?.eulerAngles.y = CGFloat(sin(stride * 0.8)) * 0.35
++                    pose.tailNode?.eulerAngles.y = CGFloat(sin(stride * 0.8)) * 0.35 * strideAmp
+ 
+                 case .fox:
+                     // Light bouncy trot with large tail sway and ear swivel
+@@ -583,9 +638,9 @@
+                     pose.backLeftPaw?.eulerAngles.x = fr_paw
+ 
+                     bobY += CGFloat(abs(sin(stride))) * 0.040 * motionMultiplier
+-                    pose.tailNode?.eulerAngles.y = CGFloat(sin(stride)) * 0.60
+-                    pose.leftEarNode?.eulerAngles.z = -CGFloat(Double.pi / 10) + CGFloat(sin(stride)) * 0.08
+-                    pose.rightEarNode?.eulerAngles.z = CGFloat(Double.pi / 10) - CGFloat(sin(stride)) * 0.08
++                    pose.tailNode?.eulerAngles.y = CGFloat(sin(stride)) * 0.60 * strideAmp
++                    pose.leftEarNode?.eulerAngles.z = -CGFloat(Double.pi / 10) + CGFloat(sin(stride)) * 0.08 * strideAmp
++                    pose.rightEarNode?.eulerAngles.z = CGFloat(Double.pi / 10) - CGFloat(sin(stride)) * 0.08 * strideAmp
+ 
+                 case .bunny:
+                     // Hopping gait: synchronized rear-leg launch & ear bounce
+@@ -635,15 +690,15 @@
+                     pose.frontRightShin?.eulerAngles.x = CGFloat(max(0.0, sin(stride))) * 0.44 * motionMultiplier
+                     pose.backLeftLeg?.eulerAngles.x = -fl_swing
+                     pose.backLeftShin?.eulerAngles.x = CGFloat(max(0.0, sin(stride))) * 0.44 * motionMultiplier
+-                    pose.tailNode?.eulerAngles.y = CGFloat(sin(stride * 2.0)) * 0.35
++                    pose.tailNode?.eulerAngles.y = CGFloat(sin(stride * 2.0)) * 0.35 * strideAmp
+ 
+                 case .ghost:
+                     // Legless spectral floating glide
+-                    bobY += CGFloat(sin(t * 3.2)) * 0.08
+-                    pose.rootNode.eulerAngles.z = CGFloat(sin(t * 2.2)) * 0.08
+-                    pose.rootNode.eulerAngles.x = CGFloat(cos(t * 2.2)) * 0.06
+-                    pose.leftArmNode?.eulerAngles.z = CGFloat(Double.pi / 2.5) + CGFloat(sin(t * 3.2)) * 0.20
+-                    pose.rightArmNode?.eulerAngles.z = -CGFloat(Double.pi / 2.5) - CGFloat(sin(t * 3.2)) * 0.20
++                    bobY += CGFloat(sin(t * 3.2)) * 0.08 * strideAmp
++                    pose.rootNode.eulerAngles.z = CGFloat(sin(t * 2.2)) * 0.08 * strideAmp
++                    pose.rootNode.eulerAngles.x = CGFloat(cos(t * 2.2)) * 0.06 * strideAmp
++                    pose.leftArmNode?.eulerAngles.z = CGFloat(Double.pi / 2.5) + CGFloat(sin(t * 3.2)) * 0.20 * strideAmp
++                    pose.rightArmNode?.eulerAngles.z = -CGFloat(Double.pi / 2.5) - CGFloat(sin(t * 3.2)) * 0.20 * strideAmp
+                 }
+             } else if animState == .sit {
+                 // Species-Specific Sitting Postures (Requirement 8)
+@@ -776,11 +831,10 @@
+                 targetHeadPitch = 0.04
+ 
+             } else if animState == .turnLeft {
+-                pose.rootNode.eulerAngles.y = -0.35
++                // The body turn is the currentMovementYaw ease (applied below); the head leads it.
+                 targetHeadYaw = -0.25
+ 
+             } else if animState == .turnRight {
+-                pose.rootNode.eulerAngles.y = 0.35
+                 targetHeadYaw = 0.25
+ 
+             } else if isDancing {
+@@ -844,6 +898,10 @@
+                 }
+             }
+ 
++            // Facing: every state turns by the same continuous ease, so turning, walking, pausing and
++            // looking around never snap between different yaw values. Dance yaw wiggles ride on top.
++            pose.rootNode.eulerAngles.y += CGFloat(currentMovementYaw)
++
+             // The generic wing flap and tail wag are idle/mood motion only. A state that owns a pose
+             // (walk, sit, sleep, stretch, look-around, watch-user, or a choreographed dance) keeps its
+             // wing and tail choreography. A dance with no music playing is not choreographed, so it
+@@ -1042,8 +1100,6 @@
+             rig.headNode.eulerAngles = SCNVector3(currentHeadPitch, currentHeadYaw, currentHeadRoll)
+ 
+             // Frame end: clamp every joint to its limits, ease from last frame's pose, apply to the rig.
+-            let dt = lastTime > 0 ? min(max(t - lastTime, 0.0), 0.1) : 0.0
+-            lastTime = t
+             poseLayer.commit(dt: dt)
+         }
+ 
+--- a/WalkerManager.swift
++++ b/WalkerManager.swift
+@@ -2,18 +2,51 @@
+ import AppKit
+ import SwiftUI
+ 
++// MARK: - Walk Styles
++
++/// How far and how fast the pet moves when it goes for a walk.
++public enum WalkStyle: String, CaseIterable {
++    /// Short, relaxed walk: roughly one to three pet-widths at a slightly slower pace.
++    case stroll
++    /// Long walk to the far side of the screen (the original behaviour).
++    case crossing
++    /// Fast dash across most of the available room, using the `.run` animation state.
++    case run
++}
++
+ // MARK: - Native Companion Locomotion & Autonomous Life Engine
+ 
+ @MainActor
+ public class WalkerManager: ObservableObject {
+     public static let shared = WalkerManager()
+ 
++    // Gait tuning shared with Pet3DSceneView so the feet stay matched to the window's real movement.
++    /// Window speed (points/second) of a walk at walk-speed setting 1.0.
++    public static let nominalWalkSpeed: CGFloat = 130.0
++    /// A run is this many times faster than a walk.
++    public static let runSpeedFactor: CGFloat = 2.1
++    /// Gait phase rate (radians/second) the legs were designed around at `nominalWalkSpeed`.
++    public static let nominalGaitRate: Double = 3.8
++    /// Running uses longer strides, so the legs turn over less than proportionally faster.
++    public static let runStrideFactor: Double = 0.7
++    /// Pet stage size (points) that `nominalGaitRate` was tuned for.
++    public static let referencePetSize: CGFloat = 140.0
++
++    private static let edgeMargin: CGFloat = 20.0
++    private static let strollSpeedFactor: CGFloat = 0.8
++    private static let maxRampSeconds: Double = 0.9
++    private static let minWalkDistance: CGFloat = 24.0
++    private static let frameIntervalNanos: UInt64 = 16_000_000
++    private static let strideFadeOutNanos: UInt64 = 350_000_000
++
+     @Published public var isWalking = false
+     private var currentWalkTask: Task<Void, Never>?
+ 
+     public init() {}
+ 
+-    public func startWalk(species: PetSpecies, isTest: Bool = false) {
++    /// Starts a walk. With no `style`, an autonomous walk picks one at random (mostly strolls);
++    /// `isTest` keeps the fixed 250 pt test distance.
++    public func startWalk(species: PetSpecies, isTest: Bool = false, style: WalkStyle? = nil) {
+         guard !isWalking else { return }
+         isWalking = true
+ 
+@@ -25,8 +58,11 @@
+         currentWalkTask?.cancel()
+         currentWalkTask = Task { @MainActor [weak self] in
+             guard let self = self else { return }
+-            await self.executeSmoothLocomotion(species: species, isTest: isTest)
+-            self.isWalking = false
++            await self.executeSmoothLocomotion(species: species, isTest: isTest, requestedStyle: style)
++            // A cancelled walk was already reset by stopWalk(); don't clobber a newer walk's flag.
++            if !Task.isCancelled {
++                self.isWalking = false
++            }
+         }
+     }
+ 
+@@ -38,71 +74,220 @@
+         PetState.shared.movementDirection = .forward
+     }
+ 
+-    private func executeSmoothLocomotion(species: PetSpecies, isTest: Bool) async {
+-        let petWin = PetWindowController.shared
+-        guard let win = petWin.window, let screen = win.screen ?? NSScreen.main else {
+-            return
++    // MARK: - Planning
++
++    private struct WalkPlan {
++        let targetX: CGFloat
++        let speed: CGFloat   // cruise speed, points/second
++        let isRun: Bool
++    }
++
++    /// Time-based motion profile: smooth speed ramp up, constant cruise, smooth ramp down.
++    /// Position is a pure function of elapsed time, so frame rate and scheduling jitter never
++    /// change where the pet is, only how often it is redrawn.
++    private struct MotionProfile {
++        let distance: Double
++        let cruiseSpeed: Double
++        let ramp: Double
++        let duration: Double
++
++        init(distance: CGFloat, cruiseSpeed: CGFloat) {
++            self.distance = Double(distance)
++            self.cruiseSpeed = Double(cruiseSpeed)
++            let travelTime = Double(distance / cruiseSpeed)
++            self.ramp = min(WalkerManager.maxRampSeconds, travelTime)
++            self.duration = travelTime + ramp
+         }
+ 
+-        let sFrame = screen.visibleFrame
+-        let petSize: CGFloat = 140
+-        let minX = sFrame.minX + 20
+-        let maxX = sFrame.maxX - petSize - 20
+-        let currentX = petWin.petOrigin.x
+-        let currentY = petWin.petOrigin.y
++        /// Distance travelled `t` seconds after the start (0...distance).
++        func travelled(at t: Double) -> Double {
++            guard ramp > 0 else { return distance }
++            let t = min(max(t, 0.0), duration)
++
++            // Distance covered while the speed ramps 0 -> cruise with a smoothstep curve.
++            func rampDistance(_ u: Double) -> Double {
++                let x = u / ramp
++                return cruiseSpeed * ramp * (x * x * x - 0.5 * x * x * x * x)
++            }
+ 
+-        // Determine destination: opposite side or random distant spot within current screen
+-        let targetX: CGFloat
++            if t < ramp {
++                return rampDistance(t)
++            } else if t > duration - ramp {
++                return distance - rampDistance(duration - t)
++            } else {
++                return cruiseSpeed * ramp * 0.5 + cruiseSpeed * (t - ramp)
++            }
++        }
++    }
++
++    private func randomStyle() -> WalkStyle {
++        let roll = Double.random(in: 0..<1)
++        if roll < 0.55 { return .stroll }
++        if roll < 0.80 { return .crossing }
++        return .run
++    }
++
++    /// Screen the pet is actually on, chosen by how much of the pet stage each screen contains.
++    private func screenContaining(_ petRect: NSRect, window: NSWindow?) -> NSScreen? {
++        var best: (screen: NSScreen, area: CGFloat)?
++        for screen in NSScreen.screens {
++            let overlap = screen.frame.intersection(petRect)
++            guard !overlap.isNull else { continue }
++            let area = overlap.width * overlap.height
++            if area > (best?.area ?? 0) {
++                best = (screen, area)
++            }
++        }
++        return best?.screen ?? window?.screen ?? NSScreen.main
++    }
++
++    /// Range of allowed pet-origin X values on the pet's current screen (Dock and menu bar excluded).
++    private func walkBounds(petOrigin: NSPoint, petSize: CGSize, window: NSWindow?) -> ClosedRange<CGFloat>? {
++        let petRect = NSRect(origin: petOrigin, size: petSize)
++        guard let screen = screenContaining(petRect, window: window) else { return nil }
++        let frame = screen.visibleFrame
++        let lower = frame.minX + WalkerManager.edgeMargin
++        let upper = frame.maxX - petSize.width - WalkerManager.edgeMargin
++        guard upper > lower else { return nil }
++        return lower...upper
++    }
++
++    private func makePlan(
++        style: WalkStyle,
++        isTest: Bool,
++        currentX: CGFloat,
++        bounds: ClosedRange<CGFloat>,
++        petWidth: CGFloat,
++        baseSpeed: CGFloat
++    ) -> WalkPlan? {
++        let minX = bounds.lowerBound
++        let maxX = bounds.upperBound
++        let roomLeft = max(0, currentX - minX)
++        let roomRight = max(0, maxX - currentX)
++
++        var target: CGFloat
+         if isTest {
+-            targetX = currentX > sFrame.midX ? (currentX - 250) : (currentX + 250)
++            let middle = (minX + maxX) / 2
++            target = currentX > middle ? (currentX - 250) : (currentX + 250)
+         } else {
+-            let halfway = sFrame.midX
+-            if currentX > halfway {
+-                targetX = CGFloat.random(in: minX...(halfway - 40))
+-            } else {
+-                targetX = CGFloat.random(in: (halfway + 40)...maxX)
++            switch style {
++            case .stroll:
++                let minStroll = petWidth * 0.8
++                var directions: [CGFloat] = []
++                if roomLeft >= minStroll { directions.append(-1) }
++                if roomRight >= minStroll { directions.append(1) }
++                guard let direction = directions.randomElement() else { return nil }
++                let room = direction < 0 ? roomLeft : roomRight
++                let distance = min(room, petWidth * CGFloat.random(in: 1.0...3.0))
++                target = currentX + direction * distance
++
++            case .crossing:
++                // Head for the far half of the screen.
++                let halfway = (minX + maxX) / 2
++                if currentX > halfway {
++                    target = CGFloat.random(in: minX...max(minX, halfway - 40))
++                } else {
++                    target = CGFloat.random(in: min(maxX, halfway + 40)...maxX)
++                }
++
++            case .run:
++                let minRun = petWidth * 2.5
++                var directions: [CGFloat] = []
++                if roomLeft >= minRun { directions.append(-1) }
++                if roomRight >= minRun { directions.append(1) }
++                let direction = directions.randomElement() ?? (roomRight >= roomLeft ? 1 : -1)
++                let room = direction < 0 ? roomLeft : roomRight
++                let distance = max(min(room, minRun), room * CGFloat.random(in: 0.5...0.95))
++                target = currentX + direction * distance
+             }
+         }
+-        let clampedTargetX = max(minX, min(maxX, targetX))
+-        let movingRight = clampedTargetX > currentX
+ 
+-        // 1. Physical Turn with species-specific delay
++        target = max(minX, min(maxX, target))
++        guard abs(target - currentX) >= WalkerManager.minWalkDistance else { return nil }
++
++        let speed: CGFloat
++        switch style {
++        case .stroll: speed = baseSpeed * WalkerManager.strollSpeedFactor
++        case .crossing: speed = baseSpeed
++        case .run: speed = baseSpeed * WalkerManager.runSpeedFactor
++        }
++        return WalkPlan(targetX: target, speed: speed, isRun: style == .run)
++    }
++
++    // MARK: - Locomotion
++
++    private func executeSmoothLocomotion(species: PetSpecies, isTest: Bool, requestedStyle: WalkStyle?) async {
++        let petWin = PetWindowController.shared
++        guard let win = petWin.window else { return }
++
++        // Real pet size as the window lays it out, and the screen the pet is actually on.
++        let petSize = petWin.petStageSize
++        let startOrigin = petWin.petOrigin
++        guard let startBounds = walkBounds(petOrigin: startOrigin, petSize: petSize, window: win) else { return }
++
++        let style = requestedStyle ?? (isTest ? .crossing : randomStyle())
++        let speedMultiplier = max(0.5, min(2.0, DataManager.shared.savedData.walkSpeed ?? 1.0))
++        let baseSpeed = WalkerManager.nominalWalkSpeed * CGFloat(speedMultiplier)
++
++        guard let plan = makePlan(
++            style: style,
++            isTest: isTest,
++            currentX: startOrigin.x,
++            bounds: startBounds,
++            petWidth: petSize.width,
++            baseSpeed: baseSpeed
++        ) else { return }
++
++        let startX = startOrigin.x
++        let movingRight = plan.targetX > startX
++
++        // 1. One continuous turn. The facing direction is set now, and Pet3DSceneView eases its
++        // yaw (currentMovementYaw) toward it through the turn, the walk and the pause that follow.
++        PetState.shared.movementDirection = movingRight ? .right : .left
+         PetState.shared.animState = movingRight ? .turnRight : .turnLeft
+-        let turnDelay = species.turnDelaySeconds
+-        try? await Task.sleep(nanoseconds: UInt64(turnDelay * 1_000_000_000))
++        try? await Task.sleep(nanoseconds: UInt64(species.turnDelaySeconds * 1_000_000_000))
+         if Task.isCancelled { return }
+ 
+-        // 2. Set movement orientation and walk state
+-        PetState.shared.movementDirection = movingRight ? .right : .left
+-        PetState.shared.animState = .walk
++        // 2. Walk or run
++        PetState.shared.animState = plan.isRun ? .run : .walk
+ 
+-        // 3. Smooth physics locomotion with ease-in/ease-out acceleration
+-        let speedMultiplier = max(0.5, min(2.0, DataManager.shared.savedData.walkSpeed ?? 1.0))
+-        let distance = abs(clampedTargetX - currentX)
+-        let baseSpeed: CGFloat = 130.0 * CGFloat(speedMultiplier) // pixels per second
+-        let totalDuration = max(1.8, Double(distance / baseSpeed))
+-        let frameRate: Double = 60.0
+-        let totalFrames = Int(totalDuration * frameRate)
+-        let frameDelayNano = UInt64((1.0 / frameRate) * 1_000_000_000)
+-
+-        for frame in 0...totalFrames {
+-            if Task.isCancelled { break }
+-            let t = Double(frame) / Double(totalFrames)
+-            // S-Curve ease-in / ease-out
+-            let smoothT = t < 0.5 ? 2.0 * t * t : -1.0 + (4.0 - 2.0 * t) * t
+-            let interpolatedX = currentX + (clampedTargetX - currentX) * CGFloat(smoothT)
++        // 3. Time-based locomotion: the position comes from elapsed time, never from a frame count.
++        let profile = MotionProfile(distance: abs(plan.targetX - startX), cruiseSpeed: plan.speed)
++        let direction: CGFloat = movingRight ? 1 : -1
++        let backingScale = max(1.0, win.backingScaleFactor)
++        let startTime = ProcessInfo.processInfo.systemUptime
++
++        while !Task.isCancelled {
++            let elapsed = ProcessInfo.processInfo.systemUptime - startTime
++            var x = startX + direction * CGFloat(profile.travelled(at: elapsed))
++
++            // Stay inside the pet's current screen (it may change if displays are rearranged mid-walk).
++            let liveOrigin = petWin.petOrigin
++            if let liveBounds = walkBounds(petOrigin: liveOrigin, petSize: petSize, window: win) {
++                x = max(liveBounds.lowerBound, min(liveBounds.upperBound, x))
++            }
++            // Land on whole device pixels so slow movement does not shimmer.
++            x = (x * backingScale).rounded() / backingScale
+ 
+-            petWin.updatePetOriginFromDrag(NSPoint(x: interpolatedX, y: currentY))
+-            try? await Task.sleep(nanoseconds: frameDelayNano)
++            // Y is read every frame so a drag in the other axis is not undone.
++            petWin.updatePetOriginFromDrag(NSPoint(x: x, y: liveOrigin.y))
++
++            if elapsed >= profile.duration { break }
++            try? await Task.sleep(nanoseconds: WalkerManager.frameIntervalNanos)
+         }
++        if Task.isCancelled { return }
+ 
+-        // 4. Decelerate & Stop
++        // 4. Keep the walk pose briefly while the stride fades out, then stop.
++        try? await Task.sleep(nanoseconds: WalkerManager.strideFadeOutNanos)
++        if Task.isCancelled { return }
+         PetState.shared.animState = .pause
+         try? await Task.sleep(nanoseconds: 500_000_000)
++        if Task.isCancelled { return }
+ 
+         // 5. Inquisitive look around at arrival spot
+         PetState.shared.animState = .lookAround
+         try? await Task.sleep(nanoseconds: 1_200_000_000)
++        if Task.isCancelled { return }
+ 
+         // 6. Turn forward and resume idle
+         PetState.shared.animState = .idle
+--- a/PetWindowController.swift
++++ b/PetWindowController.swift
+@@ -316,6 +316,13 @@
+         return NSRect(x: localX, y: localY, width: petSize, height: petSize)
+     }
+ 
++    /// Side lengths (points) of the pet stage as the window actually lays it out.
++    /// Anything that needs the pet's real size (e.g. WalkerManager) should read this instead of
++    /// assuming a constant, so it follows whatever size the window uses.
++    public var petStageSize: CGSize {
++        return currentPetRectInWindow().size
++    }
++
+     /// Returns the local CGRect of the chat panel within the window's content view
+     public func currentChatPanelRectInWindow() -> NSRect {
+         guard let win = window, PetState.shared.isChatOpen else { return .zero }
+--- a/ChatView.swift
++++ b/ChatView.swift
+@@ -2170,7 +2170,7 @@
+     }
+ 
+     private func startWalkAcrossScreen() {
+-        WalkerManager.shared.startWalk(species: petState.currentSpecies)
++        WalkerManager.shared.startWalk(species: petState.currentSpecies, style: .crossing)
+         petState.showBubble("Going for a walk! 🚶", duration: 2.0)
+     }
+ }
+--- a/MusicManager.swift
++++ b/MusicManager.swift
+@@ -299,7 +299,7 @@
+                         }
+                     } else {
+                         // Resume dance when speech/chat finishes while music is still playing (Requirement 5 & 6)
+-                        if PetState.shared.animState != .dance && PetState.shared.animState != .walk {
++                        if PetState.shared.animState != .dance && PetState.shared.animState != .walk && PetState.shared.animState != .run {
+                             PetState.shared.animState = .dance
+                         }
+                     }

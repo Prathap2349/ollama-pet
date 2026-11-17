@@ -299,7 +299,7 @@ public class MusicManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
                         }
                     } else {
                         // Resume dance when speech/chat finishes while music is still playing (Requirement 5 & 6)
-                        if PetState.shared.animState != .dance && PetState.shared.animState != .walk {
+                        if PetState.shared.animState != .dance && PetState.shared.animState != .walk && PetState.shared.animState != .run {
                             PetState.shared.animState = .dance
                         }
                     }

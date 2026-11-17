@@ -316,6 +316,13 @@ public class PetWindowController: NSObject, NSWindowDelegate {
         return NSRect(x: localX, y: localY, width: petSize, height: petSize)
     }
 
+    /// Side lengths (points) of the pet stage as the window actually lays it out.
+    /// Anything that needs the pet's real size (e.g. WalkerManager) should read this instead of
+    /// assuming a constant, so it follows whatever size the window uses.
+    public var petStageSize: CGSize {
+        return currentPetRectInWindow().size
+    }
+
     /// Returns the local CGRect of the chat panel within the window's content view
     public func currentChatPanelRectInWindow() -> NSRect {
         guard let win = window, PetState.shared.isChatOpen else { return .zero }

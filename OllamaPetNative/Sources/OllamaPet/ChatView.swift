@@ -2170,7 +2170,7 @@ struct ChatView: View {
     }
 
     private func startWalkAcrossScreen() {
-        WalkerManager.shared.startWalk(species: petState.currentSpecies)
+        WalkerManager.shared.startWalk(species: petState.currentSpecies, style: .crossing)
         petState.showBubble("Going for a walk! 🚶", duration: 2.0)
     }
 }

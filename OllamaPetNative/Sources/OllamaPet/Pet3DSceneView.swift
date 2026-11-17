@@ -90,6 +90,17 @@ public struct Pet3DSceneView: NSViewRepresentable {
         }
         /// Per-frame neutral reset, joint clamping and easing for `currentRig` (rebuilt whenever the rig changes).
         private var poseLayer: RigPoseLayer?
+
+        // Gait state. The phase is accumulated (never recomputed from absolute time), so changing
+        // speed can never make it jump.
+        private var gaitPhase: Double = 0
+        /// Window distance (points) measured but not yet converted into gait phase.
+        private var gaitDistanceBacklog: CGFloat = 0
+        private var lastPetOriginX: CGFloat?
+        /// Smoothed speed (points/second) of the pet window, measured from its real movement.
+        private var smoothedPetSpeed: CGFloat = 0
+        /// Stride amplitude envelope: fades in as the window starts moving and out as it stops.
+        private var gaitAmplitude: CGFloat = 0
         var rimLightNode: SCNNode?
         var lastSpecies: PetSpecies?
         var lastHorn: Bool?
@@ -243,6 +254,8 @@ public struct Pet3DSceneView: NSViewRepresentable {
         private func tick() {
             guard let rig = currentRig, let poseLayer = poseLayer else { return }
             let t = Date().timeIntervalSinceReferenceDate
+            let dt = lastTime > 0 ? min(max(t - lastTime, 0.0), 0.1) : 0.0
+            lastTime = t
 
             // Frame start: every animated joint goes back to its neutral pose. All pose code below
             // writes into `pose` (a scratch rig) as offsets from neutral; nothing carries over from
@@ -481,14 +494,56 @@ public struct Pet3DSceneView: NSViewRepresentable {
             rig.jawNode?.eulerAngles.x = currentJawAngle
 
             // 6. Direction-Aware 3D Orientation (Requirement 6)
+            // One continuous ease (about 0.16 per frame at 60 fps, but independent of frame rate).
+            // The same value drives the turn, the walk and the pause that follows it.
             let targetMovementYaw = petState.movementDirection.yawAngle
-            currentMovementYaw += (targetMovementYaw - currentMovementYaw) * 0.16
-            pose.rootNode.eulerAngles.y = CGFloat(currentMovementYaw)
+            currentMovementYaw += (targetMovementYaw - currentMovementYaw) * Float(1.0 - exp(-10.5 * dt))
 
             // 7. Species-Specific Locomotion & Resting Behavior Engine (Requirements 5, 7, 8)
             let walkSpeed: Double = reduceMotion ? 2.2 : (isDancing ? 5.2 : 3.8)
-            let motionMultiplier: CGFloat = reduceMotion ? 0.35 : 1.0
-            let phase = t * walkSpeed
+            let isRunning = (animState == .run)
+
+            // Measure how far the window really moved since the last frame.
+            let petWindow = PetWindowController.shared
+            let petOriginX = petWindow.petOrigin.x
+            let movedDistance: CGFloat = lastPetOriginX.map { abs(petOriginX - $0) } ?? 0
+            lastPetOriginX = petOriginX
+
+            if dt > 0 {
+                let rawSpeed = movedDistance / CGFloat(dt)
+                smoothedPetSpeed += (rawSpeed - smoothedPetSpeed) * CGFloat(1.0 - exp(-dt / 0.10))
+            }
+
+            // Gait phase. While walking it advances in proportion to the distance moved, so the
+            // feet match the ground speed and nothing slides. The distance goes through a short
+            // backlog so uneven window-move timing doesn't make the legs stutter. Otherwise
+            // (dancing, idle) it advances by dt * speed.
+            if isWalking {
+                let petWidth = max(1.0, petWindow.petStageSize.width)
+                var radiansPerPoint = WalkerManager.nominalGaitRate / Double(WalkerManager.nominalWalkSpeed)
+                radiansPerPoint *= Double(WalkerManager.referencePetSize / petWidth)
+                if isRunning { radiansPerPoint *= WalkerManager.runStrideFactor }
+                if reduceMotion { radiansPerPoint *= 2.2 / 3.8 }
+
+                gaitDistanceBacklog = min(gaitDistanceBacklog + movedDistance, 120.0)
+                let released = gaitDistanceBacklog * CGFloat(1.0 - exp(-dt / 0.06))
+                gaitDistanceBacklog -= released
+                gaitPhase += Double(released) * radiansPerPoint
+            } else {
+                gaitDistanceBacklog = 0
+                gaitPhase += dt * walkSpeed
+            }
+            let phase = gaitPhase
+
+            // Stride amplitude follows the pet's actual speed, so it fades in as the window starts
+            // moving and out as it stops (WalkerManager holds the walk pose briefly after arriving).
+            let fullStrideSpeed = WalkerManager.nominalWalkSpeed * (isRunning ? WalkerManager.runSpeedFactor : 1.0) * 0.4
+            let targetAmplitude: CGFloat = isWalking
+                ? min(1.0, smoothedPetSpeed / fullStrideSpeed) * (isRunning ? 1.3 : 1.0)
+                : 0.0
+            gaitAmplitude += (targetAmplitude - gaitAmplitude) * CGFloat(1.0 - exp(-dt / 0.12))
+            let strideAmp: CGFloat = isWalking ? gaitAmplitude : 1.0
+            let motionMultiplier: CGFloat = (reduceMotion ? 0.35 : 1.0) * strideAmp
 
             if isWalking {
                 switch species {
@@ -521,9 +576,9 @@ public struct Pet3DSceneView: NSViewRepresentable {
                     pose.rootNode.eulerAngles.z = CGFloat(sin(stride)) * 0.05 * motionMultiplier
 
                     // Wing micro-lift & tail counterbalance
-                    pose.leftWingNode?.eulerAngles.z = CGFloat(Double.pi / 3) + CGFloat(sin(stride * 2.0)) * 0.18
-                    pose.rightWingNode?.eulerAngles.z = -CGFloat(Double.pi / 3) - CGFloat(sin(stride * 2.0)) * 0.18
-                    pose.tailNode?.eulerAngles.y = -CGFloat(sin(stride)) * 0.48
+                    pose.leftWingNode?.eulerAngles.z = CGFloat(Double.pi / 3) + CGFloat(sin(stride * 2.0)) * 0.18 * strideAmp
+                    pose.rightWingNode?.eulerAngles.z = -CGFloat(Double.pi / 3) - CGFloat(sin(stride * 2.0)) * 0.18 * strideAmp
+                    pose.tailNode?.eulerAngles.y = -CGFloat(sin(stride)) * 0.48 * strideAmp
 
                 case .cat:
                     // Soft feline walk with flexible spine and quiet paws
@@ -555,7 +610,7 @@ public struct Pet3DSceneView: NSViewRepresentable {
                     pose.bodyNode.eulerAngles.z = CGFloat(sin(stride)) * 0.025 * motionMultiplier
                     bobY += CGFloat(abs(sin(stride))) * 0.018 * motionMultiplier
                     pose.tailNode?.eulerAngles.x = 0.22
-                    pose.tailNode?.eulerAngles.y = CGFloat(sin(stride * 0.8)) * 0.35
+                    pose.tailNode?.eulerAngles.y = CGFloat(sin(stride * 0.8)) * 0.35 * strideAmp
 
                 case .fox:
                     // Light bouncy trot with large tail sway and ear swivel
@@ -583,9 +638,9 @@ public struct Pet3DSceneView: NSViewRepresentable {
                     pose.backLeftPaw?.eulerAngles.x = fr_paw
 
                     bobY += CGFloat(abs(sin(stride))) * 0.040 * motionMultiplier
-                    pose.tailNode?.eulerAngles.y = CGFloat(sin(stride)) * 0.60
-                    pose.leftEarNode?.eulerAngles.z = -CGFloat(Double.pi / 10) + CGFloat(sin(stride)) * 0.08
-                    pose.rightEarNode?.eulerAngles.z = CGFloat(Double.pi / 10) - CGFloat(sin(stride)) * 0.08
+                    pose.tailNode?.eulerAngles.y = CGFloat(sin(stride)) * 0.60 * strideAmp
+                    pose.leftEarNode?.eulerAngles.z = -CGFloat(Double.pi / 10) + CGFloat(sin(stride)) * 0.08 * strideAmp
+                    pose.rightEarNode?.eulerAngles.z = CGFloat(Double.pi / 10) - CGFloat(sin(stride)) * 0.08 * strideAmp
 
                 case .bunny:
                     // Hopping gait: synchronized rear-leg launch & ear bounce
@@ -635,15 +690,15 @@ public struct Pet3DSceneView: NSViewRepresentable {
                     pose.frontRightShin?.eulerAngles.x = CGFloat(max(0.0, sin(stride))) * 0.44 * motionMultiplier
                     pose.backLeftLeg?.eulerAngles.x = -fl_swing
                     pose.backLeftShin?.eulerAngles.x = CGFloat(max(0.0, sin(stride))) * 0.44 * motionMultiplier
-                    pose.tailNode?.eulerAngles.y = CGFloat(sin(stride * 2.0)) * 0.35
+                    pose.tailNode?.eulerAngles.y = CGFloat(sin(stride * 2.0)) * 0.35 * strideAmp
 
                 case .ghost:
                     // Legless spectral floating glide
-                    bobY += CGFloat(sin(t * 3.2)) * 0.08
-                    pose.rootNode.eulerAngles.z = CGFloat(sin(t * 2.2)) * 0.08
-                    pose.rootNode.eulerAngles.x = CGFloat(cos(t * 2.2)) * 0.06
-                    pose.leftArmNode?.eulerAngles.z = CGFloat(Double.pi / 2.5) + CGFloat(sin(t * 3.2)) * 0.20
-                    pose.rightArmNode?.eulerAngles.z = -CGFloat(Double.pi / 2.5) - CGFloat(sin(t * 3.2)) * 0.20
+                    bobY += CGFloat(sin(t * 3.2)) * 0.08 * strideAmp
+                    pose.rootNode.eulerAngles.z = CGFloat(sin(t * 2.2)) * 0.08 * strideAmp
+                    pose.rootNode.eulerAngles.x = CGFloat(cos(t * 2.2)) * 0.06 * strideAmp
+                    pose.leftArmNode?.eulerAngles.z = CGFloat(Double.pi / 2.5) + CGFloat(sin(t * 3.2)) * 0.20 * strideAmp
+                    pose.rightArmNode?.eulerAngles.z = -CGFloat(Double.pi / 2.5) - CGFloat(sin(t * 3.2)) * 0.20 * strideAmp
                 }
             } else if animState == .sit {
                 // Species-Specific Sitting Postures (Requirement 8)
@@ -776,11 +831,10 @@ public struct Pet3DSceneView: NSViewRepresentable {
                 targetHeadPitch = 0.04
 
             } else if animState == .turnLeft {
-                pose.rootNode.eulerAngles.y = -0.35
+                // The body turn is the currentMovementYaw ease (applied below); the head leads it.
                 targetHeadYaw = -0.25
 
             } else if animState == .turnRight {
-                pose.rootNode.eulerAngles.y = 0.35
                 targetHeadYaw = 0.25
 
             } else if isDancing {
@@ -843,6 +897,10 @@ public struct Pet3DSceneView: NSViewRepresentable {
                     }
                 }
             }
+
+            // Facing: every state turns by the same continuous ease, so turning, walking, pausing and
+            // looking around never snap between different yaw values. Dance yaw wiggles ride on top.
+            pose.rootNode.eulerAngles.y += CGFloat(currentMovementYaw)
 
             // The generic wing flap and tail wag are idle/mood motion only. A state that owns a pose
             // (walk, sit, sleep, stretch, look-around, watch-user, or a choreographed dance) keeps its
@@ -1042,8 +1100,6 @@ public struct Pet3DSceneView: NSViewRepresentable {
             rig.headNode.eulerAngles = SCNVector3(currentHeadPitch, currentHeadYaw, currentHeadRoll)
 
             // Frame end: clamp every joint to its limits, ease from last frame's pose, apply to the rig.
-            let dt = lastTime > 0 ? min(max(t - lastTime, 0.0), 0.1) : 0.0
-            lastTime = t
             poseLayer.commit(dt: dt)
         }
 

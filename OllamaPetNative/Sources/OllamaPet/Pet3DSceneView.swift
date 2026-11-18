@@ -87,20 +87,67 @@ public struct Pet3DSceneView: NSViewRepresentable {
         coordinator.stopRenderLoop()
     }
 
-    public static func frameCamera(for rig: Pet3DRig, cameraNode: SCNNode) {
-        let bounds = rig.rootNode.boundingBox
-        let minBounds = bounds.min
-        let maxBounds = bounds.max
+    public static func frameCamera(for rig: Pet3DRig, cameraNode: SCNNode, species: PetSpecies? = nil) {
+        var minX = CGFloat.infinity
+        var minY = CGFloat.infinity
+        var minZ = CGFloat.infinity
+        var maxX = -CGFloat.infinity
+        var maxY = -CGFloat.infinity
+        var maxZ = -CGFloat.infinity
 
-        let centerX = (minBounds.x + maxBounds.x) * 0.5
+        func collectVisibleGeometry(_ node: SCNNode, ancestorsVisible: Bool) {
+            let isVisible = ancestorsVisible && !node.isHidden && node.opacity > 0
+            guard isVisible else { return }
+
+            if let geometry = node.geometry {
+                let materials = geometry.materials
+                let hasVisibleMaterial = materials.isEmpty || materials.contains { $0.transparency > 0 }
+                if hasVisibleMaterial {
+                    let bounds = geometry.boundingBox
+                    let low = bounds.min
+                    let high = bounds.max
+                    for x in [low.x, high.x] {
+                        for y in [low.y, high.y] {
+                            for z in [low.z, high.z] {
+                                let point = node.convertPosition(SCNVector3(x, y, z), to: rig.rootNode)
+                                minX = min(minX, point.x)
+                                minY = min(minY, point.y)
+                                minZ = min(minZ, point.z)
+                                maxX = max(maxX, point.x)
+                                maxY = max(maxY, point.y)
+                                maxZ = max(maxZ, point.z)
+                            }
+                        }
+                    }
+                }
+            }
+
+            for child in node.childNodes {
+                collectVisibleGeometry(child, ancestorsVisible: isVisible)
+            }
+        }
+
+        collectVisibleGeometry(rig.rootNode, ancestorsVisible: true)
+        guard minX.isFinite, minY.isFinite, minZ.isFinite,
+              maxX.isFinite, maxY.isFinite, maxZ.isFinite else { return }
+
+        let centerX = (minX + maxX) * 0.5
+        let centerY = (minY + maxY) * 0.5
+        let centerZ = (minZ + maxZ) * 0.5
         rig.rootNode.position.x -= centerX
-        let extentX = max(abs(Double(minBounds.x - centerX)), abs(Double(maxBounds.x - centerX)))
-        let extentY = max(abs(Double(minBounds.y)), abs(Double(maxBounds.y)))
-        let extentZ = max(abs(Double(minBounds.z)), abs(Double(maxBounds.z)))
-        // The 35% envelope covers articulated wing and tail sweeps during dance poses.
-        let radius = sqrt(pow(extentX, 2) + pow(extentY, 2) + pow(extentZ, 2)) * 1.35
-        let distance = max(1.2, radius / sin(Double.pi * 48.0 / 360.0) + 0.12)
-        cameraNode.position = SCNVector3(0, 0.38, Float(distance))
+        var halfWidth = Double(maxX - minX) * 0.5
+        let halfHeight = Double(maxY - minY) * 0.5
+        let halfDepth = Double(maxZ - minZ) * 0.5
+        let hasExtendedWingsOrTail = species.map { $0 == .dragon || $0 == .fox }
+            ?? (rig.leftWingNode != nil || (rig.tailNode != nil && halfWidth > halfHeight * 0.9))
+        if hasExtendedWingsOrTail { halfWidth *= 1.10 }
+
+        let halfFOV = 48.0 * Double.pi / 360.0
+        let distance = max(1.2, (max(halfHeight, halfWidth) / tan(halfFOV) + halfDepth) * 1.12)
+        // Keep the existing slight downward camera angle while aiming its optical axis at the bounds centre.
+        cameraNode.eulerAngles = SCNVector3(-0.06, 0, 0)
+        let cameraY = Double(centerY) + distance * sin(0.06)
+        cameraNode.position = SCNVector3(0, Float(cameraY), Float(Double(centerZ) + distance))
     }
 
     // MARK: - Coordinator Driving Procedural Kinematics, Facial System & Emotions
@@ -252,7 +299,7 @@ public struct Pet3DSceneView: NSViewRepresentable {
             self.lastAccessory = petState.customAccessory
 
             rimLightNode?.light?.color = NSColor(activeSpecies.accentColor)
-            if let cameraNode { Pet3DSceneView.frameCamera(for: rig, cameraNode: cameraNode) }
+            if let cameraNode { Pet3DSceneView.frameCamera(for: rig, cameraNode: cameraNode, species: activeSpecies) }
         }
 
         func updateIfConfigChanged(petState: PetState) {

@@ -54,9 +54,8 @@ public class DraggableHostingView<Content: View>: NSHostingView<Content> {
 
     /// Checks if a mouse event is within the visible pet stage.
     private func isEventInPetArea(_ event: NSEvent) -> Bool {
-        let localLoc = convert(event.locationInWindow, from: nil)
         let petRect = PetWindowController.shared.currentPetInteractiveRectInWindow()
-        return petRect.contains(localLoc)
+        return petRect.contains(event.locationInWindow)
     }
 
     override public func hitTest(_ point: NSPoint) -> NSView? {
@@ -64,20 +63,21 @@ public class DraggableHostingView<Content: View>: NSHostingView<Content> {
             return nil
         }
 
+        let pointInWindow = superview?.convert(point, to: nil) ?? point
         let petRect = PetWindowController.shared.currentPetInteractiveRectInWindow()
 
         if !PetState.shared.isChatOpen {
-            if petRect.contains(point) { return self }
+            if petRect.contains(pointInWindow) { return self }
             return nil // Complete pass-through for transparent corners to underlying desktop
         }
 
         // Chat is open
-        if petRect.contains(point) {
+        if petRect.contains(pointInWindow) {
             return self
         }
 
         let chatRect = PetWindowController.shared.currentChatPanelRectInWindow()
-        if chatRect.contains(point) {
+        if chatRect.contains(pointInWindow) {
             return super.hitTest(point)
         }
 

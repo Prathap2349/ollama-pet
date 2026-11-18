@@ -467,8 +467,7 @@ public struct SettingsContainerView: View {
                     .padding(.horizontal, 8)
                     .padding(.vertical, 10)
                 }
-
-                Spacer()
+                .frame(maxHeight: .infinity)
 
                 // Emergency Safe Mode Quick Button
                 VStack(spacing: 6) {
@@ -562,6 +561,7 @@ public struct SettingsContainerView: View {
                     .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
             }
+            .toggleStyle(.switch)
         }
         .frame(minWidth: 700, minHeight: 540)
     }
@@ -624,7 +624,9 @@ struct CharacterSettingsSection: View {
                     }
                 }
             }
-            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .toggleStyle(.switch)
+            .padding(14)
             .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
 
             // 2. Character Customization (Phase 14)
@@ -638,13 +640,13 @@ struct CharacterSettingsSection: View {
                             get: { petState.customHornEnabled },
                             set: { _ in petState.toggleHorns() }
                         ))
-                        .toggleStyle(.checkbox)
+                        .toggleStyle(.switch)
 
                         Toggle("Wings", isOn: Binding(
                             get: { petState.customWingsEnabled },
                             set: { _ in petState.toggleWings() }
                         ))
-                        .toggleStyle(.checkbox)
+                        .toggleStyle(.switch)
                     }
 
                     Text("Accessory:")
@@ -665,7 +667,8 @@ struct CharacterSettingsSection: View {
                     .frame(width: 130)
                 }
             }
-            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(14)
             .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
 
             // Silhouette Grayscale Test Mode Toggle (Prominent)
@@ -679,7 +682,8 @@ struct CharacterSettingsSection: View {
                 }
             }
             .toggleStyle(.switch)
-            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(14)
             .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
 
             // Live Silhouette Preview Stage
@@ -745,6 +749,7 @@ struct CharacterSettingsSection: View {
                     .padding(.top, 4)
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(14)
             .background(RoundedRectangle(cornerRadius: 12).fill(Color.primary.opacity(0.03)))
 
@@ -787,7 +792,8 @@ struct CharacterSettingsSection: View {
                 }
                 .buttonStyle(.borderedProminent)
             }
-            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(14)
             .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
 
             // Autonomous Life Scheduler
@@ -813,7 +819,8 @@ struct CharacterSettingsSection: View {
                     .frame(width: 260)
                 }
             }
-            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(14)
             .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
         }
     }
@@ -1384,6 +1391,7 @@ struct GeneralSettingsSection: View {
                         }
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(14)
             .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
             .onAppear {
@@ -3603,6 +3611,8 @@ struct FocusDurationEditorView: View {
                             Text("Hours")
                                 .font(.system(size: 10, weight: .bold))
                                 .foregroundColor(.secondary)
+                                .frame(width: 60)
+                                .lineLimit(1)
                             TextField("00", text: $hoursText)
                                 .textFieldStyle(.roundedBorder)
                                 .frame(width: 44)
@@ -3620,6 +3630,8 @@ struct FocusDurationEditorView: View {
                             Text("Minutes")
                                 .font(.system(size: 10, weight: .bold))
                                 .foregroundColor(.secondary)
+                                .frame(width: 60)
+                                .lineLimit(1)
                             TextField("25", text: $minutesText)
                                 .textFieldStyle(.roundedBorder)
                                 .frame(width: 44)
@@ -3637,6 +3649,8 @@ struct FocusDurationEditorView: View {
                             Text("Seconds")
                                 .font(.system(size: 10, weight: .bold))
                                 .foregroundColor(.secondary)
+                                .frame(width: 60)
+                                .lineLimit(1)
                             TextField("00", text: $secondsText)
                                 .textFieldStyle(.roundedBorder)
                                 .frame(width: 44)
@@ -3682,6 +3696,7 @@ struct FocusDurationEditorView: View {
             .padding(10)
             .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.03)))
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
         .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
         .onAppear {
@@ -3802,6 +3817,8 @@ struct FocusSettingsSection: View {
                     }
                 }
             }
+            .toggleStyle(.switch)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(14)
             .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
 
@@ -3823,6 +3840,8 @@ struct FocusSettingsSection: View {
                     }
                 }
             }
+            .toggleStyle(.switch)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(14)
             .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
 
@@ -3845,6 +3864,7 @@ struct FocusSettingsSection: View {
                 }
                 .buttonStyle(.borderedProminent)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(14)
             .background(RoundedRectangle(cornerRadius: 10).fill(Color.accentColor.opacity(0.08)))
         }

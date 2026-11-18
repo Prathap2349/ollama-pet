@@ -45,7 +45,7 @@ public class WalkerManager: ObservableObject {
     public init() {}
 
     /// Starts a walk. With no `style`, an autonomous walk picks one at random (mostly strolls);
-    /// `isTest` keeps the fixed 250 pt test distance.
+    /// Test and crossing walks travel to the far edge of the allowed range.
     public func startWalk(species: PetSpecies, isTest: Bool = false, style: WalkStyle? = nil) {
         guard !isWalking else { return }
         isWalking = true
@@ -168,7 +168,7 @@ public class WalkerManager: ObservableObject {
         var target: CGFloat
         if isTest {
             let middle = (minX + maxX) / 2
-            target = currentX > middle ? (currentX - 250) : (currentX + 250)
+            target = currentX > middle ? minX : maxX
         } else {
             switch style {
             case .stroll:
@@ -182,13 +182,9 @@ public class WalkerManager: ObservableObject {
                 target = currentX + direction * distance
 
             case .crossing:
-                // Head for the far half of the screen.
+                // A crossing walk reaches the far edge of the allowed screen range.
                 let halfway = (minX + maxX) / 2
-                if currentX > halfway {
-                    target = CGFloat.random(in: minX...max(minX, halfway - 40))
-                } else {
-                    target = CGFloat.random(in: min(maxX, halfway + 40)...maxX)
-                }
+                target = currentX > halfway ? minX : maxX
 
             case .run:
                 let minRun = petWidth * 2.5
@@ -267,15 +263,23 @@ public class WalkerManager: ObservableObject {
                 x = max(liveBounds.lowerBound, min(liveBounds.upperBound, x))
             }
             // Land on whole device pixels so slow movement does not shimmer.
-            x = (x * backingScale).rounded() / backingScale
+            let reachedTarget = elapsed >= profile.duration
+            if reachedTarget {
+                x = plan.targetX
+            } else {
+                x = (x * backingScale).rounded() / backingScale
+            }
 
             // Y is read every frame so a drag in the other axis is not undone.
-            petWin.updatePetOriginFromDrag(NSPoint(x: x, y: liveOrigin.y))
+            petWin.updatePetOriginDuringWalk(NSPoint(x: x, y: liveOrigin.y))
 
-            if elapsed >= profile.duration { break }
+            if reachedTarget { break }
             try? await Task.sleep(nanoseconds: WalkerManager.frameIntervalNanos)
         }
         if Task.isCancelled { return }
+
+        // Reconcile layout once after the final movement frame rather than publishing it every tick.
+        petWin.updatePetOriginFromDrag(NSPoint(x: plan.targetX, y: petWin.petOrigin.y))
 
         // 4. Keep the walk pose briefly while the stride fades out, then stop.
         try? await Task.sleep(nanoseconds: WalkerManager.strideFadeOutNanos)

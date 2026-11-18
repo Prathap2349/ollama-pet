@@ -48,6 +48,7 @@ public class DraggableHostingView<Content: View>: NSHostingView<Content> {
     private var initialMouseLocation: NSPoint = .zero
     private var initialPetOrigin: NSPoint = .zero
     private var isDragging = false
+    private var suppressClickAfterStoppingWalk = false
     private let dragThreshold: CGFloat = 5.0
     private var clickCount = 0
     private var clickTimer: Timer?
@@ -93,13 +94,15 @@ public class DraggableHostingView<Content: View>: NSHostingView<Content> {
         }
 
         // Mouse down inside pet area — prepare for drag or pet click
+        suppressClickAfterStoppingWalk = WalkerManager.shared.isWalking
+        if suppressClickAfterStoppingWalk { WalkerManager.shared.stopWalk() }
         initialMouseLocation = NSEvent.mouseLocation
         initialPetOrigin = PetWindowController.shared.petOrigin
         isDragging = false
     }
 
     override public func mouseDragged(with event: NSEvent) {
-        if !isEventInPetArea(event) && !isDragging {
+        if !isEventInPetArea(event) && !isDragging && !suppressClickAfterStoppingWalk {
             super.mouseDragged(with: event)
             return
         }
@@ -139,7 +142,7 @@ public class DraggableHostingView<Content: View>: NSHostingView<Content> {
     }
 
     override public func mouseUp(with event: NSEvent) {
-        if !isEventInPetArea(event) && !isDragging {
+        if !isEventInPetArea(event) && !isDragging && !suppressClickAfterStoppingWalk {
             super.mouseUp(with: event)
             return
         }
@@ -151,6 +154,9 @@ public class DraggableHostingView<Content: View>: NSHostingView<Content> {
             snapPetToCornerIfNeeded()
             let origin = PetWindowController.shared.petOrigin
             DataManager.shared.updatePosition(x: Double(origin.x), y: Double(origin.y))
+            suppressClickAfterStoppingWalk = false
+        } else if suppressClickAfterStoppingWalk {
+            suppressClickAfterStoppingWalk = false
         } else {
             // Click inside pet area!
             handleClick()
@@ -332,7 +338,12 @@ public class PetWindowController: NSObject, ObservableObject, NSWindowDelegate {
         let verticalScale = max(spaceBelow, spaceAbove) / (PetWindowLayout.baseChatHeight - PetWindowLayout.basePetSize)
         let horizontalScale = max(spaceRight, spaceLeft) / PetWindowLayout.baseChatWidth
         let nextChatScale = min(requestedScale, verticalScale, horizontalScale)
-        self.chatContentScale = max(0.1, nextChatScale)
+        let resolvedChatScale = max(0.1, nextChatScale)
+        var layoutChanged = false
+        if chatContentScale != resolvedChatScale {
+            chatContentScale = resolvedChatScale
+            layoutChanged = true
+        }
         let panelWidth = max(petSize, PetWindowLayout.baseChatWidth * chatContentScale)
         let isLeft = spaceRight >= panelWidth || (spaceLeft < panelWidth && spaceRight >= spaceLeft)
         let requiredChatHeight = (PetWindowLayout.baseChatHeight - PetWindowLayout.basePetSize) * chatContentScale
@@ -344,9 +355,15 @@ public class PetWindowController: NSObject, ObservableObject, NSWindowDelegate {
         } else {
             isTop = spaceBelow >= spaceAbove
         }
-        self.currentAnchor = PanelAnchor(isLeft: isLeft, isTop: isTop)
-        PetState.shared.activeAnchor = self.currentAnchor
-        layoutVersion &+= 1
+        let nextAnchor = PanelAnchor(isLeft: isLeft, isTop: isTop)
+        if currentAnchor != nextAnchor {
+            currentAnchor = nextAnchor
+            layoutChanged = true
+        }
+        if PetState.shared.activeAnchor != nextAnchor {
+            PetState.shared.activeAnchor = nextAnchor
+        }
+        if layoutChanged { layoutVersion &+= 1 }
     }
 
     public var screenContainingPet: NSScreen? {
@@ -389,7 +406,8 @@ public class PetWindowController: NSObject, ObservableObject, NSWindowDelegate {
         let frame = screen.visibleFrame
         let fitWidth = frame.width / PetWindowLayout.basePetSize
         let fitHeight = frame.height / (PetWindowLayout.basePetSize + PetWindowLayout.baseClosedBubbleClearance)
-        petLayoutScale = max(0.1, min(requested, fitWidth, fitHeight))
+        let nextScale = max(0.1, min(requested, fitWidth, fitHeight))
+        if petLayoutScale != nextScale { petLayoutScale = nextScale }
     }
 
     private func clampedPetOrigin(_ origin: NSPoint, to frame: NSRect) -> NSPoint {
@@ -461,6 +479,13 @@ public class PetWindowController: NSObject, ObservableObject, NSWindowDelegate {
         }
     }
 
+    /// Updates the moving pet's closed-window frame without publishing layout changes.
+    public func updatePetOriginDuringWalk(_ newPetOrigin: NSPoint) {
+        guard !PetState.shared.isChatOpen, let win = window else { return }
+        petOrigin = newPetOrigin
+        win.setFrame(calculateWindowFrame(forPetOrigin: petOrigin, open: false), display: true, animate: false)
+    }
+
     private func calculateWindowFrame(forPetOrigin origin: NSPoint, open: Bool) -> NSRect {
         let petSize = PetWindowLayout.petSize
         if !open {
@@ -483,6 +508,7 @@ public class PetWindowController: NSObject, ObservableObject, NSWindowDelegate {
 
     public func adjustWindowSize(open: Bool) {
         guard let win = window else { return }
+        if open && WalkerManager.shared.isWalking { WalkerManager.shared.stopWalk() }
         recomputeAnchor()
         let targetFrame = calculateWindowFrame(forPetOrigin: petOrigin, open: open)
         win.setFrame(targetFrame, display: true, animate: false)

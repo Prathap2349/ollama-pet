@@ -76,7 +76,7 @@ struct ChatView: View {
             ActionConfirmationView()
         }
         .animation(.easeInOut(duration: 0.18), value: petState.activeTab)
-        .frame(width: 360, height: 466)
+        .frame(width: PetWindowLayout.baseChatWidth, height: PetWindowLayout.baseChatContentHeight)
         .background(
             RoundedRectangle(cornerRadius: 20)
                 .fill(Color(red: 15/255, green: 17/255, blue: 26/255).opacity(0.96))

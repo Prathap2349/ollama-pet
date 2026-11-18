@@ -9,6 +9,8 @@ struct PetStageView: View {
     @ObservedObject var weatherService = WeatherService.shared
     @ObservedObject var walker = WalkerManager.shared
     @ObservedObject var perf = PerformanceManager.shared
+    @ObservedObject var dataManager = DataManager.shared
+    @ObservedObject var windowController = PetWindowController.shared
 
     private var isLocomotionActive: Bool {
         if walker.isWalking { return true }
@@ -29,27 +31,32 @@ struct PetStageView: View {
                         // Pet is at top: Stage on top, Panel below
                         petStageArea
                         ChatView()
-                            .padding(.top, 4)
+                            .scaleEffect(PetWindowLayout.chatScale, anchor: .center)
+                            .frame(width: PetWindowLayout.chatWidth, height: PetWindowLayout.chatContentHeight)
+                            .padding(.top, 4 * PetWindowLayout.chatScale)
                         Spacer(minLength: 0)
                     } else {
                         // Pet is at bottom: Panel on top, Stage at bottom
                         Spacer(minLength: 0)
                         ChatView()
-                            .padding(.bottom, 4)
+                            .scaleEffect(PetWindowLayout.chatScale, anchor: .center)
+                            .frame(width: PetWindowLayout.chatWidth, height: PetWindowLayout.chatContentHeight)
+                            .padding(.bottom, 4 * PetWindowLayout.chatScale)
                         petStageArea
                     }
                 }
-                .frame(width: 360, height: 620)
+                .frame(width: PetWindowLayout.chatWindowWidth, height: PetWindowLayout.chatWindowHeight)
             } else {
-                // Closed state: exactly 140x140
                 petStageArea
-                    .frame(width: 140, height: 140)
+                    .frame(width: PetWindowLayout.petSize, height: PetWindowLayout.petSize)
+                    .frame(width: PetWindowLayout.petSize, height: PetWindowLayout.closedWindowHeight, alignment: .bottom)
             }
         }
         .frame(
-            width: petState.isChatOpen ? 360 : 140,
-            height: petState.isChatOpen ? 620 : 140
+            width: petState.isChatOpen ? PetWindowLayout.chatWindowWidth : PetWindowLayout.petSize,
+            height: petState.isChatOpen ? PetWindowLayout.chatWindowHeight : PetWindowLayout.closedWindowHeight
         )
+        .onChange(of: dataManager.savedData.petScale) { _ in windowController.updateLayoutForScale() }
     }
 
     private var petAlignment: Alignment {
@@ -72,7 +79,7 @@ struct PetStageView: View {
                 if petState.isCelebrationPulsing {
                     Circle()
                         .stroke(petState.celebrationPulseColor.opacity(0.85), lineWidth: 3.5)
-                        .frame(width: 122, height: 122)
+                        .frame(width: PetWindowLayout.pulseSize, height: PetWindowLayout.pulseSize)
                         .shadow(color: petState.celebrationPulseColor, radius: 12, x: 0, y: 0)
                         .scaleEffect(1.0 + CGFloat(sin(petState.animTime * 6.0)) * 0.05)
                 }
@@ -115,7 +122,7 @@ struct PetStageView: View {
                         }
                         Spacer()
                     }
-                    .frame(width: 116, height: 116)
+                    .frame(width: PetWindowLayout.indicatorSize, height: PetWindowLayout.indicatorSize)
                     .transition(.opacity)
                 }
 
@@ -132,7 +139,7 @@ struct PetStageView: View {
                             Spacer()
                         }
                     }
-                    .frame(width: 116, height: 116)
+                    .frame(width: PetWindowLayout.indicatorSize, height: PetWindowLayout.indicatorSize)
                     .transition(.opacity)
                 }
 
@@ -153,7 +160,7 @@ struct PetStageView: View {
                                     )
                                     .shadow(color: Color.black.opacity(0.4), radius: 4, x: 0, y: 2)
                             )
-                            .offset(y: -58)
+                            .offset(y: -PetWindowLayout.bubbleOffset)
                         Spacer()
                     }
                 }
@@ -169,7 +176,7 @@ struct PetStageView: View {
                                 Capsule()
                                     .fill(Color.white.opacity(0.2))
                             )
-                            .offset(y: -58)
+                            .offset(y: -PetWindowLayout.bubbleOffset)
                         Spacer()
                     }
                 }
@@ -189,24 +196,25 @@ struct PetStageView: View {
                                 .frame(width: geo.size.width * CGFloat(min(1.0, sysMon.cpuPercent / 100.0)))
                         }
                     }
-                    .frame(width: 44, height: 3)
-                    .offset(y: 52)
+                    .frame(width: 44 * PetWindowLayout.scale, height: 3 * PetWindowLayout.scale)
+                    .offset(y: PetWindowLayout.thermalOffset)
                 }
             }
-            .frame(width: 140, height: 140)
+            .frame(width: PetWindowLayout.petSize, height: PetWindowLayout.petSize)
 
             if petState.activeAnchor.isLeft && petState.isChatOpen {
                 Spacer(minLength: 0)
             }
         }
-        .frame(width: petState.isChatOpen ? 360 : 140, height: 140)
+        .frame(width: petState.isChatOpen ? PetWindowLayout.chatWindowWidth : PetWindowLayout.petSize,
+               height: PetWindowLayout.petSize)
     }
 
     @ViewBuilder
     private var characterViewport: some View {
         if petState.renderEngineMode == .threeD {
             Pet3DSceneView()
-                .frame(width: 120, height: 120)
+                .frame(width: PetWindowLayout.viewportSize, height: PetWindowLayout.viewportSize)
         } else {
             canvasView
         }
@@ -236,7 +244,7 @@ struct PetStageView: View {
                     perf: perf
                 )
             }
-            .frame(width: 120, height: 120)
+            .frame(width: PetWindowLayout.viewportSize, height: PetWindowLayout.viewportSize)
         }
     }
 

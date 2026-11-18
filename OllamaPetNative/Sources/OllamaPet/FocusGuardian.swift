@@ -1,5 +1,7 @@
 import Foundation
 import AppKit
+import CoreGraphics
+import UserNotifications
 
 @MainActor
 public class FocusGuardian: ObservableObject {
@@ -80,11 +82,13 @@ public class FocusGuardian: ObservableObject {
 
     private var sessionTimer: Timer?
     private var hydrationTimer: Timer?
+    private var eyeBreakTimer: Timer?
     private var lastAwayNotificationDate: Date? = nil
     private var lastHydrationNotificationDate: Date? = nil
+    private var nextWaterReminderDate: Date?
 
     public init() {
-        startHydrationTimerIfNeeded()
+        resetWaterCountIfNeeded()
     }
 
     private func syncPendingDuration() {
@@ -251,29 +255,111 @@ public class FocusGuardian: ObservableObject {
 
     public func startHydrationTimerIfNeeded() {
         hydrationTimer?.invalidate()
-        let enabled = DataManager.shared.savedData.hydrationReminderEnabled ?? true
-        guard enabled else { return }
-
-        let intervalMins = DataManager.shared.savedData.hydrationIntervalMinutes ?? 60
-        let seconds = Double(intervalMins * 60)
-
-        hydrationTimer = Timer.scheduledTimer(withTimeInterval: seconds, repeats: true) { [weak self] _ in
+        eyeBreakTimer?.invalidate()
+        let enabled = DataManager.shared.savedData.hydrationReminderEnabled ?? false
+        let eyeBreakEnabled = DataManager.shared.savedData.eyeBreakReminderEnabled ?? false
+        guard enabled || eyeBreakEnabled else { return }
+        let intervalMins = max(10, min(240, DataManager.shared.savedData.hydrationIntervalMinutes ?? 60))
+        if enabled { nextWaterReminderDate = Date().addingTimeInterval(Double(intervalMins * 60)) }
+        let tick: @Sendable (Timer) -> Void = { [weak self] _ in
             Task { @MainActor in
-                self?.triggerHydrationReminder()
+                self?.checkWaterReminder()
+            }
+        }
+        hydrationTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true, block: tick)
+        if eyeBreakEnabled {
+            eyeBreakTimer = Timer.scheduledTimer(withTimeInterval: Double(intervalMins * 60), repeats: true) { [weak self] _ in
+                Task { @MainActor in self?.triggerEyeBreakReminder() }
             }
         }
     }
 
     public func triggerHydrationReminder() {
-        let enabled = DataManager.shared.savedData.hydrationReminderEnabled ?? true
-        guard enabled else { return }
+        checkWaterReminder(force: true)
+    }
 
-        PetState.shared.showBubble("💧 Hydration reminder! Take a sip of water.", duration: 4.0)
-        SoundEffect.alert.play()
-        DataManager.shared.postNotification(
-            title: "💧 Hydration Reminder",
-            body: "You've been working for a while. Take a quick water break."
-        )
+    public var waterTodayCount: Int {
+        resetWaterCountIfNeeded()
+        return DataManager.shared.savedData.waterTodayCount ?? 0
+    }
+
+    public func recordWaterDrink() {
+        resetWaterCountIfNeeded()
+        let data = DataManager.shared
+        data.savedData.waterTodayCount = (data.savedData.waterTodayCount ?? 0) + 1
+        data.saveData()
+        showWaterReaction("🥤 *glug glug!* Thanks for the water!")
+    }
+
+    public func snoozeWaterReminder() {
+        nextWaterReminderDate = Date().addingTimeInterval(10 * 60)
+    }
+
+    private func triggerEyeBreakReminder() {
+        let data = DataManager.shared.savedData
+        guard data.eyeBreakReminderEnabled ?? false,
+              !(data.quietModeEnabled ?? false), !isScreenLocked,
+              isWithinWaterHours(Date()) else { return }
+        PetState.shared.showBubble("👀 Look at something 20 feet away for 20 seconds.", duration: 3.0)
+        DataManager.shared.postNotification(title: "👀 Eye break", body: "Look at something 20 feet away for 20 seconds.")
+    }
+
+    private func checkWaterReminder(force: Bool = false) {
+        let manager = DataManager.shared
+        guard manager.savedData.hydrationReminderEnabled ?? false else { return }
+        let now = Date()
+        resetWaterCountIfNeeded()
+        guard force || nextWaterReminderDate.map({ now >= $0 }) == true else { return }
+        let interval = Double(max(10, min(240, manager.savedData.hydrationIntervalMinutes ?? 60)) * 60)
+        nextWaterReminderDate = now.addingTimeInterval(interval)
+        guard !(manager.savedData.quietModeEnabled ?? false), !isScreenLocked, isWithinWaterHours(now) else { return }
+
+        showWaterReaction("💧 Time for a sip of water!")
+        let content = UNMutableNotificationContent()
+        content.title = "💧 Water reminder"
+        content.body = "Take a moment for a glass of water."
+        content.categoryIdentifier = "WATER_REMINDER"
+        content.sound = .default
+        let request = UNNotificationRequest(identifier: "water-reminder-\(UUID().uuidString)", content: content, trigger: nil)
+        UNUserNotificationCenter.current().add(request)
+    }
+
+    private var isScreenLocked: Bool {
+        (CGSessionCopyCurrentDictionary() as? [String: Any])?["CGSSessionScreenIsLocked"] as? Bool ?? false
+    }
+
+    private func isWithinWaterHours(_ date: Date) -> Bool {
+        let data = DataManager.shared.savedData
+        func minutes(_ value: String?) -> Int? {
+            guard let value else { return nil }
+            let parts = value.split(separator: ":").compactMap { Int($0) }
+            guard parts.count == 2, (0...23).contains(parts[0]), (0...59).contains(parts[1]) else { return nil }
+            return parts[0] * 60 + parts[1]
+        }
+        guard let start = minutes(data.waterActiveStart ?? "09:00"), let end = minutes(data.waterActiveEnd ?? "18:00") else { return false }
+        let components = Calendar.current.dateComponents([.hour, .minute], from: date)
+        let current = (components.hour ?? 0) * 60 + (components.minute ?? 0)
+        return start <= end ? (current >= start && current <= end) : (current >= start || current <= end)
+    }
+
+    private func resetWaterCountIfNeeded() {
+        let manager = DataManager.shared
+        let today = ISO8601DateFormatter().string(from: Calendar.current.startOfDay(for: Date()))
+        if manager.savedData.waterCountDate != today {
+            manager.savedData.waterCountDate = today
+            manager.savedData.waterTodayCount = 0
+            manager.saveData()
+        }
+    }
+
+    private func showWaterReaction(_ message: String) {
+        let pet = PetState.shared
+        let previous = pet.animState
+        pet.animState = .groom
+        pet.showBubble(message, duration: 3.0)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+            if PetState.shared.animState == .groom { PetState.shared.animState = previous }
+        }
     }
 
     public func setConfiguredDuration(seconds: Int) {
@@ -290,6 +376,7 @@ public class FocusGuardian: ObservableObject {
     deinit {
         sessionTimer?.invalidate()
         hydrationTimer?.invalidate()
+        eyeBreakTimer?.invalidate()
     }
 }
 

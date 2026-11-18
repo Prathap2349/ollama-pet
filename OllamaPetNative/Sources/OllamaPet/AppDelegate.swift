@@ -58,6 +58,10 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         let s2 = log.begin("UserNotifications delegate setup")
         if Bundle.main.bundleIdentifier != nil {
             UNUserNotificationCenter.current().delegate = self
+            let drank = UNNotificationAction(identifier: "WATER_DRANK", title: "I drank", options: [])
+            let snooze = UNNotificationAction(identifier: "WATER_SNOOZE", title: "Snooze 10 min", options: [])
+            let waterCategory = UNNotificationCategory(identifier: "WATER_REMINDER", actions: [drank, snooze], intentIdentifiers: [])
+            UNUserNotificationCenter.current().setNotificationCategories([waterCategory])
             // Request authorization asynchronously — denial must never crash startup
             NotificationScheduler.shared.requestAuthorization()
         }
@@ -66,6 +70,7 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         // ── Stage 3: DataManager (load saved data) ─────────────────────────
         let s3 = log.begin("DataManager initialization")
         _ = DataManager.shared   // trigger load; errors are caught internally
+        FocusGuardian.shared.startHydrationTimerIfNeeded()
         log.complete(s3)
 
         // ── Stage 4: Menu bar status item ──────────────────────────────────
@@ -175,6 +180,11 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         let settingsItem = NSMenuItem(title: "Settings...", action: #selector(openSettingsWindow), keyEquivalent: ",")
         menu.addItem(settingsItem)
 
+        let water = DataManager.shared.savedData
+        let waterItem = NSMenuItem(title: "Water: \(FocusGuardian.shared.waterTodayCount) / \(water.waterDailyGoal ?? 8)", action: #selector(toggleWaterMenu(_:)), keyEquivalent: "")
+        waterItem.state = (water.hydrationReminderEnabled ?? false) ? .on : .off
+        menu.addItem(waterItem)
+
         let safeModeItem = NSMenuItem(title: "🛡️ Safe Mode (15 FPS)", action: #selector(toggleSafeModeMenu(_:)), keyEquivalent: "")
         safeModeItem.state = PerformanceManager.shared.isSafeMode ? .on : .off
         menu.addItem(safeModeItem)
@@ -209,6 +219,13 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func toggleSafeModeMenu(_ sender: NSMenuItem) {
         PerformanceManager.shared.toggleSafeMode()
         sender.state = PerformanceManager.shared.isSafeMode ? .on : .off
+    }
+
+    @objc private func toggleWaterMenu(_ sender: NSMenuItem) {
+        let enabled = !(DataManager.shared.savedData.hydrationReminderEnabled ?? false)
+        DataManager.shared.setHydrationReminderEnabled(enabled)
+        sender.state = enabled ? .on : .off
+        FocusGuardian.shared.startHydrationTimerIfNeeded()
     }
 
     @objc private func statusItemClicked() {
@@ -356,6 +373,10 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
+        if notification.request.content.userInfo["type"] as? String == "reminder" {
+            completionHandler([])
+            return
+        }
         if #available(macOS 11.0, *) {
             completionHandler([.banner, .sound, .badge, .list])
         } else {
@@ -369,7 +390,15 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
         Task { @MainActor in
-            PetWindowController.shared.showWindow()
+            switch response.actionIdentifier {
+            case "WATER_DRANK":
+                PetWindowController.shared.showWindow()
+                FocusGuardian.shared.recordWaterDrink()
+            case "WATER_SNOOZE":
+                FocusGuardian.shared.snoozeWaterReminder()
+            default:
+                PetWindowController.shared.showWindow()
+            }
         }
         completionHandler()
     }

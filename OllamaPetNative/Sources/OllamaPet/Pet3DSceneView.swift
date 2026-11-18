@@ -38,6 +38,7 @@ public struct Pet3DSceneView: NSViewRepresentable {
         cameraNode.position = SCNVector3(0, 0.38, 2.3)
         cameraNode.eulerAngles = SCNVector3(-0.06, 0, 0)
         scene.rootNode.addChildNode(cameraNode)
+        context.coordinator.cameraNode = cameraNode
 
         // Key Light with soft shadows
         let keyLight = SCNNode()
@@ -77,7 +78,29 @@ public struct Pet3DSceneView: NSViewRepresentable {
     }
 
     public func updateNSView(_ nsView: SCNView, context: Context) {
+        context.coordinator.parent = self
         context.coordinator.updateIfConfigChanged(petState: petState)
+        context.coordinator.updateRenderInterval()
+    }
+
+    public static func dismantleNSView(_ nsView: SCNView, coordinator: Coordinator) {
+        coordinator.stopRenderLoop()
+    }
+
+    public static func frameCamera(for rig: Pet3DRig, cameraNode: SCNNode) {
+        let bounds = rig.rootNode.boundingBox
+        let minBounds = bounds.min
+        let maxBounds = bounds.max
+
+        let centerX = (minBounds.x + maxBounds.x) * 0.5
+        rig.rootNode.position.x -= centerX
+        let extentX = max(abs(Double(minBounds.x - centerX)), abs(Double(maxBounds.x - centerX)))
+        let extentY = max(abs(Double(minBounds.y)), abs(Double(maxBounds.y)))
+        let extentZ = max(abs(Double(minBounds.z)), abs(Double(maxBounds.z)))
+        // The 35% envelope covers articulated wing and tail sweeps during dance poses.
+        let radius = sqrt(pow(extentX, 2) + pow(extentY, 2) + pow(extentZ, 2)) * 1.35
+        let distance = max(1.2, radius / sin(Double.pi * 48.0 / 360.0) + 0.12)
+        cameraNode.position = SCNVector3(0, 0.38, Float(distance))
     }
 
     // MARK: - Coordinator Driving Procedural Kinematics, Facial System & Emotions
@@ -102,11 +125,13 @@ public struct Pet3DSceneView: NSViewRepresentable {
         /// Stride amplitude envelope: fades in as the window starts moving and out as it stops.
         private var gaitAmplitude: CGFloat = 0
         var rimLightNode: SCNNode?
+        weak var cameraNode: SCNNode?
         var lastSpecies: PetSpecies?
         var lastHorn: Bool?
         var lastWings: Bool?
         var lastAccessory: String?
         private var displayTimer: Timer?
+        private var renderInterval: TimeInterval = 0
         private var lastTime: TimeInterval = 0
 
         // Facial Blinking State Machine (Requirement 2)
@@ -227,6 +252,7 @@ public struct Pet3DSceneView: NSViewRepresentable {
             self.lastAccessory = petState.customAccessory
 
             rimLightNode?.light?.color = NSColor(activeSpecies.accentColor)
+            if let cameraNode { Pet3DSceneView.frameCamera(for: rig, cameraNode: cameraNode) }
         }
 
         func updateIfConfigChanged(petState: PetState) {
@@ -242,13 +268,26 @@ public struct Pet3DSceneView: NSViewRepresentable {
         }
 
         func startRenderLoop() {
-            displayTimer?.invalidate()
+            updateRenderInterval(force: true)
+        }
+
+        func updateRenderInterval(force: Bool = false) {
             let interval = max(1.0 / 60.0, parent.perf.minimumRenderInterval)
-            displayTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
+            guard force || interval != renderInterval else { return }
+            renderInterval = interval
+            displayTimer?.invalidate()
+            let timer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
                 Task { @MainActor [weak self] in
                     self?.tick()
                 }
             }
+            RunLoop.main.add(timer, forMode: .common)
+            displayTimer = timer
+        }
+
+        func stopRenderLoop() {
+            displayTimer?.invalidate()
+            displayTimer = nil
         }
 
         private func tick() {

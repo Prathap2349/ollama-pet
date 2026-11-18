@@ -574,10 +574,15 @@ public struct PetSavedData: Codable {
 
     // Multi-Provider AI Settings
     public var selectedProvider: String? = "ollama"
-    public var openaiModel: String? = "gpt-4o-mini"
-    public var geminiModel: String? = "gemini-1.5-flash"
-    public var anthropicModel: String? = "claude-3-5-haiku-20241022"
-    public var groqModel: String? = "llama-3.3-70b-versatile"
+    public var openaiModel: String? = "gpt-5.4-mini"
+    public var geminiModel: String? = "gemini-3.8-flash"
+    public var anthropicModel: String? = "claude-haiku-4-5-20251001"
+    public var groqModel: String? = "openai/gpt-oss-120b"
+    public var xaiModel: String? = "grok-4.7"
+    public var customAIProviders: [CustomAIProvider]? = []
+    public var selectedCustomAIProviderID: String? = nil
+    public var cloudFallbackEnabled: Bool? = false
+    public var cloudFallbackProvider: String? = "openai"
 
     // Voice Assistant Settings
     public var voiceAssistantEnabled: Bool?
@@ -617,6 +622,12 @@ public struct PetSavedData: Codable {
     public var speakFocusCompletionAloud: Bool? = false
     public var hydrationReminderEnabled: Bool?
     public var hydrationIntervalMinutes: Int? // default 60
+    public var waterActiveStart: String? = "09:00"
+    public var waterActiveEnd: String? = "18:00"
+    public var waterDailyGoal: Int? = 8
+    public var waterTodayCount: Int? = 0
+    public var waterCountDate: String? = nil
+    public var eyeBreakReminderEnabled: Bool? = false
     public var presenceSpokenAlertsEnabled: Bool? = false
     public var presenceOwnerGreetingEnabled: Bool? = true
     public var presenceUnknownAlertVoiceEnabled: Bool? = true
@@ -699,8 +710,14 @@ public struct PetSavedData: Codable {
         stillnessAlertEnabled: Bool? = true,
         screenMonitoringEnabled: Bool? = false,
         focusNotificationsEnabled: Bool? = true,
-        hydrationReminderEnabled: Bool? = true,
+        hydrationReminderEnabled: Bool? = false,
         hydrationIntervalMinutes: Int? = 60,
+        waterActiveStart: String? = "09:00",
+        waterActiveEnd: String? = "18:00",
+        waterDailyGoal: Int? = 8,
+        waterTodayCount: Int? = 0,
+        waterCountDate: String? = nil,
+        eyeBreakReminderEnabled: Bool? = false,
         weatherLocations: [SavedWeatherLocation] = [],
         activeWeatherLocationId: UUID? = nil,
         structuralModel: String? = nil,
@@ -746,12 +763,32 @@ public struct PetSavedData: Codable {
         self.focusNotificationsEnabled = focusNotificationsEnabled
         self.hydrationReminderEnabled = hydrationReminderEnabled
         self.hydrationIntervalMinutes = hydrationIntervalMinutes
+        self.waterActiveStart = waterActiveStart
+        self.waterActiveEnd = waterActiveEnd
+        self.waterDailyGoal = waterDailyGoal
+        self.waterTodayCount = waterTodayCount
+        self.waterCountDate = waterCountDate
+        self.eyeBreakReminderEnabled = eyeBreakReminderEnabled
         self.weatherLocations = weatherLocations
         self.activeWeatherLocationId = activeWeatherLocationId
         self.structuralModel = structuralModel
         self.walkGaitPreset = walkGaitPreset
         self.macControlSettings = macControlSettings
         self.actionHistory = actionHistory
+    }
+}
+
+public struct CustomAIProvider: Codable, Identifiable, Equatable {
+    public var id: String
+    public var name: String
+    public var baseURL: String
+    public var model: String
+
+    public init(id: String = UUID().uuidString, name: String, baseURL: String, model: String) {
+        self.id = id
+        self.name = name
+        self.baseURL = baseURL
+        self.model = model
     }
 }
 

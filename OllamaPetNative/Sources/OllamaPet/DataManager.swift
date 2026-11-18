@@ -12,12 +12,9 @@ public class DataManager: ObservableObject {
         let home = FileManager.default.homeDirectoryForCurrentUser
         self.filePath = home.appendingPathComponent("ollama-pet-data.json")
         loadData()
-        // Defer notification requests and reminder sync so init is completely non-blocking
+        // Defer reminder sync so init is completely non-blocking.
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
-            if Bundle.main.bundleIdentifier != nil {
-                self.requestNotificationPermission()
-            }
             NotificationScheduler.shared.syncPendingReminders(reminders: self.savedData.reminders)
         }
     }
@@ -81,12 +78,7 @@ public class DataManager: ObservableObject {
     // MARK: - Reminders & Notifications
 
     public func requestNotificationPermission() {
-        guard Bundle.main.bundleIdentifier != nil else { return }
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
-            if let err = error {
-                print("Notification authorization error: \(err)")
-            }
-        }
+        // Authorization is requested once by AppDelegate during launch.
     }
 
     public func postNotification(title: String, body: String) {
@@ -101,9 +93,14 @@ public class DataManager: ObservableObject {
         let secs = max(1, seconds)
         let due = Date().addingTimeInterval(Double(secs)).timeIntervalSince1970 * 1000
         let interval = repeatIntervalSeconds ?? (isRecurring ? secs : nil)
+        let usedIDs = Set(savedData.reminders.map(\.id))
+        var reminderID = Int64(Date().timeIntervalSince1970 * 1000)
+        while usedIDs.contains(reminderID) { reminderID += 1 }
         let newReminder = PetReminder(
+            id: reminderID,
             text: text,
             due: due,
+            notificationId: "reminder-\(UUID().uuidString)",
             isRecurring: isRecurring,
             repeatIntervalSeconds: interval,
             isPaused: false
@@ -116,7 +113,8 @@ public class DataManager: ObservableObject {
             id: newReminder.id,
             text: text,
             inSeconds: secs,
-            notificationId: newReminder.notificationId
+            notificationId: newReminder.notificationId,
+            repeatIntervalSeconds: isRecurring ? interval : nil
         )
     }
 
@@ -141,7 +139,8 @@ public class DataManager: ObservableObject {
                 id: rem.id,
                 text: rem.text,
                 inSeconds: interval,
-                notificationId: notifId
+                notificationId: notifId,
+                repeatIntervalSeconds: rem.isRecurring == true ? rem.repeatIntervalSeconds : nil
             )
         }
         saveData()
@@ -164,15 +163,15 @@ public class DataManager: ObservableObject {
         savedData.reminders[index].isRecurring = isRecurring
         savedData.reminders[index].repeatIntervalSeconds = isRecurring ? secs : nil
         savedData.reminders[index].isPaused = false
-        saveData()
-
         let notifId = savedData.reminders[index].notificationId ?? "reminder-\(id)"
         NotificationScheduler.shared.cancelReminder(notificationId: notifId)
+        saveData()
         NotificationScheduler.shared.scheduleReminder(
             id: id,
             text: text,
             inSeconds: secs,
-            notificationId: notifId
+            notificationId: notifId,
+            repeatIntervalSeconds: isRecurring ? secs : nil
         )
     }
 
@@ -190,7 +189,8 @@ public class DataManager: ObservableObject {
         }
 
         for item in triggered {
-            onTrigger(item, true)
+            NotificationScheduler.shared.cancelReminder(notificationId: item.notificationId ?? "reminder-\(item.id)")
+            onTrigger(item, now - item.due > 60_000)
 
             if item.isRecurring == true {
                 // Auto-reschedule recurring reminder
@@ -202,7 +202,8 @@ public class DataManager: ObservableObject {
                         id: item.id,
                         text: item.text,
                         inSeconds: interval,
-                        notificationId: item.notificationId
+                        notificationId: item.notificationId,
+                        repeatIntervalSeconds: interval >= 60 ? interval : nil
                     )
                 }
                 saveData()

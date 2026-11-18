@@ -36,7 +36,7 @@ public class NotificationScheduler {
 
     // MARK: - Scheduling Reminders
 
-    public func scheduleReminder(id: Int64, text: String, inSeconds: Int, notificationId: String? = nil) {
+    public func scheduleReminder(id: Int64, text: String, inSeconds: Int, notificationId: String? = nil, repeatIntervalSeconds: Int? = nil) {
         guard Bundle.main.bundleIdentifier != nil else { return }
         let identifier = notificationId ?? "reminder-\(id)"
         let secs = max(1, inSeconds)
@@ -47,7 +47,11 @@ public class NotificationScheduler {
         content.sound = .default
         content.userInfo = ["type": "reminder", "id": id]
 
-        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: TimeInterval(secs), repeats: false)
+        let repeatInterval = repeatIntervalSeconds.flatMap { $0 >= 60 ? $0 : nil }
+        let trigger = UNTimeIntervalNotificationTrigger(
+            timeInterval: TimeInterval(repeatInterval ?? secs),
+            repeats: repeatInterval != nil
+        )
         let request = UNNotificationRequest(identifier: identifier, content: content, trigger: trigger)
 
         UNUserNotificationCenter.current().add(request) { error in
@@ -125,18 +129,8 @@ public class NotificationScheduler {
                     completion?(true)
                 }
             } else if settings.authorizationStatus == .notDetermined {
-                self?.requestAuthorization { granted in
-                    if granted {
-                        self?.postImmediate(title: "🐾 Ollama Pet Test", body: "Notifications are active and working properly!")
-                        DispatchQueue.main.async {
-                            SoundEffect.success.play()
-                            completion?(true)
-                        }
-                    } else {
-                        DispatchQueue.main.async {
-                            completion?(false)
-                        }
-                    }
+                DispatchQueue.main.async {
+                    completion?(false)
                 }
             } else {
                 DispatchQueue.main.async {
@@ -186,13 +180,23 @@ public class NotificationScheduler {
 
         for rem in reminders where rem.status == "pending" && !(rem.isPaused ?? false) {
             let diffSecs = Int((rem.due - nowMs) / 1000)
-            if diffSecs > 0 {
+            let repeatInterval = rem.isRecurring == true ? rem.repeatIntervalSeconds : nil
+            if let repeatInterval, repeatInterval >= 60 {
+                scheduleReminder(
+                    id: rem.id,
+                    text: rem.text,
+                    inSeconds: repeatInterval,
+                    notificationId: rem.notificationId,
+                    repeatIntervalSeconds: repeatInterval
+                )
+            } else if diffSecs > 0 {
                 // Reschedule with native notification center
                 scheduleReminder(
                     id: rem.id,
                     text: rem.text,
                     inSeconds: diffSecs,
-                    notificationId: rem.notificationId
+                    notificationId: rem.notificationId,
+                    repeatIntervalSeconds: repeatInterval
                 )
             } else {
                 // Reminder matured while app was closed or rebooted

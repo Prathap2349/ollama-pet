@@ -2,6 +2,38 @@ import Foundation
 import AppKit
 import SwiftUI
 
+@MainActor
+public enum PetWindowLayout {
+    public static let basePetSize: CGFloat = 140
+    public static let baseViewportSize: CGFloat = 120
+    public static let baseIndicatorSize: CGFloat = 116
+    public static let baseBubbleOffset: CGFloat = 58
+    public static let baseThermalOffset: CGFloat = 52
+    public static let baseChatWidth: CGFloat = 360
+    public static let baseChatHeight: CGFloat = 620
+    public static let baseChatContentHeight: CGFloat = 466
+    public static let basePulseSize: CGFloat = 122
+    public static let baseClosedBubbleClearance: CGFloat = 106
+
+    public static var scale: CGFloat { PetWindowController.shared.petLayoutScale }
+    public static var petSize: CGFloat { basePetSize * scale }
+    public static var viewportSize: CGFloat { baseViewportSize * scale }
+    public static var indicatorSize: CGFloat { baseIndicatorSize * scale }
+    public static var pulseSize: CGFloat { basePulseSize * scale }
+    public static var bubbleOffset: CGFloat {
+        guard let screen = PetWindowController.shared.screenContainingPet else { return baseBubbleOffset * scale }
+        let roomAbovePet = screen.visibleFrame.maxY - (PetWindowController.shared.petOrigin.y + petSize)
+        return roomAbovePet < baseClosedBubbleClearance * scale ? 0 : baseBubbleOffset * scale
+    }
+    public static var thermalOffset: CGFloat { baseThermalOffset * scale }
+    public static var chatScale: CGFloat { PetWindowController.shared.chatContentScale }
+    public static var chatWidth: CGFloat { baseChatWidth * chatScale }
+    public static var chatContentHeight: CGFloat { baseChatContentHeight * chatScale }
+    public static var chatWindowWidth: CGFloat { max(petSize, chatWidth) }
+    public static var chatWindowHeight: CGFloat { petSize + (baseChatHeight - basePetSize) * chatScale }
+    public static var closedWindowHeight: CGFloat { petSize + baseClosedBubbleClearance * scale }
+}
+
 public class CustomPetPanel: NSPanel {
     override public var canBecomeKey: Bool {
         return true
@@ -20,10 +52,10 @@ public class DraggableHostingView<Content: View>: NSHostingView<Content> {
     private var clickCount = 0
     private var clickTimer: Timer?
 
-    /// Checks if a mouse event is within the pet 140x140 area
+    /// Checks if a mouse event is within the visible pet stage.
     private func isEventInPetArea(_ event: NSEvent) -> Bool {
         let localLoc = convert(event.locationInWindow, from: nil)
-        let petRect = PetWindowController.shared.currentPetRectInWindow()
+        let petRect = PetWindowController.shared.currentPetInteractiveRectInWindow()
         return petRect.contains(localLoc)
     }
 
@@ -32,17 +64,10 @@ public class DraggableHostingView<Content: View>: NSHostingView<Content> {
             return nil
         }
 
-        let petRect = PetWindowController.shared.currentPetRectInWindow()
+        let petRect = PetWindowController.shared.currentPetInteractiveRectInWindow()
 
         if !PetState.shared.isChatOpen {
-            if petRect.contains(point) {
-                // Test if point is within non-transparent interaction radius of the pet stage
-                let center = NSPoint(x: petRect.midX, y: petRect.midY)
-                let dist = hypot(point.x - center.x, point.y - center.y)
-                if dist <= 68.0 {
-                    return self
-                }
-            }
+            if petRect.contains(point) { return self }
             return nil // Complete pass-through for transparent corners to underlying desktop
         }
 
@@ -79,7 +104,7 @@ public class DraggableHostingView<Content: View>: NSHostingView<Content> {
             return
         }
 
-        guard let window = self.window else { return }
+        guard self.window != nil else { return }
         let currentMouseLocation = NSEvent.mouseLocation
         let dx = currentMouseLocation.x - initialMouseLocation.x
         let dy = currentMouseLocation.y - initialMouseLocation.y
@@ -97,13 +122,13 @@ public class DraggableHostingView<Content: View>: NSHostingView<Content> {
                 y: initialPetOrigin.y + dy
             )
 
-            // Clamp pet coordinates to screen bounds (pet is 140x140)
-            if let screen = window.screen ?? NSScreen.main {
+            // Clamp the tracked pet stage, not the taller transparent bubble buffer.
+            if let screen = PetWindowController.shared.screenForPetOrigin(newPetOrigin) ?? PetWindowController.shared.screenContainingPet {
                 let screenFrame = screen.visibleFrame
                 let minX = screenFrame.minX
-                let maxX = screenFrame.maxX - 140
+                let maxX = max(minX, screenFrame.maxX - PetWindowLayout.petSize)
                 let minY = screenFrame.minY
-                let maxY = screenFrame.maxY - 140
+                let maxY = max(minY, screenFrame.maxY - PetWindowLayout.petSize)
 
                 newPetOrigin.x = max(minX, min(maxX, newPetOrigin.x))
                 newPetOrigin.y = max(minY, min(maxY, newPetOrigin.y))
@@ -119,11 +144,11 @@ public class DraggableHostingView<Content: View>: NSHostingView<Content> {
             return
         }
 
-        guard let window = self.window else { return }
+        guard PetWindowController.shared.window != nil else { return }
 
         if isDragging {
             isDragging = false
-            snapPetToCornerIfNeeded(window: window)
+            snapPetToCornerIfNeeded()
             let origin = PetWindowController.shared.petOrigin
             DataManager.shared.updatePosition(x: Double(origin.x), y: Double(origin.y))
         } else {
@@ -132,22 +157,22 @@ public class DraggableHostingView<Content: View>: NSHostingView<Content> {
         }
     }
 
-    private func snapPetToCornerIfNeeded(window: NSWindow) {
-        guard let screen = window.screen ?? NSScreen.main else { return }
+    private func snapPetToCornerIfNeeded() {
+        guard let screen = PetWindowController.shared.screenContainingPet else { return }
         let screenFrame = screen.visibleFrame
         var origin = PetWindowController.shared.petOrigin
         let snapDist: CGFloat = 25.0
 
         if abs(origin.x - screenFrame.minX) < snapDist {
             origin.x = screenFrame.minX
-        } else if abs(origin.x - (screenFrame.maxX - 140)) < snapDist {
-            origin.x = screenFrame.maxX - 140
+        } else if abs(origin.x - (screenFrame.maxX - PetWindowLayout.petSize)) < snapDist {
+            origin.x = screenFrame.maxX - PetWindowLayout.petSize
         }
 
         if abs(origin.y - screenFrame.minY) < snapDist {
             origin.y = screenFrame.minY
-        } else if abs(origin.y - (screenFrame.maxY - 140)) < snapDist {
-            origin.y = screenFrame.maxY - 140
+        } else if abs(origin.y - (screenFrame.maxY - PetWindowLayout.petSize)) < snapDist {
+            origin.y = screenFrame.maxY - PetWindowLayout.petSize
         }
 
         PetWindowController.shared.updatePetOriginFromDrag(origin)
@@ -208,17 +233,20 @@ public class DraggableHostingView<Content: View>: NSHostingView<Content> {
 }
 
 @MainActor
-public class PetWindowController: NSObject, NSWindowDelegate {
+public class PetWindowController: NSObject, ObservableObject, NSWindowDelegate {
     public static let shared = PetWindowController()
 
     public var window: CustomPetPanel?
     public var isCompanionClickThrough = false
 
-    /// Authoritative screen coordinates of the 140x140 pet stage
+    /// Authoritative screen coordinates of the scaled pet stage.
     public private(set) var petOrigin: NSPoint = .zero
 
     /// Active layout anchor: determines which side panel appears relative to pet
     public private(set) var currentAnchor = PanelAnchor(isLeft: false, isTop: false)
+    @Published public private(set) var petLayoutScale: CGFloat = 1.0
+    @Published public private(set) var chatContentScale: CGFloat = 1.0
+    @Published public private(set) var layoutVersion: Int = 0
 
     override public init() {
         super.init()
@@ -245,27 +273,20 @@ public class PetWindowController: NSObject, NSWindowDelegate {
     }
 
     private func setupWindow() {
-        let petSize: CGFloat = 140
-        guard let screen = NSScreen.main else { return }
+        let savedPosition = DataManager.shared.savedData.position.map { NSPoint(x: $0.x, y: $0.y) }
+        let screen = savedPosition.flatMap { screenContainingPoint($0) }
+            ?? screenUnderMouse
+            ?? NSScreen.main
+        guard let screen else { return }
+        updatePetLayoutScale(for: screen)
         let screenFrame = screen.visibleFrame
+        let petSize = PetWindowLayout.petSize
 
-        // Saved position or default bottom right
-        var originX = screenFrame.maxX - petSize - 30
-        var originY = screenFrame.minY + 40
-
-        if let savedPos = DataManager.shared.savedData.position {
-            originX = CGFloat(savedPos.x)
-            originY = CGFloat(savedPos.y)
-
-            // Clamp to screen
-            originX = max(screenFrame.minX, min(screenFrame.maxX - petSize, originX))
-            originY = max(screenFrame.minY, min(screenFrame.maxY - petSize, originY))
-        }
-
-        self.petOrigin = NSPoint(x: originX, y: originY)
+        let preferred = savedPosition ?? NSPoint(x: screenFrame.maxX - petSize - 30, y: screenFrame.minY + 40)
+        self.petOrigin = clampedPetOrigin(preferred, to: screenFrame)
         recomputeAnchor()
 
-        let contentRect = NSRect(x: originX, y: originY, width: petSize, height: petSize)
+        let contentRect = NSRect(x: petOrigin.x, y: petOrigin.y, width: petSize, height: PetWindowLayout.closedWindowHeight)
 
         let panel = CustomPetPanel(
             contentRect: contentRect,
@@ -300,30 +321,109 @@ public class PetWindowController: NSObject, NSWindowDelegate {
     }
 
     public func recomputeAnchor() {
-        guard let screen = window?.screen ?? NSScreen.main else { return }
+        guard let screen = screenContainingPet else { return }
         let screenFrame = screen.visibleFrame
-        // If pet is on left half of screen, anchor panel to its right (isLeft = true)
-        // If pet is on upper half of screen, anchor panel below it (isTop = true)
-        let isLeft = petOrigin.x < screenFrame.midX
-        let isTop = petOrigin.y > screenFrame.midY
+        let petSize = PetWindowLayout.petSize
+        let spaceRight = max(0, screenFrame.maxX - petOrigin.x)
+        let spaceLeft = max(0, petOrigin.x + petSize - screenFrame.minX)
+        let spaceBelow = max(0, petOrigin.y - screenFrame.minY)
+        let spaceAbove = max(0, screenFrame.maxY - (petOrigin.y + petSize))
+        let requestedScale = max(0.1, PetWindowLayout.scale)
+        let verticalScale = max(spaceBelow, spaceAbove) / (PetWindowLayout.baseChatHeight - PetWindowLayout.basePetSize)
+        let horizontalScale = max(spaceRight, spaceLeft) / PetWindowLayout.baseChatWidth
+        let nextChatScale = min(requestedScale, verticalScale, horizontalScale)
+        self.chatContentScale = max(0.1, nextChatScale)
+        let panelWidth = max(petSize, PetWindowLayout.baseChatWidth * chatContentScale)
+        let isLeft = spaceRight >= panelWidth || (spaceLeft < panelWidth && spaceRight >= spaceLeft)
+        let requiredChatHeight = (PetWindowLayout.baseChatHeight - PetWindowLayout.basePetSize) * chatContentScale
+        let isTop: Bool
+        if spaceBelow >= requiredChatHeight {
+            isTop = true
+        } else if spaceAbove >= requiredChatHeight {
+            isTop = false
+        } else {
+            isTop = spaceBelow >= spaceAbove
+        }
         self.currentAnchor = PanelAnchor(isLeft: isLeft, isTop: isTop)
         PetState.shared.activeAnchor = self.currentAnchor
+        layoutVersion &+= 1
     }
 
-    /// Returns the local CGRect of the 140x140 pet stage within the window's content view
+    public var screenContainingPet: NSScreen? {
+        let petSize = PetWindowLayout.petSize
+        let petRect = NSRect(x: petOrigin.x, y: petOrigin.y, width: petSize, height: petSize)
+        var best: (screen: NSScreen, overlap: CGFloat)?
+        for screen in NSScreen.screens {
+            let intersection = screen.frame.intersection(petRect)
+            guard !intersection.isNull else { continue }
+            let area = intersection.width * intersection.height
+            if area > (best?.overlap ?? 0) { best = (screen, area) }
+        }
+        return best?.screen ?? screenUnderMouse ?? NSScreen.main
+    }
+
+    public func screenForPetOrigin(_ origin: NSPoint) -> NSScreen? {
+        screenContainingPoint(origin)
+    }
+
+    private var screenUnderMouse: NSScreen? {
+        let mouse = NSEvent.mouseLocation
+        return NSScreen.screens.first(where: { $0.frame.contains(mouse) })
+    }
+
+    private func screenContainingPoint(_ point: NSPoint) -> NSScreen? {
+        let size = CGSize(width: PetWindowLayout.basePetSize, height: PetWindowLayout.basePetSize)
+        let rect = NSRect(origin: point, size: size)
+        return NSScreen.screens.max { lhs, rhs in
+            let l = lhs.frame.intersection(rect)
+            let r = rhs.frame.intersection(rect)
+            return (l.isNull ? 0 : l.width * l.height) < (r.isNull ? 0 : r.width * r.height)
+        }.flatMap { screen in
+            let intersection = screen.frame.intersection(rect)
+            return intersection.isNull ? nil : screen
+        }
+    }
+
+    private func updatePetLayoutScale(for screen: NSScreen) {
+        let requested = CGFloat(max(0.5, min(2.0, DataManager.shared.savedData.petScale ?? 1.0)))
+        let frame = screen.visibleFrame
+        let fitWidth = frame.width / PetWindowLayout.basePetSize
+        let fitHeight = frame.height / (PetWindowLayout.basePetSize + PetWindowLayout.baseClosedBubbleClearance)
+        petLayoutScale = max(0.1, min(requested, fitWidth, fitHeight))
+    }
+
+    private func clampedPetOrigin(_ origin: NSPoint, to frame: NSRect) -> NSPoint {
+        let maxX = max(frame.minX, frame.maxX - PetWindowLayout.petSize)
+        let maxY = max(frame.minY, frame.maxY - PetWindowLayout.petSize)
+        return NSPoint(x: max(frame.minX, min(maxX, origin.x)), y: max(frame.minY, min(maxY, origin.y)))
+    }
+
+    public func updateLayoutForScale() {
+        guard let screen = screenContainingPet else { return }
+        updatePetLayoutScale(for: screen)
+        petOrigin = clampedPetOrigin(petOrigin, to: screen.visibleFrame)
+        recomputeAnchor()
+        if let win = window {
+            win.setFrame(calculateWindowFrame(forPetOrigin: petOrigin, open: PetState.shared.isChatOpen), display: true, animate: false)
+        }
+    }
+
+    /// Returns the local rectangle of the scaled pet stage within the window content.
     public func currentPetRectInWindow() -> NSRect {
-        guard let win = window else { return NSRect(x: 0, y: 0, width: 140, height: 140) }
-        let petSize: CGFloat = 140
+        let petSize = PetWindowLayout.petSize
+        guard let win = window else { return NSRect(x: 0, y: 0, width: petSize, height: petSize) }
         if !PetState.shared.isChatOpen {
             return NSRect(x: 0, y: 0, width: petSize, height: petSize)
         }
-
-        // When open, compute based on currentAnchor
-        // Window size: width 340, height 620
-        // Pet stage is 140x140
         let localX: CGFloat = currentAnchor.isLeft ? 0 : (win.frame.width - petSize)
         let localY: CGFloat = currentAnchor.isTop ? (win.frame.height - petSize) : 0
         return NSRect(x: localX, y: localY, width: petSize, height: petSize)
+    }
+
+    public func currentPetInteractiveRectInWindow() -> NSRect {
+        let petRect = currentPetRectInWindow()
+        let inset = max(0, (petRect.width - PetWindowLayout.viewportSize) / 2)
+        return petRect.insetBy(dx: inset, dy: inset)
     }
 
     /// Side lengths (points) of the pet stage as the window actually lays it out.
@@ -336,35 +436,39 @@ public class PetWindowController: NSObject, NSWindowDelegate {
     /// Returns the local CGRect of the chat panel within the window's content view
     public func currentChatPanelRectInWindow() -> NSRect {
         guard let win = window, PetState.shared.isChatOpen else { return .zero }
-        let petSize: CGFloat = 140
-        let width: CGFloat = 360
-        let panelHeight: CGFloat = win.frame.height - petSize
-        let localY: CGFloat = currentAnchor.isTop ? 0 : petSize
-        return NSRect(x: 0, y: localY, width: width, height: panelHeight)
+        let width = PetWindowLayout.chatWidth
+        let height = PetWindowLayout.chatContentHeight
+        let localX = max(0, (win.frame.width - width) / 2)
+        let localY: CGFloat = currentAnchor.isTop
+            ? (win.frame.height - PetWindowLayout.petSize - height - 4 * chatContentScale)
+            : (PetWindowLayout.petSize + 4 * chatContentScale)
+        return NSRect(x: localX, y: localY, width: width, height: height)
     }
 
     public func updatePetOriginFromDrag(_ newPetOrigin: NSPoint) {
-        self.petOrigin = newPetOrigin
+        let screen = screenContainingPoint(newPetOrigin) ?? screenContainingPet ?? NSScreen.main
+        if let screen { updatePetLayoutScale(for: screen) }
+        self.petOrigin = screen.map { clampedPetOrigin(newPetOrigin, to: $0.visibleFrame) } ?? newPetOrigin
         recomputeAnchor()
         guard let win = window else { return }
 
         if !PetState.shared.isChatOpen {
-            win.setFrameOrigin(newPetOrigin)
+            win.setFrame(calculateWindowFrame(forPetOrigin: petOrigin, open: false), display: true, animate: false)
         } else {
             // Position full window such that the pet subrect stays at petOrigin
-            let winFrame = calculateWindowFrame(forPetOrigin: newPetOrigin, open: true)
+            let winFrame = calculateWindowFrame(forPetOrigin: petOrigin, open: true)
             win.setFrame(winFrame, display: true, animate: false)
         }
     }
 
     private func calculateWindowFrame(forPetOrigin origin: NSPoint, open: Bool) -> NSRect {
-        let petSize: CGFloat = 140
+        let petSize = PetWindowLayout.petSize
         if !open {
-            return NSRect(x: origin.x, y: origin.y, width: petSize, height: petSize)
+            return NSRect(x: origin.x, y: origin.y, width: petSize, height: PetWindowLayout.closedWindowHeight)
         }
 
-        let width: CGFloat = 360
-        let height: CGFloat = 620
+        let width = PetWindowLayout.chatWindowWidth
+        let height = PetWindowLayout.chatWindowHeight
 
         // Window origin is bottom-left corner of the window in screen coords
         // If currentAnchor.isLeft: pet is at left edge of window -> window.origin.x = petOrigin.x
@@ -374,7 +478,6 @@ public class PetWindowController: NSObject, NSWindowDelegate {
         // If currentAnchor.isTop: pet is at top of window -> window.origin.y = petOrigin.y + petSize - height
         // If !currentAnchor.isTop: pet is at bottom of window -> window.origin.y = petOrigin.y
         let winY: CGFloat = currentAnchor.isTop ? (origin.y + petSize - height) : origin.y
-
         return NSRect(x: winX, y: winY, width: width, height: height)
     }
 
@@ -392,29 +495,13 @@ public class PetWindowController: NSObject, NSWindowDelegate {
 
     @objc private func screenParametersChanged() {
         guard let win = window else { return }
-        var targetScreen: NSScreen? = nil
-
-        for s in NSScreen.screens {
-            if s.frame.contains(petOrigin) {
-                targetScreen = s
-                break
-            }
-        }
-
-        let activeScreen = targetScreen ?? NSScreen.main
-        if let screen = activeScreen {
-            let sFrame = screen.visibleFrame
-            var clampedX = petOrigin.x
-            var clampedY = petOrigin.y
-
-            clampedX = max(sFrame.minX, min(sFrame.maxX - 140, clampedX))
-            clampedY = max(sFrame.minY, min(sFrame.maxY - 140, clampedY))
-
-            self.petOrigin = NSPoint(x: clampedX, y: clampedY)
-            recomputeAnchor()
-            let frame = calculateWindowFrame(forPetOrigin: petOrigin, open: PetState.shared.isChatOpen)
-            win.setFrame(frame, display: true, animate: false)
-        }
+        guard let screen = screenContainingPet else { return }
+        updatePetLayoutScale(for: screen)
+        let oldOrigin = petOrigin
+        petOrigin = clampedPetOrigin(petOrigin, to: screen.visibleFrame)
+        recomputeAnchor()
+        win.setFrame(calculateWindowFrame(forPetOrigin: petOrigin, open: PetState.shared.isChatOpen), display: true, animate: false)
+        if oldOrigin != petOrigin { DataManager.shared.updatePosition(x: Double(petOrigin.x), y: Double(petOrigin.y)) }
     }
 
     public func setCompanionMode(clickThrough: Bool) {

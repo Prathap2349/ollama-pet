@@ -1,6 +1,7 @@
 import Foundation
 import AppKit
 import SwiftUI
+import SceneKit
 import ServiceManagement
 import UserNotifications
 
@@ -36,13 +37,17 @@ public class SettingsWindowController: NSObject, ObservableObject, NSWindowDeleg
         )
         win.title = "Ollama Pet Settings"
         win.center()
-        win.setFrameAutosaveName("OllamaPetSettingsWindow")
         win.isReleasedWhenClosed = false
         win.delegate = self
-        win.minSize = NSSize(width: 680, height: 520)
+        win.minSize = NSSize(width: 700, height: 540)
 
         let settingsView = SettingsContainerView()
         win.contentView = NSHostingView(rootView: settingsView)
+        win.setFrameAutosaveName("OllamaPetSettingsWindow")
+        var restoredFrame = win.frame
+        restoredFrame.size.width = max(restoredFrame.width, 700)
+        restoredFrame.size.height = max(restoredFrame.height, 540)
+        win.setFrame(restoredFrame, display: false)
         self.window = win
     }
 
@@ -85,7 +90,7 @@ public enum SettingsGroup: String, CaseIterable, Identifiable {
         case .macControl:
             return [.macControl, .actionHistory]
         case .presence:
-            return [.presenceMonitor, .screen, .focus]
+            return [.presenceMonitor, .screen, .focus, .water]
         case .privacyAndSystem:
             return [.notifications, .permissions, .privacy]
         }
@@ -107,6 +112,7 @@ public enum SettingsTab: String, CaseIterable, Identifiable {
     case presenceMonitor = "Presence Monitor"
     case screen = "Screen Awareness"
     case focus = "Focus & Health"
+    case water = "Water"
     case notifications = "Notifications"
     case permissions = "Permissions & Security"
     case privacy = "Privacy & Telemetry"
@@ -129,6 +135,7 @@ public enum SettingsTab: String, CaseIterable, Identifiable {
         case .presenceMonitor: return "person.crop.rectangle.badge.plus"
         case .screen: return "display"
         case .focus: return "brain.head.profile"
+        case .water: return "drop.fill"
         case .notifications: return "bell.badge.fill"
         case .permissions: return "lock.shield.fill"
         case .privacy: return "hand.raised.fill"
@@ -543,6 +550,8 @@ public struct SettingsContainerView: View {
                             ScreenSettingsSection()
                         case .focus:
                             FocusSettingsSection()
+                        case .water:
+                            WaterSettingsSection()
                         case .notifications:
                             NotificationSettingsSection()
                         case .privacy:
@@ -871,6 +880,7 @@ struct CharacterPreviewView: View {
 struct SpeciesPreviewCard: View {
     let species: PetSpecies
     let isSelected: Bool
+    @ObservedObject var petState = PetState.shared
     @ObservedObject var perf = PerformanceManager.shared
     @ObservedObject var motion = CharacterMotionStateMachine.shared
     let action: () -> Void
@@ -883,7 +893,13 @@ struct SpeciesPreviewCard: View {
                     RoundedRectangle(cornerRadius: 8)
                         .fill(perf.grayscaleTestMode ? Color(white: 0.15) : Color.black.opacity(0.85))
 
-                    CharacterPreviewView(previewSpecies: species)
+                    Image(nsImage: SpeciesPreviewSnapshot.image(
+                        species: species,
+                        petState: petState,
+                        grayscale: perf.grayscaleTestMode
+                    ))
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
                         .frame(height: 86)
                         .clipShape(RoundedRectangle(cornerRadius: 8))
 
@@ -950,6 +966,62 @@ struct SpeciesPreviewCard: View {
         case .bunny:
             return "Very tall upright ears, chubby round body, and cotton puff tail."
         }
+    }
+}
+
+@MainActor
+private enum SpeciesPreviewSnapshot {
+    private static let cache = NSCache<NSString, NSImage>()
+
+    static func image(species: PetSpecies, petState: PetState, grayscale: Bool) -> NSImage {
+        let colorChoice = DataManager.shared.savedData.accentColorChoice ?? "default"
+        let key = "\(species.rawValue)-\(petState.customHornEnabled)-\(petState.customWingsEnabled)-\(petState.customAccessory)-\(colorChoice)-\(grayscale)" as NSString
+        if let cached = cache.object(forKey: key) { return cached }
+
+        let size = NSSize(width: 180, height: 100)
+        let view = SCNView(frame: NSRect(origin: .zero, size: size))
+        view.backgroundColor = .clear
+        view.autoenablesDefaultLighting = false
+        view.antialiasingMode = .multisampling4X
+        let scene = SCNScene()
+        let rig = Pet3DCharacterBuilder.buildCharacter(
+            species: species,
+            customHornEnabled: petState.customHornEnabled,
+            customWingsEnabled: petState.customWingsEnabled,
+            customAccessory: petState.customAccessory
+        )
+        scene.rootNode.addChildNode(rig.rootNode)
+
+        let camera = SCNNode()
+        camera.camera = SCNCamera()
+        camera.camera?.fieldOfView = 48
+        Pet3DSceneView.frameCamera(for: rig, cameraNode: camera)
+        scene.rootNode.addChildNode(camera)
+        view.pointOfView = camera
+
+        let keyLight = SCNNode()
+        keyLight.light = SCNLight()
+        keyLight.light?.type = .directional
+        keyLight.light?.intensity = 1100
+        keyLight.position = SCNVector3(2.5, 4, 3)
+        keyLight.eulerAngles = SCNVector3(-Float.pi / 4, Float.pi / 5, 0)
+        scene.rootNode.addChildNode(keyLight)
+        let fill = SCNNode()
+        fill.light = SCNLight()
+        fill.light?.type = .ambient
+        fill.light?.intensity = 450
+        scene.rootNode.addChildNode(fill)
+        let rim = SCNNode()
+        rim.light = SCNLight()
+        rim.light?.type = .directional
+        rim.light?.intensity = 650
+        rim.light?.color = NSColor(species.accentColor)
+        rim.position = SCNVector3(-2, 2, -2.5)
+        scene.rootNode.addChildNode(rim)
+        view.scene = scene
+        let snapshot = view.snapshot()
+        cache.setObject(snapshot, forKey: key)
+        return snapshot
     }
 }
 
@@ -3173,190 +3245,267 @@ struct OwnerEnrollmentWizardView: View {
 struct CloudAISettingsSection: View {
     @ObservedObject var aiManager = AIProviderManager.shared
     @ObservedObject var dataManager = DataManager.shared
-
-    @State private var openaiKeyInput: String = ""
-    @State private var geminiKeyInput: String = ""
-    @State private var anthropicKeyInput: String = ""
-    @State private var groqKeyInput: String = ""
-
+    @State private var keyInputs: [String: String] = [:]
+    @State private var hasSavedKey: [String: Bool] = [:]
+    @State private var maskedKeys: [String: String] = [:]
     @State private var testStatus: [String: String] = [:]
-    @State private var isTesting: [String: Bool] = [:]
+    @State private var modelStatus: [String: String] = [:]
+    @State private var modelOptions: [String: [String]] = [:]
+    @State private var busy: Set<String> = []
+    @State private var isAddingCustomProvider = false
+    @State private var newCustomName = ""
+    @State private var newCustomURL = ""
+    @State private var newCustomModel = ""
+
+    private var builtInCloudProviders: [AIProvider] { AIProvider.allCases.filter { $0 != .ollama && $0 != .custom } }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            // Header
+        VStack(alignment: .leading, spacing: 18) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Cloud AI Providers & API Keys")
-                    .font(.system(size: 18, weight: .bold))
-                Text("All API keys are securely stored inside your macOS Keychain and never saved in plaintext files or logs. If local Ollama is offline, Ollama Pet seamlessly falls back to your configured cloud providers.")
-                    .font(.system(size: 12))
-                    .foregroundColor(.secondary)
+                Text("Cloud AI Providers & API Keys").font(.system(size: 18, weight: .bold))
+                Text("Keys are kept in your macOS Keychain. Ollama stays local unless you choose a cloud provider or enable the offline fallback below.")
+                    .font(.system(size: 12)).foregroundColor(.secondary)
             }
-
-            // Primary Provider Selector
             VStack(alignment: .leading, spacing: 10) {
-                Text("Active Companion AI Provider")
-                    .font(.system(size: 14, weight: .bold))
-
-                Picker("", selection: $aiManager.activeProvider) {
-                    ForEach(AIProvider.allCases) { p in
-                        HStack {
-                            Image(systemName: p.icon)
-                            Text(p.displayName)
-                        }
-                        .tag(p)
+                Text("Active Companion AI Provider").font(.system(size: 14, weight: .bold))
+                Picker("", selection: providerSelection) {
+                    ForEach(AIProvider.allCases.filter { $0 != .custom }) { provider in
+                        Text(provider.displayName).tag(provider.rawValue)
                     }
+                    ForEach(dataManager.savedData.customAIProviders ?? []) { custom in Text(custom.name).tag("custom:\(custom.id)") }
                 }
                 .pickerStyle(.radioGroup)
-                .onChange(of: aiManager.activeProvider) { newProvider in
-                    aiManager.setProvider(newProvider)
+                Toggle("Fall back to a cloud provider when Ollama is offline", isOn: Binding(
+                    get: { dataManager.savedData.cloudFallbackEnabled ?? false },
+                    set: { dataManager.savedData.cloudFallbackEnabled = $0; dataManager.saveData() }
+                ))
+                Picker("Fallback provider", selection: fallbackSelection) {
+                    ForEach(builtInCloudProviders) { Text($0.displayName).tag($0.rawValue) }
+                    ForEach(dataManager.savedData.customAIProviders ?? []) { Text($0.name).tag("custom:\($0.id)") }
                 }
-
-                HStack(spacing: 6) {
-                    Image(systemName: "shield.lefthalf.filled")
-                        .foregroundColor(.green)
-                    Text("Auto-Fallback Enabled: If \(aiManager.activeProvider.displayName) is unreachable, available cloud keys will be used automatically.")
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
-                }
+                .disabled(!(dataManager.savedData.cloudFallbackEnabled ?? false))
+                Text("Fallback applies only when Ollama is active and offline. A cloud provider selected above is used directly.")
+                    .font(.system(size: 11)).foregroundColor(.secondary)
             }
             .padding(14)
             .background(RoundedRectangle(cornerRadius: 12).fill(Color.primary.opacity(0.04)))
-
-            // Provider Cards (OpenAI, Gemini, Anthropic, Groq)
             VStack(spacing: 12) {
-                providerRow(
-                    provider: .openai,
-                    input: $openaiKeyInput,
-                    modelBinding: Binding(
-                        get: { dataManager.savedData.openaiModel ?? "gpt-4o-mini" },
-                        set: { dataManager.savedData.openaiModel = $0; dataManager.saveData() }
-                    ),
-                    models: ["gpt-4o-mini", "gpt-4o", "gpt-4-turbo", "o3-mini"]
-                )
-
-                providerRow(
-                    provider: .gemini,
-                    input: $geminiKeyInput,
-                    modelBinding: Binding(
-                        get: { dataManager.savedData.geminiModel ?? "gemini-1.5-flash" },
-                        set: { dataManager.savedData.geminiModel = $0; dataManager.saveData() }
-                    ),
-                    models: ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.0-flash"]
-                )
-
-                providerRow(
-                    provider: .anthropic,
-                    input: $anthropicKeyInput,
-                    modelBinding: Binding(
-                        get: { dataManager.savedData.anthropicModel ?? "claude-3-5-haiku-20241022" },
-                        set: { dataManager.savedData.anthropicModel = $0; dataManager.saveData() }
-                    ),
-                    models: ["claude-3-5-haiku-20241022", "claude-3-5-sonnet-20241022"]
-                )
-
-                providerRow(
-                    provider: .groq,
-                    input: $groqKeyInput,
-                    modelBinding: Binding(
-                        get: { dataManager.savedData.groqModel ?? "llama-3.3-70b-versatile" },
-                        set: { dataManager.savedData.groqModel = $0; dataManager.saveData() }
-                    ),
-                    models: ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768"]
-                )
+                ForEach(builtInCloudProviders) { provider in
+                    providerCard(provider: provider, model: modelBinding(for: provider), key: provider.rawValue, account: provider.rawValue)
+                }
             }
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Custom OpenAI-Compatible Providers").font(.system(size: 14, weight: .bold))
+                ForEach(dataManager.savedData.customAIProviders ?? []) { custom in customProviderCard(custom) }
+                if isAddingCustomProvider {
+                    VStack(alignment: .leading, spacing: 8) {
+                        TextField("Provider name", text: $newCustomName)
+                        TextField("Base URL (for example https://api.example.com/v1)", text: $newCustomURL)
+                        TextField("Model name", text: $newCustomModel)
+                        SecureField("API key (saved to Keychain)", text: inputBinding("new-custom"))
+                        HStack {
+                            Button("Add Provider") { saveNewCustomProvider() }.buttonStyle(.borderedProminent)
+                            Button("Cancel") { isAddingCustomProvider = false; clearNewCustomDraft() }
+                        }
+                        if let status = testStatus["new-custom"] { Text(status).font(.system(size: 10)).foregroundColor(.orange) }
+                    }.padding(12).background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.03)))
+                } else {
+                    Button("Add Custom Provider") { isAddingCustomProvider = true }.buttonStyle(.bordered)
+                }
+            }
+            .padding(14).background(RoundedRectangle(cornerRadius: 12).fill(Color.primary.opacity(0.04)))
         }
+        .onAppear(perform: refreshAllKeyCaches)
     }
 
-    private func providerRow(
-        provider: AIProvider,
-        input: Binding<String>,
-        modelBinding: Binding<String>,
-        models: [String]
-    ) -> some View {
+    private var providerSelection: Binding<String> {
+        Binding(get: {
+            if aiManager.activeProvider == .custom, let id = dataManager.savedData.selectedCustomAIProviderID { return "custom:\(id)" }
+            return aiManager.activeProvider.rawValue
+        }, set: { value in
+            if value.hasPrefix("custom:") { aiManager.setCustomProvider(id: String(value.dropFirst("custom:".count))) }
+            else if let provider = AIProvider(rawValue: value) { aiManager.setProvider(provider) }
+        })
+    }
+
+    private var fallbackSelection: Binding<String> {
+        Binding(get: { dataManager.savedData.cloudFallbackProvider ?? "openai" }, set: { dataManager.savedData.cloudFallbackProvider = $0; dataManager.saveData() })
+    }
+
+    private func modelBinding(for provider: AIProvider) -> Binding<String> {
+        Binding(get: {
+            let data = dataManager.savedData
+            switch provider {
+            case .openai: return data.openaiModel ?? provider.defaultModel
+            case .gemini: return data.geminiModel ?? provider.defaultModel
+            case .anthropic: return data.anthropicModel ?? provider.defaultModel
+            case .groq: return data.groqModel ?? provider.defaultModel
+            case .xai: return data.xaiModel ?? provider.defaultModel
+            default: return provider.defaultModel
+            }
+        }, set: { value in
+            switch provider {
+            case .openai: dataManager.savedData.openaiModel = value
+            case .gemini: dataManager.savedData.geminiModel = value
+            case .anthropic: dataManager.savedData.anthropicModel = value
+            case .groq: dataManager.savedData.groqModel = value
+            case .xai: dataManager.savedData.xaiModel = value
+            default: break
+            }
+            dataManager.saveData()
+        })
+    }
+
+    private func providerCard(provider: AIProvider, model: Binding<String>, key: String, account: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Image(systemName: provider.icon)
-                    .font(.system(size: 14))
-                Text(provider.displayName)
-                    .font(.system(size: 13, weight: .bold))
-
-                Spacer()
-
-                let masked = APIKeyManager.shared.maskedKey(for: provider.rawValue)
-                Text(masked)
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundColor(APIKeyManager.shared.hasKey(for: provider.rawValue) ? .green : .secondary)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Color.primary.opacity(0.06))
-                    .cornerRadius(4)
+                Image(systemName: provider.icon); Text(provider.displayName).font(.system(size: 13, weight: .bold)); Spacer()
+                Text(maskedKeys[key] ?? "Not Configured").font(.system(size: 10, design: .monospaced)).foregroundColor((hasSavedKey[key] ?? false) ? .green : .secondary)
             }
-
             HStack(spacing: 8) {
-                SecureField("Enter API Key (saved to Keychain)", text: input)
-                    .textFieldStyle(.roundedBorder)
-                    .font(.system(size: 11))
-
-                Button("Save") {
-                    let key = input.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !key.isEmpty {
-                        APIKeyManager.shared.setKey(key, for: provider.rawValue)
-                        input.wrappedValue = ""
-                        testStatus[provider.rawValue] = "Saved to Keychain! ✓"
-                    }
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
-
-                if APIKeyManager.shared.hasKey(for: provider.rawValue) {
-                    Button("Remove") {
-                        APIKeyManager.shared.deleteKey(for: provider.rawValue)
-                        testStatus[provider.rawValue] = "Key removed from Keychain."
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                }
-
-                Button(action: {
-                    Task {
-                        isTesting[provider.rawValue] = true
-                        testStatus[provider.rawValue] = "Testing connection..."
-                        let result = await aiManager.testProvider(provider: provider)
-                        isTesting[provider.rawValue] = false
-                        testStatus[provider.rawValue] = result.message
-                    }
-                }) {
-                    Text((isTesting[provider.rawValue] ?? false) ? "Testing..." : "Test")
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(isTesting[provider.rawValue] ?? false || !APIKeyManager.shared.hasKey(for: provider.rawValue))
+                SecureField("Enter API key (saved to Keychain)", text: inputBinding(key)).textFieldStyle(.roundedBorder).font(.system(size: 11))
+                Button("Save") { saveKey(account: account, key: key) }.buttonStyle(.borderedProminent).controlSize(.small)
+                if hasSavedKey[key] ?? false { Button("Remove") { removeKey(account: account, key: key) }.buttonStyle(.bordered).controlSize(.small) }
+                Button("Test") { test(provider: provider, key: key, account: account, model: model.wrappedValue) }.buttonStyle(.bordered).controlSize(.small)
+                    .disabled(busy.contains(key) || (!(hasSavedKey[key] ?? false) && (keyInputs[key] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
             }
-
-            // Model Selection
             HStack {
-                Text("Default Model:")
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary)
-                Picker("", selection: modelBinding) {
-                    ForEach(models, id: \.self) { m in
-                        Text(m).tag(m)
-                    }
+                TextField("Model name", text: model).textFieldStyle(.roundedBorder).font(.system(size: 11))
+                if !(modelOptions[key] ?? []).isEmpty {
+                    Picker("Available models", selection: model) { ForEach(modelOptions[key] ?? [], id: \.self) { Text($0).tag($0) } }.frame(width: 150)
                 }
-                .labelsHidden()
-                .controlSize(.small)
+                Button("Refresh models") { refreshModels(provider: provider, key: key, account: account) }
+                    .disabled(busy.contains(key) || (!(hasSavedKey[key] ?? false) && (keyInputs[key] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
             }
-
-            if let status = testStatus[provider.rawValue] {
-                Text(status)
-                    .font(.system(size: 10))
-                    .foregroundColor(status.contains("✓") || status.contains("successfully") ? .green : .orange)
-            }
+            if let status = testStatus[key] { Text(status).font(.system(size: 10)).foregroundColor(status.contains("successfully") ? .green : .orange) }
+            if let status = modelStatus[key] { Text(status).font(.system(size: 10)).foregroundColor(status.hasPrefix("Loaded") ? .green : .orange) }
         }
-        .padding(12)
-        .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.03)))
+        .padding(12).background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.03)))
     }
+
+    private func customProviderCard(_ custom: CustomAIProvider) -> some View {
+        let cacheKey = "custom:\(custom.id)"
+        let account = "custom-provider-\(custom.id)"
+        let model = customBinding(custom.id, keyPath: \.model)
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                TextField("Provider name", text: customBinding(custom.id, keyPath: \.name)).font(.system(size: 13, weight: .bold))
+                Spacer()
+                Text(maskedKeys[cacheKey] ?? "Not Configured").font(.system(size: 10, design: .monospaced)).foregroundColor((hasSavedKey[cacheKey] ?? false) ? .green : .secondary)
+                Button("Use") { aiManager.setCustomProvider(id: custom.id) }.buttonStyle(.bordered).controlSize(.small)
+                Button("Delete") { deleteCustomProvider(custom.id) }.buttonStyle(.bordered).controlSize(.small)
+            }
+            TextField("Base URL", text: customBinding(custom.id, keyPath: \.baseURL)).textFieldStyle(.roundedBorder).font(.system(size: 11))
+            HStack(spacing: 8) {
+                SecureField("Replace API key (saved to Keychain)", text: inputBinding(cacheKey)).textFieldStyle(.roundedBorder).font(.system(size: 11))
+                Button("Save") { saveCustomProvider(custom.id) }.buttonStyle(.borderedProminent).controlSize(.small)
+                Button("Test") { test(provider: .custom, key: cacheKey, account: account, model: model.wrappedValue, customID: custom.id) }.buttonStyle(.bordered).controlSize(.small)
+                    .disabled(busy.contains(cacheKey) || (!(hasSavedKey[cacheKey] ?? false) && (keyInputs[cacheKey] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
+            }
+            HStack {
+                TextField("Model name", text: model).textFieldStyle(.roundedBorder).font(.system(size: 11))
+                if !(modelOptions[cacheKey] ?? []).isEmpty {
+                    Picker("Available models", selection: model) { ForEach(modelOptions[cacheKey] ?? [], id: \.self) { Text($0).tag($0) } }.frame(width: 150)
+                }
+                Button("Refresh models") { refreshModels(provider: .custom, key: cacheKey, account: account, customID: custom.id) }
+                    .disabled(busy.contains(cacheKey) || (!(hasSavedKey[cacheKey] ?? false) && (keyInputs[cacheKey] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
+            }
+            if let status = testStatus[cacheKey] { Text(status).font(.system(size: 10)).foregroundColor(status.contains("successfully") ? .green : .orange) }
+            if let status = modelStatus[cacheKey] { Text(status).font(.system(size: 10)).foregroundColor(status.hasPrefix("Loaded") ? .green : .orange) }
+        }
+        .padding(12).background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.03)))
+    }
+
+    private func inputBinding(_ key: String) -> Binding<String> { Binding(get: { keyInputs[key] ?? "" }, set: { keyInputs[key] = $0 }) }
+    private func customBinding(_ id: String, keyPath: WritableKeyPath<CustomAIProvider, String>) -> Binding<String> {
+        Binding(get: { currentCustom(id)?[keyPath: keyPath] ?? "" }, set: { value in updateCustom(id) { $0[keyPath: keyPath] = value } })
+    }
+    private func currentCustom(_ id: String) -> CustomAIProvider? { dataManager.savedData.customAIProviders?.first(where: { $0.id == id }) }
+    private func updateCustom(_ id: String, mutate: (inout CustomAIProvider) -> Void) {
+        var values = dataManager.savedData.customAIProviders ?? []
+        guard let index = values.firstIndex(where: { $0.id == id }) else { return }
+        mutate(&values[index]); dataManager.savedData.customAIProviders = values; dataManager.saveData()
+    }
+    private func refreshKeyCache(key: String, account: String) {
+        hasSavedKey[key] = APIKeyManager.shared.hasKey(for: account)
+        maskedKeys[key] = APIKeyManager.shared.maskedKey(for: account)
+    }
+    private func refreshAllKeyCaches() {
+        for provider in builtInCloudProviders { refreshKeyCache(key: provider.rawValue, account: provider.rawValue) }
+        for custom in dataManager.savedData.customAIProviders ?? [] { refreshKeyCache(key: "custom:\(custom.id)", account: "custom-provider-\(custom.id)") }
+    }
+    private func saveKey(account: String, key: String) {
+        let value = (keyInputs[key] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else { testStatus[key] = "Enter an API key to save."; return }
+        if APIKeyManager.shared.setKey(value, for: account) { keyInputs[key] = ""; testStatus[key] = "Saved to Keychain." }
+        else { testStatus[key] = "Could not save the key to Keychain." }
+        refreshKeyCache(key: key, account: account)
+    }
+    private func removeKey(account: String, key: String) {
+        APIKeyManager.shared.deleteKey(for: account); testStatus[key] = "Key removed from Keychain."; refreshKeyCache(key: key, account: account)
+    }
+    private func test(provider: AIProvider, key: String, account: String, model: String, customID: String? = nil) {
+        let value = (keyInputs[key] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        Task {
+            busy.insert(key); testStatus[key] = "Testing connection…"
+            let result = await aiManager.testProvider(provider: provider, apiKeyOverride: value.isEmpty ? nil : value, customProviderID: customID, modelOverride: model)
+            testStatus[key] = result.message; busy.remove(key); refreshKeyCache(key: key, account: account)
+        }
+    }
+    private func refreshModels(provider: AIProvider, key: String, account: String, customID: String? = nil) {
+        let value = (keyInputs[key] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        Task {
+            busy.insert(key); modelStatus[key] = "Loading models…"
+            do {
+                let values = try await aiManager.fetchModels(provider: provider, customProviderID: customID, apiKeyOverride: value.isEmpty ? nil : value)
+                if !values.isEmpty { modelOptions[key] = values }
+                modelStatus[key] = values.isEmpty ? "No models returned; keep typing a model name." : "Loaded \(values.count) models."
+            } catch { modelStatus[key] = error.localizedDescription }
+            busy.remove(key)
+        }
+    }
+    private func saveNewCustomProvider() {
+        let name = newCustomName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let model = newCustomModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        let key = (keyInputs["new-custom"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, !model.isEmpty, !key.isEmpty else { testStatus["new-custom"] = "Name, model and API key are required."; return }
+        do {
+            let url = try aiManager.validatedCustomBaseURL(newCustomURL)
+            let custom = CustomAIProvider(name: name, baseURL: url, model: model)
+            let account = "custom-provider-\(custom.id)"
+            guard APIKeyManager.shared.setKey(key, for: account) else { testStatus["new-custom"] = "Could not save the key to Keychain."; return }
+            dataManager.savedData.customAIProviders = (dataManager.savedData.customAIProviders ?? []) + [custom]
+            dataManager.saveData(); refreshKeyCache(key: "custom:\(custom.id)", account: account)
+            isAddingCustomProvider = false; clearNewCustomDraft()
+        } catch { testStatus["new-custom"] = error.localizedDescription }
+    }
+    private func saveCustomProvider(_ id: String) {
+        guard let custom = currentCustom(id) else { return }
+        guard !custom.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !custom.model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            testStatus["custom:\(id)"] = "Provider name and model are required."
+            return
+        }
+        do {
+            let url = try aiManager.validatedCustomBaseURL(custom.baseURL)
+            updateCustom(id) { $0.name = $0.name.trimmingCharacters(in: .whitespacesAndNewlines); $0.baseURL = url; $0.model = $0.model.trimmingCharacters(in: .whitespacesAndNewlines) }
+            let cacheKey = "custom:\(id)", account = "custom-provider-\(id)"
+            let key = (keyInputs[cacheKey] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !key.isEmpty {
+                guard APIKeyManager.shared.setKey(key, for: account) else { testStatus[cacheKey] = "Could not save the key to Keychain."; return }
+                keyInputs[cacheKey] = ""
+            }
+            testStatus[cacheKey] = "Provider saved."; refreshKeyCache(key: cacheKey, account: account)
+        } catch { testStatus["custom:\(id)"] = error.localizedDescription }
+    }
+    private func deleteCustomProvider(_ id: String) {
+        APIKeyManager.shared.deleteKey(for: "custom-provider-\(id)")
+        dataManager.savedData.customAIProviders = (dataManager.savedData.customAIProviders ?? []).filter { $0.id != id }
+        if dataManager.savedData.selectedCustomAIProviderID == id { aiManager.setProvider(.ollama) }
+        if dataManager.savedData.cloudFallbackProvider == "custom:\(id)" { dataManager.savedData.cloudFallbackProvider = nil }
+        dataManager.saveData(); hasSavedKey["custom:\(id)"] = false; maskedKeys["custom:\(id)"] = "Not Configured"
+    }
+    private func clearNewCustomDraft() { newCustomName = ""; newCustomURL = ""; newCustomModel = ""; keyInputs["new-custom"] = "" }
 }
 
 struct ScreenSettingsSection: View {
@@ -3656,49 +3805,21 @@ struct FocusSettingsSection: View {
             .padding(14)
             .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
 
-            // 3. Hydration Reminders & Interval
+            // Eye breaks remain independent from water reminders.
             VStack(alignment: .leading, spacing: 10) {
                 Toggle(isOn: Binding(
-                    get: { dataManager.savedData.hydrationReminderEnabled ?? true },
+                    get: { dataManager.savedData.eyeBreakReminderEnabled ?? false },
                     set: {
-                        dataManager.savedData.hydrationReminderEnabled = $0
+                        dataManager.savedData.eyeBreakReminderEnabled = $0
                         dataManager.saveData()
-                        focus.startHydrationTimerIfNeeded()
                     }
                 )) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Hydration & Eye Break Reminders")
+                        Text("Eye Break Reminders")
                             .font(.system(size: 13, weight: .semibold))
-                        Text("Pet periodically reminds you to drink water and look away from the screen.")
+                        Text("Remind me to look away from the screen.")
                             .font(.system(size: 11))
                             .foregroundColor(.secondary)
-                    }
-                }
-
-                if dataManager.savedData.hydrationReminderEnabled ?? true {
-                    Divider()
-                        .padding(.vertical, 2)
-
-                    HStack {
-                        Text("Reminder Interval")
-                            .font(.system(size: 12, weight: .medium))
-                        Spacer()
-                        Picker("", selection: Binding(
-                            get: { dataManager.savedData.hydrationIntervalMinutes ?? 60 },
-                            set: {
-                                dataManager.savedData.hydrationIntervalMinutes = $0
-                                dataManager.saveData()
-                                focus.startHydrationTimerIfNeeded()
-                            }
-                        )) {
-                            Text("Every 20 minutes (20-20-20 rule)").tag(20)
-                            Text("Every 30 minutes").tag(30)
-                            Text("Every 45 minutes").tag(45)
-                            Text("Every 60 minutes (Default)").tag(60)
-                            Text("Every 90 minutes").tag(90)
-                        }
-                        .labelsHidden()
-                        .frame(width: 240)
                     }
                 }
             }
@@ -3727,6 +3848,57 @@ struct FocusSettingsSection: View {
             .padding(14)
             .background(RoundedRectangle(cornerRadius: 10).fill(Color.accentColor.opacity(0.08)))
         }
+    }
+}
+
+struct WaterSettingsSection: View {
+    @ObservedObject var dataManager = DataManager.shared
+    @ObservedObject var focus = FocusGuardian.shared
+
+    var body: some View {
+        let data = dataManager.savedData
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Water")
+                .font(.system(size: 18, weight: .bold))
+            Text("Today's glasses: \(focus.waterTodayCount) / \(data.waterDailyGoal ?? 8)")
+                .font(.system(size: 13, weight: .medium))
+            Toggle("Water reminders", isOn: Binding(
+                get: { dataManager.savedData.hydrationReminderEnabled ?? false },
+                set: { dataManager.setHydrationReminderEnabled($0); focus.startHydrationTimerIfNeeded() }
+            ))
+            HStack {
+                Text("Interval (10–240 minutes)")
+                Spacer()
+                TextField("60", value: Binding(
+                    get: { dataManager.savedData.hydrationIntervalMinutes ?? 60 },
+                    set: { dataManager.setHydrationIntervalMinutes(max(10, min(240, $0))); focus.startHydrationTimerIfNeeded() }
+                ), format: .number)
+                .frame(width: 72)
+            }
+            HStack {
+                Text("Active hours (HH:mm)")
+                Spacer()
+                TextField("09:00", text: Binding(
+                    get: { dataManager.savedData.waterActiveStart ?? "09:00" },
+                    set: { dataManager.savedData.waterActiveStart = $0; dataManager.saveData() }
+                )).frame(width: 72)
+                Text("to")
+                TextField("18:00", text: Binding(
+                    get: { dataManager.savedData.waterActiveEnd ?? "18:00" },
+                    set: { dataManager.savedData.waterActiveEnd = $0; dataManager.saveData() }
+                )).frame(width: 72)
+            }
+            HStack {
+                Text("Daily goal (glasses)")
+                Spacer()
+                Stepper("\(dataManager.savedData.waterDailyGoal ?? 8)", value: Binding(
+                    get: { dataManager.savedData.waterDailyGoal ?? 8 },
+                    set: { dataManager.savedData.waterDailyGoal = max(1, min(30, $0)); dataManager.saveData() }
+                ), in: 1...30).frame(width: 130)
+            }
+        }
+        .padding(14)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
     }
 }
 
@@ -4595,9 +4767,9 @@ struct NotificationSettingsSection: View {
                     notificationTypeRow(
                         icon: "drop.fill",
                         iconColor: .blue,
-                        title: "Hydration & Health Breaks",
-                        subtitle: "Alerts you to take regular screen breaks and drink water.",
-                        isActive: dataManager.savedData.hydrationReminderEnabled ?? true
+                        title: "Water Reminders",
+                        subtitle: "Alerts you to take a moment for a glass of water.",
+                        isActive: dataManager.savedData.hydrationReminderEnabled ?? false
                     )
                     Divider()
                     notificationTypeRow(

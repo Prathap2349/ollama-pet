@@ -30,7 +30,7 @@ public class WalkerManager: ObservableObject {
     /// Running uses longer strides, so the legs turn over less than proportionally faster.
     public static let runStrideFactor: Double = 0.7
     /// Pet stage size (points) that `nominalGaitRate` was tuned for.
-    public static let referencePetSize: CGFloat = 140.0
+    public static let referencePetSize: CGFloat = PetWindowLayout.basePetSize
 
     private static let edgeMargin: CGFloat = 20.0
     private static let strollSpeedFactor: CGFloat = 0.8

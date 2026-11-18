@@ -165,25 +165,35 @@ public class DraggableHostingView<Content: View>: NSHostingView<Content> {
 
         clickCount += 1
         clickTimer?.invalidate()
-        clickTimer = Timer.scheduledTimer(withTimeInterval: 0.6, repeats: false) { [weak self] _ in
-            self?.clickCount = 0
-        }
 
         if clickCount >= 5 {
+            // 5th click: dance, and cancel the pending chat toggle for this click sequence.
             clickCount = 0
-            petState.animState = .dance
+            clickTimer = nil
+            petState.startTimedDance(duration: 4.5)
             petState.showBubble("Wheee! 🎉")
             SoundEffect.receive.play()
-            Task { @MainActor in
-                try? await Task.sleep(nanoseconds: 4_500_000_000)
-                if petState.animState == .dance {
-                    petState.animState = .idle
-                }
-            }
             return
         }
 
         SoundEffect.click.play()
+
+        // Wait for the click sequence to end (0.6s with no further click) before toggling the chat.
+        clickTimer = Timer.scheduledTimer(withTimeInterval: 0.6, repeats: false) { [weak self] _ in
+            Task { @MainActor in
+                self?.finishClickSequence()
+            }
+        }
+    }
+
+    /// Runs once, after the last click of a sequence that stayed below 5 clicks.
+    private func finishClickSequence() {
+        // A newer click already restarted the timer: this call belongs to an older sequence.
+        if clickTimer?.isValid == true { return }
+        clickTimer = nil
+        clickCount = 0
+
+        let petState = PetState.shared
         petState.isChatOpen.toggle()
 
         if petState.isChatOpen {

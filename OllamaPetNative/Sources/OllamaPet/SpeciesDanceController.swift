@@ -23,6 +23,11 @@ public final class SpeciesDanceController {
     private var currentPattern: DancePattern = .patternA
     private var lastSpecies: PetSpecies?
     private var lastBeatCount: Int = -1
+    private var beatPosition: Double = 0.0          // beats elapsed since the dance began (tempo-change safe)
+    private var lastUpdateTime: TimeInterval?
+
+    /// Tempo of the "no music" fallback dance, and the default grid tempo.
+    public static let fallbackBPM: Double = 118.0
 
     // 8-Count Pattern Rotation Sequence (musically natural phrasing)
     private let patternSequence: [DancePattern] = [
@@ -36,6 +41,8 @@ public final class SpeciesDanceController {
         danceStartTime = nil
         lastPhraseIndex = -1
         lastBeatCount = -1
+        beatPosition = 0.0
+        lastUpdateTime = nil
 
         // Smoothly restore neutral limb rotations
         rig.rootNode.eulerAngles = SCNVector3Zero
@@ -87,6 +94,7 @@ public final class SpeciesDanceController {
         beatIntensity: BeatIntensity,
         energyLevel: MediaEnergyLevel,
         isMusicActive: Bool,
+        bpm: Double = SpeciesDanceController.fallbackBPM,
         bobY: inout CGFloat,
         scaleY: inout CGFloat,
         scaleXZ: inout CGFloat,
@@ -94,48 +102,58 @@ public final class SpeciesDanceController {
         targetHeadRoll: inout CGFloat,
         targetHeadYaw: inout CGFloat
     ) {
-        guard isMusicActive else {
-            reset(rig: rig)
-            return
-        }
+        // Real music data when music is active. With no music (5-click / species-change / other
+        // triggers) the dance still runs: fixed 118 BPM grid, medium energy, neutral amplitude.
+        let effectiveIntensity: BeatIntensity = isMusicActive ? beatIntensity : .medium
+        let effectiveAmplitude: CGFloat = isMusicActive ? beatAmplitude : 0.5
+        let tempo: Double = isMusicActive ? max(40.0, min(240.0, bpm)) : SpeciesDanceController.fallbackBPM
+        let isBeatDrop = (effectiveIntensity == .beatDrop)
 
         if danceStartTime == nil || lastSpecies != species {
             danceStartTime = t
             lastSpecies = species
             lastPhraseIndex = 0
             currentPattern = .patternA
+            beatPosition = 0.0
+            lastUpdateTime = nil
             print("[Dance] Species = \(species.rawValue), Pattern = A")
         }
 
         let elapsed = t - (danceStartTime ?? t)
 
-        // Standard 118 BPM beat timing (~0.5085s per beat, 4.068s per 8-count phrase)
-        let beatDuration: Double = 60.0 / 118.0
-        let phraseDuration: Double = beatDuration * 8.0
+        // Advance the beat grid by accumulating beats, so changing the tempo mid-dance
+        // speeds the groove up/down without making the choreography jump.
+        let dt: Double = lastUpdateTime.map { min(max(t - $0, 0.0), 0.25) } ?? 0.0
+        lastUpdateTime = t
+        beatPosition += dt * tempo / 60.0
 
-        let phraseIndex = Int(elapsed / phraseDuration)
+        // 8 beats per phrase (118 BPM: ~0.5085s per beat, ~4.068s per 8-count phrase)
+        let phrasePosition = beatPosition / 8.0
+        let phraseIndex = Int(phrasePosition)
         if phraseIndex != lastPhraseIndex {
             lastPhraseIndex = phraseIndex
             currentPattern = patternSequence[phraseIndex % patternSequence.count]
             print("[Dance] Species = \(species.rawValue), Pattern = \(currentPattern.name)")
         }
 
-        let phraseProgress = (elapsed / phraseDuration).truncatingRemainder(dividingBy: 1.0)
+        let phraseProgress = phrasePosition.truncatingRemainder(dividingBy: 1.0)
         let count = Int(phraseProgress * 8.0) // 0...7 representing counts 1...8
         let subPhase = (phraseProgress * 8.0).truncatingRemainder(dividingBy: 1.0) // 0.0...1.0 within beat
 
-        // Beat Intensity Multiplier
-        let intensity: CGFloat
-        switch beatIntensity {
+        // Beat Intensity Multiplier (tier), scaled by the live beat amplitude (0.85x quiet ... 1.15x loud)
+        let tier: CGFloat
+        switch effectiveIntensity {
         case .low:
-            intensity = 0.65
+            tier = 0.65
         case .medium:
-            intensity = 1.0
+            tier = 1.0
         case .strong:
-            intensity = 1.45
+            tier = 1.45
         case .beatDrop:
-            intensity = 1.90
+            tier = 1.90
         }
+        let amplitudeScale: CGFloat = 0.85 + 0.30 * max(0.0, min(1.0, effectiveAmplitude))
+        let intensity: CGFloat = tier * amplitudeScale
 
         // Music Start Transition (Requirements: IDLE -> notices music -> small reaction -> enters dance)
         let introDuration = 1.8
@@ -171,7 +189,7 @@ public final class SpeciesDanceController {
                 count: count,
                 subPhase: subPhase,
                 intensity: intensity * choreoWeight,
-                isBeatDrop: beatIntensity == .beatDrop,
+                isBeatDrop: isBeatDrop,
                 bobY: &bobY,
                 scaleY: &scaleY,
                 targetHeadPitch: &targetHeadPitch,
@@ -186,7 +204,7 @@ public final class SpeciesDanceController {
                 count: count,
                 subPhase: subPhase,
                 intensity: intensity * choreoWeight,
-                isBeatDrop: beatIntensity == .beatDrop,
+                isBeatDrop: isBeatDrop,
                 bobY: &bobY,
                 scaleY: &scaleY,
                 targetHeadPitch: &targetHeadPitch,
@@ -201,7 +219,7 @@ public final class SpeciesDanceController {
                 count: count,
                 subPhase: subPhase,
                 intensity: intensity * choreoWeight,
-                isBeatDrop: beatIntensity == .beatDrop,
+                isBeatDrop: isBeatDrop,
                 bobY: &bobY,
                 scaleY: &scaleY,
                 targetHeadPitch: &targetHeadPitch,
@@ -216,7 +234,7 @@ public final class SpeciesDanceController {
                 count: count,
                 subPhase: subPhase,
                 intensity: intensity * choreoWeight,
-                isBeatDrop: beatIntensity == .beatDrop,
+                isBeatDrop: isBeatDrop,
                 bobY: &bobY,
                 scaleY: &scaleY,
                 targetHeadPitch: &targetHeadPitch,
@@ -231,7 +249,7 @@ public final class SpeciesDanceController {
                 count: count,
                 subPhase: subPhase,
                 intensity: intensity * choreoWeight,
-                isBeatDrop: beatIntensity == .beatDrop,
+                isBeatDrop: isBeatDrop,
                 bobY: &bobY,
                 scaleY: &scaleY,
                 scaleXZ: &scaleXZ,
@@ -247,7 +265,7 @@ public final class SpeciesDanceController {
                 count: count,
                 subPhase: subPhase,
                 intensity: intensity * choreoWeight,
-                isBeatDrop: beatIntensity == .beatDrop,
+                isBeatDrop: isBeatDrop,
                 bobY: &bobY,
                 scaleY: &scaleY,
                 targetHeadPitch: &targetHeadPitch,
@@ -262,7 +280,7 @@ public final class SpeciesDanceController {
                 count: count,
                 subPhase: subPhase,
                 intensity: intensity * choreoWeight,
-                isBeatDrop: beatIntensity == .beatDrop,
+                isBeatDrop: isBeatDrop,
                 bobY: &bobY,
                 scaleY: &scaleY,
                 scaleXZ: &scaleXZ,

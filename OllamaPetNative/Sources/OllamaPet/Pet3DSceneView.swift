@@ -846,6 +846,7 @@ public struct Pet3DSceneView: NSViewRepresentable {
                     beatIntensity: parent.music.currentBeatIntensity,
                     energyLevel: parent.music.currentEnergyLevel,
                     isMusicActive: parent.music.isPlaying || parent.music.isMediaPlaying,
+                    bpm: parent.music.danceTempoBPM,
                     bobY: &bobY,
                     scaleY: &scaleY,
                     scaleXZ: &scaleXZ,

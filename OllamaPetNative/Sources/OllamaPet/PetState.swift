@@ -10,6 +10,9 @@ public class PetState: ObservableObject {
     @Published public var animState: PetAnimState = .idle {
         didSet {
             guard oldValue != animState else { return }
+            // Anything that takes the pet out of .dance (speech, sleep, music yielding...) also
+            // retires a pending timed-dance end, so it can never cut a later dance short.
+            if oldValue == .dance { cancelTimedDance() }
             switch animState {
             case .walk, .run:
                 CharacterMotionStateMachine.shared.transitionTo(.walking(gait: CharacterMotionStateMachine.shared.gaitPreset))
@@ -67,6 +70,9 @@ public class PetState: ObservableObject {
     private var bubbleTimer: Timer?
     private var dreamTimer: Timer?
     private var animTimer: Timer?
+
+    /// Live while a trigger-started dance (5-click, species change) owns the current dance.
+    private var timedDanceTask: Task<Void, Never>?
 
     private let dreams = ["🍕", "🌈", "⭐", "🐟", "🎮", "🏖️", "🚀", "💤", "🌙", "🎵", "🍦", "🦋"]
 
@@ -224,16 +230,37 @@ public class PetState: ObservableObject {
         DataManager.shared.savedData.currentChar = species.rawValue
         DataManager.shared.saveData()
 
-        self.animState = .dance
+        startTimedDance(duration: 2.5)
         showBubble(species.greetings.randomElement() ?? "Hello!")
         SoundEffect.wake.play()
+    }
 
-        Task {
-            try? await Task.sleep(nanoseconds: 2_500_000_000)
-            if self.animState == .dance {
+    /// Starts a short, trigger-driven dance (5-click, species change).
+    /// The dance is only ended after `duration` if this trigger started it. If the pet was already
+    /// dancing for another reason (e.g. real music), that dance is left running untouched.
+    public func startTimedDance(duration: TimeInterval) {
+        let ownsDance = (animState != .dance) || (timedDanceTask != nil)
+        timedDanceTask?.cancel()
+        timedDanceTask = nil
+        animState = .dance
+        guard ownsDance else { return }
+
+        timedDanceTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(duration * 1_000_000_000))
+            guard let self = self, !Task.isCancelled else { return }
+            self.timedDanceTask = nil
+            // If real music took over the dance in the meantime, hand it to the music loop.
+            let music = MusicManager.shared
+            let musicOwnsDance = music.danceWhenMusicDetected && (music.isMediaPlaying || music.isPlaying)
+            if self.animState == .dance && !musicOwnsDance {
                 self.animState = .idle
             }
         }
+    }
+
+    private func cancelTimedDance() {
+        timedDanceTask?.cancel()
+        timedDanceTask = nil
     }
 
     public func showBubble(_ text: String, duration: TimeInterval = 2.5) {

@@ -24,6 +24,10 @@ public class MusicManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
     @Published public var isBeatAnalysisAvailable: Bool = false
     @Published public var currentEnergyLevel: MediaEnergyLevel = .low
 
+    /// Tempo (BPM) of the simulated beat for external music (Spotify/Music/YouTube) and of the dance grid
+    /// while music is active. Default 118. Change it with `setDanceTempoBPM(_:)`.
+    @Published public private(set) var danceTempoBPM: Double = 118.0
+
     // Media Pipeline & State Machine (Requirement 1)
     @Published public var mediaState: MediaPlaybackState = .noMedia
     @Published public var isMediaDetectionEnabled: Bool = true
@@ -164,6 +168,10 @@ public class MusicManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
     public func setVibe(_ vibe: String) {
         currentVibe = vibe
+    }
+
+    public func setDanceTempoBPM(_ bpm: Double) {
+        danceTempoBPM = max(60.0, min(200.0, bpm))
     }
 
     // MARK: - Multi-Source Media Detection (YouTube, Spotify, Apple Music, VLC, MediaRemote)
@@ -339,30 +347,29 @@ public class MusicManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
         PetState.shared.setTemporaryMood(.relaxed, duration: 3.0)
     }
 
-    // MARK: - Deterministic External Rhythm Clock (~118 BPM / 2.0 Hz)
+    // MARK: - Deterministic External Rhythm Clock (tempo = danceTempoBPM, default 118)
 
     private var externalBeatTimer: Timer?
 
     private func startExternalBeatClock() {
         externalBeatTimer?.invalidate()
-        let bpm: Double = 118.0
-        let beatInterval = 60.0 / bpm // ~0.508s
         let frameInterval = 0.05
-        var phase: Double = 0.0
+        var beats: Double = 0.0 // accumulated beats: a tempo change speeds the clock up/down without a phase jump
 
         externalBeatTimer = Timer.scheduledTimer(withTimeInterval: frameInterval, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self = self, self.isMediaPlaying && !(self.audioPlayer?.isPlaying ?? false) else {
                     return
                 }
-                phase += frameInterval
-                let beatCycle = sin(phase * (2.0 * .pi / beatInterval))
+                let bpm = self.danceTempoBPM
+                beats += frameInterval * bpm / 60.0
+                let beatCycle = sin(beats * 2.0 * .pi)
                 let normalized = max(0.2, CGFloat((beatCycle + 1.0) / 2.0))
 
                 var newLevels: [CGFloat] = []
                 for i in 0..<8 {
-                    let lag = Double(i) * 0.06
-                    let barCycle = sin((phase - lag) * (2.0 * .pi / beatInterval))
+                    let lagBeats = Double(i) * 0.06 * bpm / 60.0 // same 0.06s-per-bar lag as before, expressed in beats
+                    let barCycle = sin((beats - lagBeats) * 2.0 * .pi)
                     let barNorm = max(0.15, min(1.0, CGFloat((barCycle + 1.0) / 2.0 * 0.85 + Double.random(in: 0.05...0.15))))
                     newLevels.append(barNorm)
                 }
